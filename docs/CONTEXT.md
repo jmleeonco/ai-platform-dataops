@@ -15,6 +15,14 @@
   이는 과거 확인 사례이며 신규 데이터셋의 ID/메타데이터로 재사용하지 않는다.
 - 기존 로컬 sender 설정상 OS_LJM, 127.0.0.1:4001. 코드/테스트를 이 저장소로 이식.
 
+## 2026-10-28 소유자 결정
+- 새 관리 DB 위치: 이 서버(10.101.1.183). sudo가 없어 Docker(사용자 권한) MariaDB 11.4로 운영.
+- Nightly backup: `/mnt/ai-pipeline/backups/ai-platform-dataops/` (CONTRACT §65, 00:30).
+- Central SCP에는 아직 올리지 않음. Local SCP까지만 전송하고 메타데이터를 새 DB에 등록.
+- 모든 결과를 보는 로컬 HTML 페이지(183에서 호스팅, loopback).
+- 183에는 4001 포트 SCP가 없음(OS_LJM은 워크스테이션의 OncoStudio). 183에는 시스템 서비스
+  Orthanc(`ORTHANC`, 4242/8042)가 있으나 대상으로 정하지 않음 — 실제 Local SCP 대상은 확인 필요.
+
 ## 구현 전에 구별할 것
 - Central SCP의 실제 접속 설정과 수신 소프트웨어/조회 API는 아직 검증하지 않았다.
   DB 포트 3306을 DICOM 포트로 사용하지 않는다. 기존 문서의 후보를 운영 기본값으로 넣지 않는다.

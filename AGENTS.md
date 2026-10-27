@@ -10,13 +10,14 @@ prepared DICOM -> Local SCP OS_LJM and HTML review of proposed DB records ->
 explicit user publication -> Central SCP and a NEW public-data management DB.
 Do not replace this with a clone of the production PACS or a separate production SCP.
 
-## Current implementation boundary
-The inherited local sender and synthetic tests are executable. `tools/review.py`
-provides an offline metadata preview with proposed new-DB records. The SQL file is
-a proposed new schema, not applied anywhere. The interactive web app, immutable
-artifact staging, publication coordinator and DB adapter are NOT implemented yet.
-Use the ordered backlog and acceptance criteria in `docs/IMPLEMENTATION.md`.
-Do not present a static preview as an operational publish UI.
+## Current implementation boundary (2026-10-28)
+Implemented in `dataops/` (CLI `python -m dataops`): inventory, versioned plan + validator, frozen
+artifacts with sha256 manifest, LOCAL SCP delivery with per-instance journal, migrations and idempotent
+registration into the NEW management DB (Docker MariaDB on 183), a read-only local HTML viewer, and
+nightly NAS backups (`ops/backup/`). Owner decision 2026-10-28: send to the local SCP only; Central
+publication (M4), web-side plan editing/approval and the oncolabdb exporter are NOT implemented.
+The viewer is read-only: do not present it as an approval or publish UI. Operations: docs/OPERATIONS.md.
+Python: `~/.venvs/ai-platform-dataops/bin/python`.
 
 ## Constraints from the owner
 - Preserve source files; never scan the parent workspace's `backup` folder.
@@ -35,8 +36,8 @@ Do not present a static preview as an operational publish UI.
   Use synthetic images and a loopback test receiver.
 
 ## Working commands
-`python -m pip install -r requirements-dev.txt`
-`python -m pytest -q`
+`VIRTUAL_ENV=~/.venvs/ai-platform-dataops ~/.local/bin/uv pip install -r requirements-dev.txt`
+`~/.venvs/ai-platform-dataops/bin/python -m pytest -q`
 `python tools/review.py --summary examples/synthetic-summary.json --dataset examples/dataset.json --out runtime/demo`
 
 For new functionality add meaningful tests for geometry, exact reviewed artifacts,

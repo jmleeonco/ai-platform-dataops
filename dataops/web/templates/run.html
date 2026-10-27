@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status %}
+{% block title %}run {{ run.id }}{% endblock %}
+{% block body %}
+<h1>run <span class="mono">{{ run.id }}</span> {{ status(meta.status) }}</h1>
+
+<div class="grid">
+  <div class="stat"><span>데이터셋</span><b class="small">{{ plan.dataset.name if plan else '' }}</b><span class="mono">{{ meta.dataset_uuid }}</span></div>
+  <div class="stat"><span>plan revision</span><b>{{ meta.revision }}</b><span class="mono">{{ (meta.plan_sha256 or '')[:16] }}</span></div>
+  <div class="stat"><span>manifest</span><b>{{ manifest.instances|length if manifest else '-' }}</b><span class="mono">{{ (meta.manifest_sha256 or 'prepare 전')[:16] }}</span></div>
+  <div class="stat"><span>DB 등록</span>{% if registration %}<b class="b-ok">등록됨</b><span>{{ registration.last.at }}</span>{% else %}<b class="b-warn">미등록</b><span><code>python -m dataops register {{ run.id }}</code></span>{% endif %}</div>
+</div>
+
+<section>
+<h2>입력과 범위</h2>
+<dl class="kv">
+  <dt>입력 폴더</dt><dd class="mono">{{ meta.input_root }}</dd>
+  <dt>파일 분류</dt><dd>{% for k, v in (inv.counts or {}).items() %}<span class="badge">{{ k }} {{ v }}</span> {% endfor %}</dd>
+  <dt>들어가지 않은 폴더</dt><dd>{% for d in inv.skipped_dirs or [] %}<code>{{ d }}</code> {% else %}<span class="muted">없음</span>{% endfor %} <span class="muted">(backup·숨김 폴더, 심볼릭 링크)</span></dd>
+  <dt>라이선스 / 상업적 이용</dt><dd>{{ plan.dataset.license or '-' }} / {{ plan.dataset.commercial_use }}</dd>
+  <dt>출처</dt><dd>{{ plan.dataset.source_url or '-' }}</dd>
+  <dt>PatientID 접두어</dt><dd>{{ plan.dataset.patient_id_prefix or '-' }}</dd>
+  <dt>adapter / 옵션</dt><dd class="mono">{{ plan.adapter }} v{{ plan.adapter_version }} · {{ plan.options|jsonfmt }}</dd>
+</dl>
+{% if plan_errors %}<div class="err"><b>plan 오류 (prepare 차단)</b><ul>{% for e in plan_errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% if plan.unresolved %}<div class="notice"><b>미해결 항목</b><ul>{% for u in plan.unresolved %}<li><code>{{ u.code }}</code> {{ u.message }}</li>{% endfor %}</ul></div>{% endif %}
+</section>
+
+<section>
+<h2>시리즈 ({{ plan.series|length }})</h2>
+<div class="table-wrap"><table>
+<tr><th>PatientID</th><th>Study UID</th><th>Series UID</th><th>종류</th><th>Modality</th><th>설명</th><th class="num">인스턴스</th><th>로컬 전송</th></tr>
+{% for s in plan.series %}
+{% set c = per_series.get(s.series_uid) %}
+<tr{% if s.excluded %} class="muted"{% endif %}>
+  <td>{{ s.patient_id or '-' }}<div class="muted mono">{{ s.subject_key }}</div></td>
+  <td class="mono" title="{{ s.study_uid }}">{{ s.study_uid|short }}</td>
+  <td class="mono" title="{{ s.series_uid }}">{% if manifest and not s.excluded %}<a href="/runs/{{ run.id }}/series/{{ s.series_uid }}">{{ s.series_uid|short }}</a>{% else %}{{ s.series_uid|short }}{% endif %}</td>
+  <td>{{ 'DICOM 원본' if s.kind == 'dicom' else 'NIfTI→DICOM' }}{% if s.excluded %} <span class="badge">제외</span>{% endif %}</td>
+  <td>{{ s.modality or '?' }} {% if s.needs_review %}<span class="badge b-warn" title="{{ s.modality_basis }}">추정</span>{% else %}<span class="badge" title="{{ s.modality_basis }}">원본</span>{% endif %}</td>
+  <td>{{ s.description or '' }}</td>
+  <td class="num">{{ c.instances if c else s.instance_count }}</td>
+  <td>{% if c %}{% for k in ['accepted','warning','failed','sending','unsent'] %}{% if c[k] %}{{ status(k) }} {{ c[k] }} {% endif %}{% endfor %}{% else %}<span class="muted">-</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</table></div>
+<p class="muted">“추정” modality는 경로·사이드카·값 분포로 제안된 값입니다(근거는 마우스 오버). DICOM 원본 시리즈는 바이트 그대로 전달됩니다.</p>
+</section>
+
+<section>
+<h2>로컬 SCP 전송 기록</h2>
+{% for j in journals %}
+<h3 class="mono">{{ j.target_key }}</h3>
+<div class="table-wrap"><table><tr><th>시작</th><th>종료</th><th class="num">이번 전송</th><th>결과</th></tr>
+{% for s in j.sessions %}<tr><td>{{ s.started_at }}</td><td>{{ s.finished_at }}</td><td class="num">{{ s.sent }}</td><td>{% for k, v in s.result.items() %}{{ status(k) }} {{ v }} {% endfor %}</td></tr>{% endfor %}
+</table></div>
+{% set failed = j.instances.items()|selectattr('1.status', 'in', ['failed', 'sending'])|list %}
+{% if failed %}<details><summary>실패/미확인 {{ failed|length }}건</summary><table><tr><th>SOP UID</th><th>상태</th><th>시도</th><th>내용</th></tr>
+{% for sop, r in failed[:200] %}<tr><td class="mono">{{ sop }}</td><td>{{ status(r.status) }}</td><td>{{ r.attempts }}</td><td>{{ r.detail }}</td></tr>{% endfor %}</table></details>{% endif %}
+{% else %}
+<p class="muted">아직 전송하지 않았습니다. {% if manifest %}<code>python -m dataops send-local {{ run.id }}</code>{% endif %}</p>
+{% endfor %}
+<p class="muted">C-STORE 성공은 수신 측이 받았다는 응답입니다. 수신본을 별도로 조회해 검증(verified)한 것은 아닙니다.</p>
+</section>
+
+<section>
+<h2>DB 레코드 — 등록 예정 값과 DB 상태</h2>
+{% if not records %}<p class="muted">prepare 이후에 등록 레코드가 만들어집니다.</p>
+{% else %}
+{% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
+<div class="table-wrap"><table>
+<tr><th>테이블</th><th class="num">예정 행</th>{% if compare %}<th class="num">DB에 없음</th><th class="num">동일</th><th class="num">다름</th><th>차이 예</th>{% endif %}</tr>
+{% for t in tables %}<tr><td><a href="#t-{{ t }}">{{ t }}</a></td><td class="num">{{ records[t]|length }}</td>
+{% if compare %}{% set c = compare[t] %}<td class="num">{{ c.missing }}</td><td class="num">{{ c.same }}</td><td class="num {{ 'b-warn' if c.different }}">{{ c.different }}</td>
+<td>{% for d in c.diff_examples %}<div class="mono">{{ d.key|jsonfmt(80) }} → {{ d.columns|join(', ') }}</div>{% endfor %}</td>{% endif %}</tr>{% endfor %}
+</table></div>
+<p class="muted">이 표는 등록에 쓰는 것과 같은 projection(<code>dataops.records.build_records</code>)으로 만든 값입니다.</p>
+{% for t in tables %}
+<details id="t-{{ t }}"><summary>{{ t }} ({{ records[t]|length }})</summary>
+<div class="table-wrap"><table>
+{% set rows = records[t][:100] %}
+{% if rows %}<tr>{% for c in rows[0].keys() %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in rows %}<tr>{% for c, v in r.items() %}<td class="mono">{{ v|jsonfmt(160) if v is mapping or (v is iterable and v is not string) else (v if v is not none else 'NULL') }}</td>{% endfor %}</tr>{% endfor %}{% endif %}
+</table></div>{% if records[t]|length > 100 %}<p class="muted">처음 100행만 표시</p>{% endif %}
+</details>
+{% endfor %}
+{% endif %}
+</section>
+
+<section>
+<h2>제외·미지원 파일 ({{ plan.skipped|length }})</h2>
+<div class="table-wrap"><table><tr><th>파일</th><th>분류</th><th>이유</th></tr>
+{% for s in skipped %}<tr><td class="mono">{{ s.rel }}</td><td>{{ s.kind }}</td><td>{{ s.reason }}</td></tr>{% else %}<tr><td colspan="3" class="muted">없음</td></tr>{% endfor %}
+</table></div>
+{% if skipped_pages > 1 %}<p class="pager">{% for i in range(1, skipped_pages + 1) %}{% if i == skipped_page %}<span>{{ i }}</span>{% else %}<a href="?skipped_page={{ i }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
+</section>
+
+<section>
+<h2>이력</h2>
+<table><tr><th>시각</th><th>상태</th><th>내용</th></tr>
+{% for e in meta.events %}<tr><td>{{ e.at }}</td><td>{{ status(e.status) }}</td><td>{{ e.event }}</td></tr>{% endfor %}
+</table>
+</section>
+{% endblock %}

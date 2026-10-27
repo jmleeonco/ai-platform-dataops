@@ -1,5 +1,5 @@
--- DRAFT: run only in an explicitly selected NEW/disposable MariaDB schema.
--- No production database changes. Validate through migrations before deployment.
+-- Migration 0001: initial schema (from the 2026-10-27 draft). Applied by `python -m dataops db-migrate`
+-- to the NEW management schema only (never scpdb/oncolabdb). No CREATE DATABASE/USE, no credentials.
 CREATE TABLE datasets (
  dataset_uuid CHAR(36) CHARACTER SET ascii PRIMARY KEY,
  name VARCHAR(256) NOT NULL,

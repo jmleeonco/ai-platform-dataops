@@ -1,9 +1,22 @@
 # New management DB and future integration
 
-`sql/001_public_dataops.sql` is a draft for a NEW database, never for scpdb/oncolabdb.
-It deliberately has no CREATE DATABASE/USE, credentials or server-side cross-DB FK.
-Apply only to an explicitly configured disposable/new schema. SQL syntax and migrations
-must be integration-tested with MariaDB before production; no migration was run here.
+Schema = `sql/migrations/0001_initial.sql` (the 2026-10-27 draft) + `0002_registration_fields.sql`,
+applied in order by `python -m dataops db-migrate` (table `schema_migrations` stores version and file
+sha256; an edited applied migration is refused — add a new file instead). No CREATE DATABASE/USE,
+credentials or cross-DB FK in migrations. The connector refuses the schema names scpdb/oncolabdb.
+
+Location (owner decision 2026-10-28): MariaDB 11.4 in Docker on 10.101.1.183
+(`ai-platform-dataops-db`, 127.0.0.1:13306, schema `public_dataops`, app account `dataops_app`).
+Production runs MariaDB 10.5.8; the exporter must be tested against that version before use.
+Integration tests run against disposable `dataops_test_<random>` schemas on the same server.
+
+Registration (`dataops.db.register`) is one transaction: rows are inserted or descriptive columns
+updated; an identity mismatch (same SOP UID with another sha256, same Study UID under another
+subject, same subject key with another PatientID, ...) rolls back everything. `transfer_results`
+currently holds local-SCP outcomes (`target_key` = `local:<AE>@<host>:<port>`); `accepted` means a
+C-STORE success response, and `verification_json` stays NULL until a target can be queried.
+Known limit: a study belongs to one subject of one dataset, so registering the same study under a
+second dataset's subject is a conflict (series membership in several datasets is supported).
 
 ## Identity
 - UUID for dataset, subject, ingest run. PatientID is not globally unique: scope local

@@ -1,0 +1,5 @@
+{% macro status(s) -%}
+{%- set cls = {'PLANNED':'b-ok','PREPARED':'b-ok','LOCAL_SENT':'b-ok','accepted':'b-ok','NEEDS_INPUT':'b-warn',
+   'LOCAL_PARTIAL':'b-warn','warning':'b-warn','sending':'b-warn','unsent':'b-warn','LOCAL_FAILED':'b-bad','failed':'b-bad'} -%}
+<span class="badge {{ cls.get(s, '') }}">{{ s or '-' }}</span>
+{%- endmacro %}

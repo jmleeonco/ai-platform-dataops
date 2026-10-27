@@ -11,6 +11,21 @@ Update this checklist when actual acceptance criteria pass; retain limitations i
 - [x] Claude/Codex entrypoints and shared implementation brief.
 - [ ] Interactive application and end-to-end production flow (below).
 
+## Status 2026-10-28 (owner: DB on 183, nightly NAS backup, local SCP only, local HTML viewer)
+- [x] M1 inventory, plan schema 1 + validator, frozen artifacts/manifest, UID policy audit
+  (NIfTI Series UID = f(PatientID prefix+group, relative path, file sha256, modality, layout,
+  converter version); deterministic bytes; no LOCALREVIEW placeholder — prefix required), tests.
+- [x] M2 migrations (`sql/migrations`), repository, DTO shared by preview and registration,
+  idempotent registration with conflict rollback; tested on disposable `dataops_test_*` schemas.
+  Legacy-export test is still open (exporter not written).
+- [~] M3 read-only local viewer (runs, metadata, DB compare, delivery, slice viewer with orientation
+  and window, DB tables, backups); tests for escaping, traversal, manifest-bound image serving.
+  Not done: metadata editing / revisions from the browser, optimistic revision conflicts, approval.
+- [ ] M4 Central publication — deferred by the owner (local SCP only for now). The local send already
+  has the per-instance journal, retry and tamper refusal M4 will reuse.
+- [~] M5 synthetic end-to-end (`dataops.synthetic`), configurable paths, backup/restore with proof
+  (docs/OPERATIONS.md, docs/VALIDATION.md). Not done: legacy exporter dry-run, screenshots in docs.
+
 ## M1: Structured plan and immutable preparation
 - Inventory mixed inputs (DICOM with/without extension, NIfTI, sidecar JSON, masks,
   unsupported files); report coverage including skips/errors. No recursive backup scans.

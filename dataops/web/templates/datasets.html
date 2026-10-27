@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}데이터셋{% endblock %}
+{% block body %}
+<h1>데이터셋 (관리 DB)</h1>
+{% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
+<section>
+<div class="table-wrap"><table>
+<tr><th>이름</th><th>UUID</th><th>라이선스</th><th>상업적 이용</th><th>PatientID 접두어</th><th class="num">대상자</th><th class="num">시리즈</th><th class="num">인스턴스</th><th>등록일</th></tr>
+{% for d in rows %}
+<tr><td><a href="/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a></td><td class="mono">{{ d.dataset_uuid }}</td>
+<td>{{ d.license or '-' }}</td><td>{{ d.commercial_use }}</td><td>{{ d.patient_id_prefix or '-' }}</td>
+<td class="num">{{ d.n_subjects }}</td><td class="num">{{ d.n_series }}</td><td class="num">{{ d.n_instances }}</td><td>{{ d.created_at }}</td></tr>
+{% else %}<tr><td colspan="9" class="muted">등록된 데이터셋이 없습니다. <code>python -m dataops register RUN</code></td></tr>{% endfor %}
+</table></div>
+</section>
+{% endblock %}

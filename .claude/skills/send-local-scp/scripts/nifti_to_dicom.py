@@ -471,8 +471,11 @@ def make_series_ids(group_label: str, prefix: str, rel: str, content_hash: str,
 
 
 def write_series(vol: Volume, ids: SeriesIds, modality: str, rel: str, out_dir: Path,
-                 modality_basis: str = "user setting") -> dict:
-    """Write one single-frame DICOM file per slice. Returns a geometry/value report."""
+                 modality_basis: str = "user setting", deterministic: bool = False) -> dict:
+    """Write one single-frame DICOM file per slice. Returns a geometry/value report.
+
+    deterministic=True leaves out the creation timestamp so the same input and settings
+    always give byte-identical files (needed when UIDs are reused across runs)."""
     if modality not in SOP_CLASS_BY_MODALITY:
         raise ValueError(f"modality {modality!r} 미지원 (CT 또는 MR)")
     sop_class = SOP_CLASS_BY_MODALITY[modality]
@@ -492,7 +495,7 @@ def write_series(vol: Volume, ids: SeriesIds, modality: str, rel: str, out_dir: 
     center = float(p_lo + p_hi) / 2.0
 
     now = _dt.datetime.now()
-    date, time = now.strftime("%Y%m%d"), now.strftime("%H%M%S")
+    date, time = ("", "") if deterministic else (now.strftime("%Y%m%d"), now.strftime("%H%M%S"))
     out_dir.mkdir(parents=True, exist_ok=True)
     files = []
     for k in range(nk):
@@ -508,7 +511,8 @@ def write_series(vol: Volume, ids: SeriesIds, modality: str, rel: str, out_dir: 
         ds.SpecificCharacterSet = "ISO_IR 192"
         ds.SOPClassUID = sop_class
         ds.SOPInstanceUID = sop_uid
-        ds.InstanceCreationDate, ds.InstanceCreationTime = date, time
+        if not deterministic:
+            ds.InstanceCreationDate, ds.InstanceCreationTime = date, time
         # Patient / study: explicit local-review values, nothing taken as real patient data
         ds.PatientName = ids.patient_name
         ds.PatientID = ids.patient_id

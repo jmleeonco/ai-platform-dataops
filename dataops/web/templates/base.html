@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}DataOps{% endblock %} · AI Platform DataOps</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header><div class="wrap">
+  <span class="brand">AI Platform DataOps</span>
+  <nav>
+    <a href="/">대시보드</a>
+    <a href="/datasets">데이터셋</a>
+    <a href="/db">DB 테이블</a>
+    <a href="/backups">백업</a>
+  </nav>
+  <span class="muted push">읽기 전용 · v{{ version }}</span>
+</div></header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

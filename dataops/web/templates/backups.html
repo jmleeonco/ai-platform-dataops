@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}백업{% endblock %}
+{% block body %}
+<h1>Nightly 백업</h1>
+<section>
+<p>위치 <code>{{ settings.backup_root }}/{{ settings.backup_system }}/&lt;YYYY-MM-DD&gt;/</code> (artifact 미러: <code>{{ settings.backup_system }}-files/</code>) · 매일 00:30 · 보관 14일 + 월초 12개월.</p>
+<p class="muted">비밀값(~/.config/ai-platform-dataops/env)은 백업하지 않습니다. 복원 절차는 docs/OPERATIONS.md.</p>
+</section>
+<section>
+<div class="table-wrap"><table>
+<tr><th>날짜</th><th>결과</th><th>완료</th><th class="num">소요(초)</th><th class="num">크기</th><th>DB 행 수</th><th>commit</th><th>파일</th></tr>
+{% for b in backups %}
+<tr><td>{{ b.date }}</td><td>{% if b.ok %}<span class="badge b-ok">ok</span>{% else %}<span class="badge b-bad">실패</span> {{ b.error or '' }}{% endif %}</td>
+<td>{{ b.finished_at or '' }}</td><td class="num">{{ b.duration_s or '' }}</td><td class="num">{{ '{:,}'.format(b.total_bytes) }}</td>
+<td>{% if b.db_counts %}{% for t, n in b.db_counts.items() if n %}<span class="badge">{{ t }} {{ n }}</span> {% endfor %}{% endif %}</td>
+<td class="mono">{{ (b.commit or '')[:10] }}</td>
+<td><details><summary>{{ b.files|length }}개</summary><table>{% for f in b.files %}<tr><td class="mono">{{ f.path }}</td><td class="num">{{ '{:,}'.format(f.size) }}</td><td class="mono">{{ f.sha256[:12] }}</td></tr>{% endfor %}</table></details></td></tr>
+{% else %}<tr><td colspan="8" class="muted">백업이 아직 없습니다.</td></tr>{% endfor %}
+</table></div>
+</section>
+{% if log_tail %}<section><h2>backup.log (최근)</h2><pre>{{ log_tail|join('\n') }}</pre></section>{% endif %}
+{% endblock %}

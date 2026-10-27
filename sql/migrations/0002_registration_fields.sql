@@ -1,0 +1,41 @@
+-- Migration 0002: fields the registration DTO needs (local SCP delivery + metadata browsing).
+ALTER TABLE datasets
+  ADD COLUMN patient_id_prefix VARCHAR(32) NULL AFTER commercial_use,
+  ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+ALTER TABLE subjects
+  ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE studies
+  ADD COLUMN study_date VARCHAR(8) CHARACTER SET ascii NULL,
+  ADD COLUMN description VARCHAR(1024) NULL,
+  ADD COLUMN metadata_json JSON NULL,
+  ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE series
+  ADD COLUMN series_number INT NULL,
+  ADD COLUMN instance_count INT UNSIGNED NOT NULL DEFAULT 0,
+  ADD COLUMN source_kind VARCHAR(16) CHARACTER SET ascii NOT NULL DEFAULT 'dicom',
+  ADD COLUMN modality_basis VARCHAR(512) NULL,
+  ADD COLUMN needs_review TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN first_run_uuid CHAR(36) CHARACTER SET ascii NULL,
+  ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  ADD KEY ix_series_modality (modality);
+
+ALTER TABLE ingest_runs
+  ADD COLUMN run_label VARCHAR(32) CHARACTER SET ascii NULL AFTER run_uuid,
+  ADD COLUMN input_root TEXT NULL,
+  ADD COLUMN registered_at TIMESTAMP NULL,
+  ADD UNIQUE KEY uq_run_label (run_label);
+
+ALTER TABLE instances
+  ADD COLUMN instance_number INT NULL,
+  ADD COLUMN size_bytes BIGINT UNSIGNED NULL,
+  ADD COLUMN transfer_syntax_uid VARCHAR(64) CHARACTER SET ascii NULL,
+  ADD COLUMN source_relative_path TEXT NULL,
+  ADD COLUMN source_sha256 CHAR(64) CHARACTER SET ascii NULL,
+  ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE transfer_results
+  ADD KEY ix_transfer_status (target_key, status);

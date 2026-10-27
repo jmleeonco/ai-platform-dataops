@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ table }}{% endblock %}
+{% block body %}
+<p><a href="/db">← DB 테이블</a></p>
+<h1>{{ table }} <span class="muted">{{ total }}행</span></h1>
+<section>
+<div class="table-wrap"><table>
+{% if cols %}<tr>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr>{% endif %}
+{% for r in rows %}<tr>{% for c in cols %}<td class="mono">{{ r[c]|jsonfmt(200) if r[c] is not none else 'NULL' }}</td>{% endfor %}</tr>
+{% else %}<tr><td class="muted">행 없음</td></tr>{% endfor %}
+</table></div>
+{% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs < 3 %}<a href="?p={{ i }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
+</section>
+{% endblock %}

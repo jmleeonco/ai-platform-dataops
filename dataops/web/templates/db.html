@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}DB 테이블{% endblock %}
+{% block body %}
+<h1>관리 DB 테이블</h1>
+{% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
+{% if info %}
+<section>
+<p>schema <b>{{ settings.db.name }}</b> @ {{ settings.db.host }}:{{ settings.db.port }} · 적용된 migration {{ info.migrations.applied|join(', ') }}
+{% if info.migrations.pending %}<span class="badge b-warn">pending {{ info.migrations.pending|join(', ') }}</span>{% endif %}</p>
+<p class="muted">새 독립 관리 DB입니다. 운영 scpdb/oncolabdb와 연결되어 있지 않습니다.</p>
+</section>
+{% for t, cols in info.columns.items() %}
+<section>
+<h2><a href="/db/{{ t }}">{{ t }}</a> <span class="muted">{{ info.counts[t] }}행</span></h2>
+<details><summary>컬럼 {{ cols|length }}개</summary>
+<table><tr><th>컬럼</th><th>타입</th><th>NULL</th><th>키</th></tr>
+{% for c in cols %}<tr><td class="mono">{{ c.COLUMN_NAME }}</td><td class="mono">{{ c.COLUMN_TYPE }}</td><td>{{ c.IS_NULLABLE }}</td><td>{{ c.COLUMN_KEY }}</td></tr>{% endfor %}
+</table></details>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,81 @@
+"""Settings: environment variables override ~/.config/ai-platform-dataops/env, which overrides defaults.
+
+Secrets (DB password) are only read from the environment or that file, never from the repository.
+"""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+REPO_DIR = Path(__file__).resolve().parents[1]
+CONFIG_DIR = Path(os.environ.get("DATAOPS_CONFIG_DIR", Path.home() / ".config" / "ai-platform-dataops"))
+
+
+def _read_env_file(path: Path) -> dict:
+    values = {}
+    if not path.is_file():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+@dataclass
+class LocalScp:
+    host: str
+    port: int
+    called_ae: str
+    calling_ae: str
+
+    @property
+    def key(self) -> str:
+        return f"local:{self.called_ae}@{self.host}:{self.port}"
+
+
+@dataclass
+class Settings:
+    runtime_dir: Path
+    db: dict = field(default_factory=dict)
+    local_scp: LocalScp | None = None
+    bind_host: str = "127.0.0.1"
+    port: int = 8096
+    backup_root: Path = Path("/mnt/ai-pipeline/backups")
+    backup_system: str = "ai-platform-dataops"
+
+    @property
+    def runs_dir(self) -> Path:
+        return self.runtime_dir / "runs"
+
+    @property
+    def db_configured(self) -> bool:
+        return all(self.db.get(k) for k in ("host", "user", "password", "name"))
+
+
+def load_settings(env: dict | None = None) -> Settings:
+    merged = _read_env_file(CONFIG_DIR / "env")
+    merged.update({k: v for k, v in (env if env is not None else os.environ).items() if k.startswith("DATAOPS_")})
+    get = merged.get
+    runtime = Path(get("DATAOPS_RUNTIME_DIR") or REPO_DIR / "runtime")
+    if not runtime.is_absolute():
+        runtime = REPO_DIR / runtime
+    example = json.loads((REPO_DIR / "config" / "local-scp.example.json").read_text(encoding="utf-8"))["destination"]
+    scp = LocalScp(host=get("DATAOPS_LOCAL_SCP_HOST") or example["host"],
+                   port=int(get("DATAOPS_LOCAL_SCP_PORT") or example["port"]),
+                   called_ae=get("DATAOPS_LOCAL_SCP_CALLED_AE") or example["called_ae"],
+                   calling_ae=get("DATAOPS_LOCAL_SCP_CALLING_AE") or "DATAOPS")
+    return Settings(
+        runtime_dir=runtime,
+        db={"host": get("DATAOPS_DB_HOST"), "port": int(get("DATAOPS_DB_PORT") or 3306),
+            "name": get("DATAOPS_DB_NAME"), "user": get("DATAOPS_DB_USER"), "password": get("DATAOPS_DB_PASSWORD")},
+        local_scp=scp,
+        bind_host=get("DATAOPS_BIND_HOST") or "127.0.0.1",
+        port=int(get("DATAOPS_PORT") or 8096),
+        backup_root=Path(get("DATAOPS_BACKUP_ROOT") or "/mnt/ai-pipeline/backups"),
+        backup_system=get("DATAOPS_BACKUP_SYSTEM") or "ai-platform-dataops",
+    )

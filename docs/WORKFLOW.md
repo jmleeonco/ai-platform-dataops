@@ -1,5 +1,9 @@
 # Workflow contract
 
+> Current state (2026-10-28): steps 1–5 run through the CLI (`python -m dataops`), registration goes
+> to the new DB after the local send, and the HTML viewer is read-only. Steps 6–7 (browser edits,
+> **Central에 등록**) are deferred by the owner. See docs/OPERATIONS.md.
+
 ## User experience
 1. Agent receives a directory; inventories files locally without modifying originals.
 2. LLM proposes patient/study/series grouping, format/layout, modality, mask/reference
