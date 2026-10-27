@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+config/*.local.json
+.claude/skills/send-local-scp/local_scp.json
+__pycache__/
+.pytest_cache/
+.venv/
+*.egg-info/
+runtime/
+send_local_scp_runs/
+*.dcm
+*.nii
+*.nii.gz
+*.sql.gz
+*.dump
+backup/

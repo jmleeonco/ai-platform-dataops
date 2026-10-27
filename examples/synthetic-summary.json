@@ -1,0 +1,10 @@
+{
+  "input": "synthetic/example",
+  "destination": "OS_LJM (example only; not sent)",
+  "dry_run": true,
+  "series": [
+    {"patient_id": "SYNTHETIC_001", "study_uid": "2.25.101", "series_uid": "2.25.102", "modality": "CT", "series_description": "Synthetic CT", "files": 3, "sent_ok": 0, "failed": 0, "warnings": []}
+  ],
+  "skipped": [],
+  "errors": []
+}

@@ -1,0 +1,5 @@
+{
+  "destination": {"host": "127.0.0.1", "port": 4001, "called_ae": "OS_LJM", "calling_ae": "SENDLOCALSCP"},
+  "nifti": {"modality": null, "patient_id_prefix": "LOCALREVIEW", "group_by": "dir", "layout": "auto", "max_series_per_study": 16},
+  "output_dir": null
+}

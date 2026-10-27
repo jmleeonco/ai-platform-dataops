@@ -1,0 +1,19 @@
+{
+  "_help": "local_scp.json 으로 복사해 값을 채우세요. destination 은 이 PC의 로컬 DICOM Storage SCP 만 허용됩니다 (원격/Central 주소는 스크립트가 거부).",
+  "destination": {
+    "host": "127.0.0.1",
+    "port": null,
+    "called_ae": "",
+    "calling_ae": "SENDLOCALSCP",
+    "timeout_s": 30
+  },
+  "nifti": {
+    "_help": "modality: null/auto 면 파일별 자동 판정 (사이드카 JSON > 경로 단어 > CT HU 값, 근거 없으면 건너뜀). CT/MR 로 고정 가능.",
+    "modality": null,
+    "patient_id_prefix": "LOCALREVIEW",
+    "group_by": "dir",
+    "layout": "auto",
+    "max_series_per_study": 16
+  },
+  "output_dir": null
+}

@@ -1,0 +1,4 @@
+-r .claude/skills/send-local-scp/requirements.txt
+pytest>=8
+# Optional independent geometry verification:
+# SimpleITK

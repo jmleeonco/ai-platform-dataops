@@ -1,0 +1,9 @@
+pydicom>=3.0
+pynetdicom>=2.1
+nibabel>=5.0
+numpy
+# optional: decompress JPEG/JPEG-LS/J2K DICOM when the local SCP accepts only uncompressed transfer syntaxes
+# pylibjpeg[all]
+# tests
+# pytest
+# SimpleITK
