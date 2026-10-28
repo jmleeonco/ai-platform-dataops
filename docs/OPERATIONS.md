@@ -51,8 +51,8 @@ python -m dataops echo                 # C-ECHO the configured target
 python -m dataops send-local RUN --dry-run
 ```
 
-OncoStudio must be running on 107 with its SCP open. As of 2026-10-28 the PC answers ping, but
-4001 refused connections, so OS_LJM was down. An Orthanc (`ORTHANC@127.0.0.1:4242`) runs on 183 as a
+OncoStudio must be running on 107 with its SCP open (C-ECHO from 183 with calling AE `DATAOPS`
+succeeded on 2026-10-28; if `echo` reports no open SCP, start OncoStudio on 107). An Orthanc (`ORTHANC@127.0.0.1:4242`) runs on 183 as a
 system service and is not a target.
 
 ## Nightly backup (CONTRACT §65)

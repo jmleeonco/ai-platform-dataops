@@ -52,3 +52,5 @@ Central publication (not implemented), MariaDB 10.5 compatibility of the exporte
   to OS_LJM@10.101.1.107:4001 (64 passed).
 - `python -m dataops echo` from 183: the guard passes; 107 answers ping but refuses TCP 4001
   (OncoStudio SCP not running). Nothing was sent; the main session was asked to start it.
+- After the owner started OS_LJM on 107: `python -m dataops echo` → `C-ECHO 성공`
+  (calling AE DATAOPS from 183). No C-STORE yet (no dataset chosen).
