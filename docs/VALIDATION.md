@@ -98,3 +98,12 @@ Central publication (not implemented), MariaDB 10.5 compatibility of the exporte
   960 sources were unreadable when the header cache was written (table 4 shows it as 오류). They were
   readable on 2026-10-28 (analysis and pilot). A full freeze will fail until the storage is back;
   nothing was changed on /mnt2.
+
+## 2026-10-29 — read-only DB browser
+
+- Tests: 87 passed (`pytest -q`). `tests/test_web.py`: on a disposable schema with a registered run, the
+  overview, row view (children with filtered links, XSS escaped), FK links from a filtered/sorted table, CSV
+  export and refusals (unknown table 404 before any DB access, unknown row 404, injection text in a filter
+  value and in `sort` finds nothing and changes nothing); without a DB the pages say so.
+- Rendered on a temporary populated schema (dropped afterwards) and checked visually; the real management
+  DB is empty until the first Central publication registers a run.

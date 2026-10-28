@@ -1,14 +1,27 @@
 {% extends "base.html" %}
-{% block title %}{{ table }}{% endblock %}
+{% from "_report.html" import cell %}
+{% block title %}{{ table }} · DB{% endblock %}
 {% block body %}
-<p><a href="/db">← DB 테이블</a></p>
-<h1>{{ table }} <span class="muted">{{ total }}행</span></h1>
+<p class="small"><a href="/db">← DB</a></p>
+<h1>{{ table }} <span class="muted small">{{ '{:,}'.format(total) }}행{% if filters or q %} (필터 적용){% endif %}</span></h1>
+<p class="muted small">{{ desc }}</p>
 <section>
-<div class="table-wrap"><table>
-{% if cols %}<tr>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr>{% endif %}
-{% for r in rows %}<tr>{% for c in cols %}<td class="mono">{{ r[c]|jsonfmt(200) if r[c] is not none else 'NULL' }}</td>{% endfor %}</tr>
-{% else %}<tr><td class="muted">행 없음</td></tr>{% endfor %}
+<form method="get" class="inline">
+  <input type="search" name="q" value="{{ q }}" placeholder="텍스트 컬럼 검색">
+  {% for c, v in filters.items() %}<input type="hidden" name="{{ c }}" value="{{ v }}">{% endfor %}
+  <input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="dir" value="{{ dir }}">
+  <select name="n">{% for s in page_sizes %}<option {{ 'selected' if s == n }}>{{ s }}</option>{% endfor %}</select>
+  <button>찾기</button>
+  <a class="button" href="{{ csv_link }}">CSV</a>
+</form>
+{% if filters %}<p class="small">필터: {% for c, v in filters.items() %}<span class="badge mono">{{ c }} = {{ v }}</span> {% endfor %}<a href="/db/{{ table }}">모두 해제</a></p>{% endif %}
+<div class="table-wrap"><table class="std dbt">
+<tr>{% if meta.pk %}<th></th>{% endif %}{% for c in meta.columns %}<th><a href="{{ link(sort=c, dir='desc' if sort == c and dir == 'asc' else 'asc', p=1) }}">{{ c }}{{ (' ▲' if dir == 'asc' else ' ▼') if sort == c }}</a>{% if meta.fks.get(c) %}<div class="muted small">→ {{ meta.fks[c][0] }}</div>{% endif %}</th>{% endfor %}</tr>
+{% for row in cells %}<tr>
+{% if pk_links[loop.index0] %}<td><a href="/db/{{ table }}/row?{{ pk_links[loop.index0] }}">보기</a></td>{% endif %}
+{% for c in row %}<td class="mono small" title="{{ c.raw or '' }}">{% if c.href %}<a href="{{ c.href }}">{{ c.text }}</a>{% elif c.text is none %}<span class="muted">NULL</span>{% else %}{{ c.text }}{% endif %}</td>{% endfor %}
+</tr>{% else %}<tr><td colspan="{{ meta.columns|length + 1 }}" class="muted">행 없음</td></tr>{% endfor %}
 </table></div>
-{% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs < 3 %}<a href="?p={{ i }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
+{% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs < 3 %}<a href="{{ link(p=i) }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
 </section>
 {% endblock %}

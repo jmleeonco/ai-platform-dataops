@@ -37,6 +37,7 @@ from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
 from ..util import RUN_ID_RE, valid_uid
 from .actions import CSRF_COOKIE, SPLIT_NAMES, register_actions
+from .dbview import register_db_views
 
 HERE = Path(__file__).resolve().parent
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -352,37 +353,6 @@ def create_app(settings: Settings) -> FastAPI:
         return page(request, "dataset.html", ds=ds[0], rows=rows, total=total, p=p, pages=max(1, -(-total // PAGE)),
                     modality=modality or "", q=q or "", modalities=modalities, delivery=delivery)
 
-    @app.get("/db", response_class=HTMLResponse)
-    def db_overview(request: Request):
-        conn, err = db_conn()
-        info = None
-        if conn:
-            try:
-                info = {"migrations": dbmod.migration_status(conn), "counts": dbmod.table_counts(conn),
-                        "columns": {t: dbmod.query(conn, "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY "
-                                                         "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()"
-                                                         " AND TABLE_NAME=%s ORDER BY ORDINAL_POSITION", (t,))
-                                    for t in dbmod.BROWSABLE}}
-            finally:
-                conn.close()
-        return page(request, "db.html", info=info, db_error=err)
-
-    @app.get("/db/{table}", response_class=HTMLResponse)
-    def db_table(request: Request, table: str, p: int = Query(1, ge=1)):
-        if table not in dbmod.BROWSABLE:
-            raise HTTPException(404)
-        conn, err = db_conn()
-        if conn is None:
-            return page(request, "db.html", info=None, db_error=err)
-        try:
-            total = dbmod.query(conn, f"SELECT COUNT(*) AS n FROM `{table}`")[0]["n"]
-            rows = dbmod.query(conn, f"SELECT * FROM `{table}` LIMIT {PAGE} OFFSET %s", ((p - 1) * PAGE,))
-        finally:
-            conn.close()
-        cols = list(rows[0].keys()) if rows else []
-        return page(request, "table.html", table=table, rows=rows, cols=cols, total=total, p=p,
-                    pages=max(1, -(-total // PAGE)))
-
     # ------------------------------------------------------------------ backups
     @app.get("/backups", response_class=HTMLResponse)
     def backups(request: Request):
@@ -390,6 +360,7 @@ def create_app(settings: Settings) -> FastAPI:
                     log_tail=_log_tail(settings.backup_root / settings.backup_system / "backup.log"))
 
     register_actions(app, settings, page, get_run)
+    register_db_views(app, settings, page, db_conn, _csv)
 
     @app.get("/healthz")
     def healthz():

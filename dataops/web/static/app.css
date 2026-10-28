@@ -86,3 +86,11 @@ nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; font-s
 #mt-table th.sortable { cursor: pointer; }
 #mt-table td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 table.std td { overflow-wrap: break-word; }
+.chain { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-bottom: 10px; }
+.chain .tbl { display: flex; flex-direction: column; gap: 2px; min-width: 150px; max-width: 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; color: var(--ink); background: var(--panel); }
+.chain .tbl:hover { border-color: var(--accent); }
+.chain .tbl .n { font-size: 18px; font-weight: 700; color: var(--accent); }
+.chain .arrow { align-self: center; color: var(--muted); font-size: 18px; }
+table.dbt td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+table.dbt th a { color: var(--ink); text-decoration: none; }
+details.cols { margin: 6px 0; }

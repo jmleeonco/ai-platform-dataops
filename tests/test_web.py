@@ -98,3 +98,37 @@ def test_registered_run_compares_equal(settings, prepared, test_db):
     r = client.get(f"/datasets/{DATASET['dataset_uuid']}?modality=CT")
     assert r.status_code == 200 and "NIfTI→DICOM" in r.text
     assert client.get("/db/instances").status_code == 200
+
+
+def test_db_browser_follows_links_and_stays_read_only(settings, prepared, test_db):
+    settings.db = test_db
+    with dbmod.connection(test_db) as conn:
+        dbmod.migrate(conn)
+        dbmod.register_run(conn, prepared)
+        n_series = dbmod.query(conn, "SELECT COUNT(*) n FROM series")[0]["n"]
+        sop = dbmod.query(conn, "SELECT sop_uid, series_uid FROM instances LIMIT 1")[0]
+    client = TestClient(create_app(settings))
+    r = client.get("/db")
+    assert r.status_code == 200 and "데이터 흐름" in r.text and "subjects" in r.text
+    duuid = DATASET["dataset_uuid"]
+    r = client.get(f"/db/datasets/row?dataset_uuid={duuid}")          # row view: children with counts
+    assert r.status_code == 200 and f"/db/subjects?dataset_uuid={duuid}" in r.text
+    assert XSS not in r.text and "&lt;script&gt;" in r.text
+    r = client.get(f"/db/instances?series_uid={sop['series_uid']}&sort=sop_uid&dir=desc&n=25")
+    assert r.status_code == 200 and sop["sop_uid"] in r.text
+    assert f"/db/series/row?series_uid={sop['series_uid']}" in r.text      # FK cell links to the parent row
+    r = client.get(f"/db/series.csv?q=CT")
+    assert r.status_code == 200 and r.text.lstrip("﻿").startswith("series_uid,")
+    assert len(client.get("/db/series.csv").text.strip().splitlines()) == n_series + 1
+    # names are whitelisted, values bound: injection attempts change nothing and find nothing
+    r = client.get("/db/series?modality=CT' OR '1'='1&sort=modality`; DROP TABLE series; --")
+    assert r.status_code == 200 and "행 없음" in r.text
+    assert client.get("/db/nope").status_code == 404
+    assert client.get("/db/series/row?series_uid=1.2.3").status_code == 404
+    with dbmod.connection(test_db) as conn:
+        assert dbmod.query(conn, "SELECT COUNT(*) n FROM series")[0]["n"] == n_series
+
+
+def test_db_browser_without_db(settings):
+    r = TestClient(create_app(settings)).get("/db/series")
+    assert r.status_code == 200 and "DB 설정 없음" in r.text

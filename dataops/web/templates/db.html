@@ -1,22 +1,43 @@
 {% extends "base.html" %}
-{% block title %}DB 테이블{% endblock %}
+{% block title %}DB{% endblock %}
 {% block body %}
-<h1>관리 DB 테이블</h1>
+<h1>관리 DB</h1>
 {% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
-{% if info %}
+{% if info %}{% set sch = info.schema %}
+<p class="muted small">schema <b class="mono">{{ settings.db.name }}</b> @ {{ settings.db.host }}:{{ settings.db.port }} ·
+migration {{ info.migrations.applied|join(', ') }}{% if info.migrations.pending %} <span class="badge b-warn">pending {{ info.migrations.pending|join(', ') }}</span>{% endif %} ·
+읽기 전용 화면입니다. 이 DB는 운영 scpdb/oncolabdb와 별개입니다.</p>
+
 <section>
-<p>schema <b>{{ settings.db.name }}</b> @ {{ settings.db.host }}:{{ settings.db.port }} · 적용된 migration {{ info.migrations.applied|join(', ') }}
-{% if info.migrations.pending %}<span class="badge b-warn">pending {{ info.migrations.pending|join(', ') }}</span>{% endif %}</p>
-<p class="muted">새 독립 관리 DB입니다. 운영 scpdb/oncolabdb와 연결되어 있지 않습니다.</p>
+<h2>데이터 흐름</h2>
+<div class="chain">
+{% for t in chain %}<a class="tbl" href="/db/{{ t }}"><b>{{ t }}</b><span class="n">{{ '{:,}'.format(info.counts.get(t, 0)) }}행</span><span class="small muted">{{ desc.get(t, '') }}</span></a>{% if not loop.last %}<span class="arrow">→</span>{% endif %}{% endfor %}
+</div>
+<div class="chain">
+{% for t in others %}<a class="tbl" href="/db/{{ t }}"><b>{{ t }}</b><span class="n">{{ '{:,}'.format(info.counts.get(t, 0)) }}행</span><span class="small muted">{{ desc.get(t, '') }}</span></a>{% endfor %}
+</div>
+<p class="muted small">상자를 누르면 테이블, 테이블의 행을 누르면 그 행과 연결된 상위·하위 행으로 이동합니다.</p>
 </section>
-{% for t, cols in info.columns.items() %}
+
 <section>
-<h2><a href="/db/{{ t }}">{{ t }}</a> <span class="muted">{{ info.counts[t] }}행</span></h2>
-<details><summary>컬럼 {{ cols|length }}개</summary>
-<table><tr><th>컬럼</th><th>타입</th><th>NULL</th><th>키</th></tr>
-{% for c in cols %}<tr><td class="mono">{{ c.COLUMN_NAME }}</td><td class="mono">{{ c.COLUMN_TYPE }}</td><td>{{ c.IS_NULLABLE }}</td><td>{{ c.COLUMN_KEY }}</td></tr>{% endfor %}
-</table></details>
+<h2>테이블</h2>
+<div class="table-wrap"><table class="std">
+<tr><th>테이블</th><th>설명</th><th>행 수</th><th>기본 키</th><th>참조 (→ 상위)</th><th>참조됨 (← 하위)</th></tr>
+{% for t, m in sch.items() %}
+<tr><td><a href="/db/{{ t }}">{{ t }}</a></td><td>{{ desc.get(t, '') }}</td><td class="num">{{ '{:,}'.format(info.counts.get(t, 0)) }}</td>
+<td class="mono small">{{ m.pk|join(', ') }}</td>
+<td class="mono small">{% for c, fk in m.fks.items() %}<div>{{ c }} → <a href="/db/{{ fk[0] }}">{{ fk[0] }}</a></div>{% endfor %}</td>
+<td class="mono small">{% for ct, cc, pc in m.children %}<div><a href="/db/{{ ct }}">{{ ct }}</a>.{{ cc }}</div>{% endfor %}</td></tr>
+{% endfor %}
+</table></div>
 </section>
+
+{% for t, m in sch.items() %}
+<details class="cols"><summary>{{ t }} 컬럼 {{ m.columns|length }}개</summary>
+<div class="table-wrap"><table class="std"><tr><th>컬럼</th><th>타입</th><th>NULL</th><th>키</th><th>참조</th></tr>
+{% for c in m.column_info %}<tr><td class="mono">{{ c.c }}</td><td class="mono small">{{ c.ct }}</td><td>{{ c.n }}</td><td>{{ c.k }}</td>
+<td class="mono small">{% if m.fks.get(c.c) %}{{ m.fks[c.c][0] }}.{{ m.fks[c.c][1] }}{% endif %}</td></tr>{% endfor %}
+</table></div></details>
 {% endfor %}
 {% endif %}
 {% endblock %}

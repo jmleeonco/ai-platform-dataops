@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ table }} 행 · DB{% endblock %}
+{% block body %}
+<p class="small"><a href="/db">← DB</a> · <a href="/db/{{ table }}">{{ table }}</a></p>
+<h1>{{ table }} <span class="mono small muted">{% for k, v in key.items() %}{{ k }}={{ v }} {% endfor %}</span></h1>
+<p class="muted small">{{ desc }}</p>
+<section>
+<div class="table-wrap"><table class="std std-kv">
+{% for f in fields %}<tr><th>{{ f.col }}<div class="muted small mono">{{ f.type }}{% if f.fk %} → {{ f.fk[0] }}{% endif %}</div></th>
+<td class="mono small">{% if f.value is none %}<span class="muted">NULL</span>{% elif f.href %}<a href="{{ f.href }}">{{ f.value }}</a>{% elif '\n' in f.value %}<pre>{{ f.value }}</pre>{% else %}{{ f.value }}{% endif %}</td></tr>{% endfor %}
+</table></div>
+</section>
+{% if children %}
+<section>
+<h2>이 행을 참조하는 행</h2>
+<div class="table-wrap"><table class="std"><tr><th>테이블</th><th>컬럼</th><th>행 수</th></tr>
+{% for c in children %}<tr><td><a href="{{ c.href }}">{{ c.table }}</a></td><td class="mono small">{{ c.col }}</td><td class="num">{% if c.n %}<a href="{{ c.href }}">{{ '{:,}'.format(c.n) }}</a>{% else %}0{% endif %}</td></tr>{% endfor %}
+</table></div>
+</section>
+{% endif %}
+{% endblock %}

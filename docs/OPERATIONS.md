@@ -36,6 +36,17 @@ http://127.0.0.1:8096/. Since 2026-10-29 the owner has it bound to the LAN addre
 (`DATAOPS_BIND_HOST=10.101.1.183` in the env file): http://10.101.1.183:8096/ — no authentication, so
 anyone on the LAN can use the pilot and approval forms.
 
+## DB browser (read-only)
+
+`/db`: every table of the management DB with a Korean description, row count, primary key and links
+(the chain datasets → subjects → studies → series → instances → transfer_results, plus dataset_series,
+ingest_runs, external_mappings, schema_migrations). `/db/<table>`: search over text columns, exact filters
+as `?column=value` (`NULL` for IS NULL), sorting, 25–200 rows per page, CSV of the current filter
+(`/db/<table>.csv`, up to 100,000 rows); foreign-key values link to the referenced row.
+`/db/<table>/row?<pk>=…`: one row with JSON pretty-printed, links to its parents and the number of child
+rows in each referencing table. SELECT only; table/column names are whitelisted from information_schema
+and values are bound parameters (`dataops/web/dbview.py`).
+
 ## Browser flow (owner decision 2026-10-28)
 
 `deploy/web.sh start` runs the web app and one **worker** (jobs run one at a time; logs in
