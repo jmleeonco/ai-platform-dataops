@@ -75,3 +75,20 @@ section.job-active { border-color: var(--warn); }
 .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 a.button { display: inline-block; padding: 6px 14px; border-radius: 6px; text-decoration: none; border: 1px solid var(--line); }
 a.button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.c-dicom { background: #ddeafe; color: #1849a9; } .c-db { background: #dcf3e3; color: #13652f; } .c-none { background: var(--chip); color: var(--muted); }
+@media (prefers-color-scheme: dark) { .c-dicom { background: #1b2f4d; color: #8ab8ff; } .c-db { background: #173a25; color: #6fd18f; } }
+.src-빈\ 값 { opacity: .7; } .src-고정 { color: var(--muted); } .src-분석, .src-데이터셋 { color: var(--accent); } .src-UID { color: var(--warn); } .src-\? { color: var(--bad); }
+tr.row-none td { color: var(--muted); }
+table.flow td { vertical-align: middle; }
+.cell-wrap { word-break: break-all; max-width: 520px; }
+.dest .stat { border-top: 3px solid var(--line); }
+.dest .s-local { border-top-color: var(--accent); } .dest .s-central { border-top-color: var(--warn); } .dest .s-db { border-top-color: var(--ok); }
+.mt-wrap { max-height: 70vh; overflow: auto; }
+#mt-table th { position: sticky; background: var(--panel); z-index: 1; }
+#mt-table tr:first-child th { top: 0; } #mt-table tr:nth-child(2) th { top: 26px; }
+#mt-table th.grp { border-left: 2px solid var(--line); text-align: left; color: var(--ink); }
+#mt-table th.sortable { cursor: pointer; }
+#mt-table td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.dests { margin-top: 2px; display: flex; gap: 3px; }
+#mt-groups label { margin-right: 10px; }

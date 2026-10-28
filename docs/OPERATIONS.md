@@ -53,6 +53,14 @@ metadata to the LAN without authentication; decide that explicitly.)
    and what was left out (with reasons), rules, label names. Editable until approval: dataset fields
    (name, licence, commercial use, URL, PatientID prefix), included splits, labels on/off, modality of
    unresolved images, the two pilot subjects. Every edit is re-validated and bumps the plan revision.
+   **Metadata** (`/runs/<run>/metadata`, also `.json` / `.csv`): every series with its extracted values
+   (analysis decisions, source file, the full NIfTI header, normalised geometry, DICOM identifiers) and,
+   per value, where it goes: DICOM header (local SCP pilot, Central after approval), management DB
+   (`table.column`), or nowhere. Each DB claim is checked against the rows registration would write
+   (`records.build_records(preview=True)`), each DICOM claim against the real pilot headers once frozen;
+   the page also lists every tag of the pilot DICOM files with its origin. NIfTI headers are read once
+   after the analysis into `runs/<run>/nifti_headers.json`; "원본 헤더 다시 읽기" re-reads changed or
+   missing files (prepare never uses this cache).
 4. **Pilot**: freezes only the pilot subjects (`manifest-pilot.json`: CT/MR DICOM + label RTSTRUCT) and
    sends them to the local SCP. Check them in OncoStudio on 107. Viewer: `/runs/<run>/series/<uid>`
    with the RTSTRUCT contours.

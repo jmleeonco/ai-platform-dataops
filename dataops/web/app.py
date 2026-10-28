@@ -4,6 +4,7 @@ prepared slices (with RTSTRUCT contours), DB tables and nightly backups. Mutatio
 run as worker jobs."""
 from __future__ import annotations
 
+import csv
 import functools
 import io
 import json
@@ -15,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pydicom
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,6 +26,8 @@ from .. import db as dbmod
 from ..config import Settings
 from ..jobs import active_job, job_log, list_jobs
 from ..local_send import journals
+from ..metadata import GROUPS
+from ..metadata import build as build_metadata
 from ..prepare import MANIFESTS, pilot_series
 from ..publish import central_ready
 from ..records import TABLES, build_records, to_db_value
@@ -58,6 +62,7 @@ def _jsonfmt(v, limit=400):
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="AI Platform DataOps", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    app.add_middleware(GZipMiddleware, minimum_size=50_000)
     tpl = Jinja2Templates(directory=HERE / "templates")
     tpl.env.filters.update(short=_short, jsonfmt=_jsonfmt)
     tpl.env.globals.update(version=__version__)
@@ -159,6 +164,37 @@ def create_app(settings: Settings) -> FastAPI:
                     active=active_job(settings, run.id), editable=editable, central=central_ready(settings.central),
                     agent=run.load("agent_proposal.json"), split_names=SPLIT_NAMES,
                     pilot_series_rows=_pilot_rows(plan, pilot, per_series), stage=_stage(meta))
+
+    @app.get("/runs/{run_id}/metadata", response_class=HTMLResponse)
+    def metadata_page(request: Request, run_id: str, refresh: bool = False):
+        run = get_run(run_id)
+        md = build_metadata(run, refresh)
+        return page(request, "metadata.html", run=run, meta=run.meta, md=md, groups=GROUPS,
+                    central=central_ready(settings.central), split_names=SPLIT_NAMES)
+
+    @app.get("/runs/{run_id}/metadata.json")
+    def metadata_json(run_id: str):
+        md = build_metadata(get_run(run_id))
+        if not md["ready"]:
+            raise HTTPException(404)
+        return {"columns": md["columns"], "groups": GROUPS, "rows": md["rows"]}
+
+    @app.get("/runs/{run_id}/metadata.csv")
+    def metadata_csv(run_id: str):
+        run = get_run(run_id)
+        md = build_metadata(run)
+        if not md["ready"]:
+            raise HTTPException(404)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        cols = md["columns"]
+        w.writerow([c["label"] for c in cols])
+        w.writerow(["DICOM: " + c["dicom"] if c["dicom"] else "" for c in cols])
+        w.writerow(["DB: " + c["db"] if c["db"] else "" for c in cols])
+        for r in md["rows"]:
+            w.writerow([_cell(r.get(c["key"])) for c in cols])
+        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="metadata-{run.id}.csv"'})
 
     @app.get("/runs/{run_id}/state.json")
     def run_state(run_id: str):
@@ -356,6 +392,18 @@ def create_app(settings: Settings) -> FastAPI:
 
 
 # ---------------------------------------------------------------------- helpers
+def _cell(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "Y" if v else "N"
+    if isinstance(v, (list, tuple)):
+        return " ".join(_cell(x) for x in v)
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v                      # dataset text must not become a spreadsheet formula
+    return str(v)
+
+
 def _counts(journal: dict) -> dict:
     out = {}
     for rec in journal["instances"].values():

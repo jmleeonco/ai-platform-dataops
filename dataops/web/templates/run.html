@@ -11,6 +11,7 @@
   {% endfor %}
 </ol>
 
+{% if plan and plan.series %}<p><a class="button primary" href="/runs/{{ run.id }}/metadata">메타데이터 표 · 어디로 가는지 (DICOM / Local SCP / DB)</a></p>{% endif %}
 <div id="live" data-run="{{ run.id }}" data-status="{{ meta.status }}" data-active="{{ '1' if active else '' }}"></div>
 {% if job %}
 <section class="{{ 'job-active' if active else '' }}">

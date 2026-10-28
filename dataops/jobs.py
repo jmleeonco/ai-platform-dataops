@@ -184,6 +184,8 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     plan, errors = validate_plan(plan, inv)
     meta = run.store_plan(plan, errors, f"분석 완료 (에이전트 {out['meta'].get('model')}, ${out['meta'].get('cost_usd')})")
     log(f"plan: {len(plan['series'])} series, {len(errors)} errors, status {meta['status']}")
+    from .metadata import nifti_headers
+    log(f"metadata: {len(nifti_headers(run, plan, refresh=True))} NIfTI headers extracted")
     return {"series": len(plan["series"]), "errors": len(errors), "status": meta["status"]}
 
 

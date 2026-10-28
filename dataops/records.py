@@ -25,10 +25,14 @@ def _plan_summary(plan: dict) -> dict:
             "skipped": len(plan.get("skipped", [])), "unresolved": plan.get("unresolved", [])}
 
 
-def build_records(run: Run) -> dict:
+def build_records(run: Run, preview: bool = False) -> dict:
+    """preview=True works before the full freeze: instance counts come from the plan, and the per-file rows
+    (instances, transfer_results) stay empty because they only exist once artifacts are frozen and sent."""
     meta, plan, manifest = run.meta, run.load("plan.json"), run.load("manifest.json")
-    if plan is None or manifest is None:
+    if plan is None or (manifest is None and not preview):
         raise ValueError("prepare 이후에만 DB 레코드를 만들 수 있습니다")
+    if manifest is None:
+        manifest = {"manifest_sha256": None, "instances": []}
     from .local_send import journals  # local import: avoids a cycle at module load
     ds = plan["dataset"]
     duuid = ds["dataset_uuid"]
@@ -36,6 +40,8 @@ def build_records(run: Run) -> dict:
     counts = {}
     for inst in manifest["instances"]:
         counts[inst["series_uid"]] = counts.get(inst["series_uid"], 0) + 1
+    if manifest["manifest_sha256"] is None:
+        counts = {s["series_uid"]: s.get("instance_count") or 0 for s in active}
     studies_meta = {st["study_uid"]: st.get("metadata") or {} for st in plan["studies"]}
     subj = {s["subject_key"]: s["patient_id"] for s in active}
     rows = {t: [] for t in TABLES}
@@ -74,7 +80,7 @@ def build_records(run: Run) -> dict:
                                   "source_relative_path": inst["source"]["rel"],
                                   "source_sha256": inst["source"]["sha256"]})
     frozen = {i["sop_uid"] for i in manifest["instances"]}
-    for j in journals(run):
+    for j in journals(run) if frozen else []:
         for sop, rec in sorted(j["instances"].items()):
             if sop not in frozen:            # e.g. a pilot frozen from an earlier plan revision
                 continue

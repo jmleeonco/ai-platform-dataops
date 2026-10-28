@@ -81,3 +81,18 @@ Central publication (not implemented), MariaDB 10.5 compatibility of the exporte
   anatomy (patient left/right correct).
 - Not done: approval (owner's decision), full freeze of AMOS (~40–60 GB), Central publication (no
   target), verification of the pilot in OncoStudio by the owner.
+
+## 2026-10-29 — metadata page (what goes to DICOM / local SCP / DB)
+
+- Tests: 85 passed (`pytest -q`), new `tests/test_metadata.py` (4): NIfTI `descrip`/`aux_file` extracted
+  and shown as source-only; every DB destination matches the registration projection before the pilot;
+  after the pilot every DICOM destination matches the real CT/MR/RTSTRUCT headers and every written tag
+  has a stated origin; a removed source is reported only on re-read; CSV cells cannot become formulas.
+  Legacy (DICOM pass-through + NIfTI) runs render too (`tests/test_web.py`).
+- AMOS run `20261028T191410-e4d4c39c`: 960 series, DB checks 960/960 (600 for image-only columns,
+  360 for label columns), DICOM checks on the 4 pilot series all equal. The NIfTI headers carry values
+  that go nowhere today, e.g. `descrip` "Time=144225.000" and `aux_file` "Venous_Phase" (contrast phase).
+- Found on 2026-10-29: on the NFS mount `/mnt2` (10.101.1.254) `amos22/imagesTs`, `amos22/labelsTr`,
+  `amos22_2` and `data_info` are listed but cannot be opened ("No such file or directory"); 480 of the
+  960 sources were unreadable when the header cache was written. They were readable on 2026-10-28
+  (analysis and pilot). A full freeze will fail until the storage is back; nothing was changed on /mnt2.
