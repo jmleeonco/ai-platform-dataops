@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,6 +44,24 @@ class LocalScp:
 
 
 @dataclass
+class CentralScp:
+    """Central SCP for approved publication. Unset (or enabled=False) means publication is refused."""
+    host: str | None = None
+    port: int | None = None
+    called_ae: str | None = None
+    calling_ae: str = "DATAOPS"
+    enabled: bool = False
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.host and self.port and self.called_ae)
+
+    @property
+    def key(self) -> str:
+        return f"central:{self.called_ae}@{self.host}:{self.port}"
+
+
+@dataclass
 class Settings:
     runtime_dir: Path
     db: dict = field(default_factory=dict)
@@ -51,6 +70,17 @@ class Settings:
     port: int = 8096
     backup_root: Path = Path("/mnt/ai-pipeline/backups")
     backup_system: str = "ai-platform-dataops"
+    central: CentralScp = field(default_factory=CentralScp)
+    input_roots: tuple = ("/mnt2/data/Public_dataset",)
+    agent_cmd: str = "claude"
+    agent_model: str = "claude-opus-5-5"
+    agent_budget_usd: float = 5.0
+    agent_timeout_s: int = 1800
+    agent_workdir: Path = Path.home() / ".cache" / "ai-platform-dataops" / "agent"
+
+    @property
+    def jobs_dir(self) -> Path:
+        return self.runtime_dir / "jobs"
 
     @property
     def runs_dir(self) -> Path:
@@ -85,4 +115,15 @@ def load_settings(env: dict | None = None) -> Settings:
         port=int(get("DATAOPS_PORT") or 8096),
         backup_root=Path(get("DATAOPS_BACKUP_ROOT") or "/mnt/ai-pipeline/backups"),
         backup_system=get("DATAOPS_BACKUP_SYSTEM") or "ai-platform-dataops",
+        central=CentralScp(host=get("DATAOPS_CENTRAL_HOST") or None,
+                           port=int(get("DATAOPS_CENTRAL_PORT")) if get("DATAOPS_CENTRAL_PORT") else None,
+                           called_ae=get("DATAOPS_CENTRAL_CALLED_AE") or None,
+                           calling_ae=get("DATAOPS_CENTRAL_CALLING_AE") or "DATAOPS",
+                           enabled=(get("DATAOPS_CENTRAL_ENABLED") or "").lower() in ("1", "true", "yes")),
+        input_roots=tuple(r for r in (get("DATAOPS_INPUT_ROOTS") or "/mnt2/data/Public_dataset").split(":") if r),
+        agent_cmd=get("DATAOPS_AGENT_CMD") or shutil.which("claude") or str(Path.home() / ".local/bin/claude"),
+        agent_model=get("DATAOPS_AGENT_MODEL") or "claude-opus-5-5",
+        agent_budget_usd=float(get("DATAOPS_AGENT_BUDGET_USD") or 5),
+        agent_timeout_s=int(get("DATAOPS_AGENT_TIMEOUT_S") or 1800),
+        agent_workdir=Path(get("DATAOPS_AGENT_WORKDIR") or Path.home() / ".cache" / "ai-platform-dataops" / "agent"),
     )

@@ -9,16 +9,29 @@ from pathlib import Path
 
 from .util import RUN_ID_RE, now_iso, read_json, sha256_json, write_json
 
-# PLANNED/NEEDS_INPUT -> PREPARED -> LOCAL_SENT | LOCAL_PARTIAL | LOCAL_FAILED (send may be retried).
-# A prepared run is immutable; a changed plan after preparation needs a new run.
+# Browser flow:  ANALYZING -> PLANNED/NEEDS_INPUT -> PILOT_READY -> PILOT_SENT -> APPROVED -> PREPARED
+#                -> CENTRAL_SENT | CENTRAL_PARTIAL | CENTRAL_FAILED (publication may be retried).
+# CLI flow:      PLANNED -> PREPARED -> LOCAL_SENT | LOCAL_PARTIAL | LOCAL_FAILED (local only, no approval).
+# The plan may change until approval (a change makes the pilot stale); a prepared run is immutable.
+EDITABLE = {None, "ANALYZING", "ANALYSIS_FAILED", "PLANNED", "NEEDS_INPUT", "PILOT_READY", "PILOT_SENT",
+            "PILOT_PARTIAL", "PILOT_FAILED"}
+_PLAN = {"PLANNED", "NEEDS_INPUT"}
+_PILOT = {"PILOT_SENT", "PILOT_PARTIAL", "PILOT_FAILED"}
+_LOCAL = {"LOCAL_SENT", "LOCAL_PARTIAL", "LOCAL_FAILED"}
+_CENTRAL = {"CENTRAL_SENT", "CENTRAL_PARTIAL", "CENTRAL_FAILED"}
 TRANSITIONS = {
-    None: {"PLANNED", "NEEDS_INPUT"},
-    "PLANNED": {"PLANNED", "NEEDS_INPUT", "PREPARED"},
-    "NEEDS_INPUT": {"PLANNED", "NEEDS_INPUT"},
-    "PREPARED": {"LOCAL_SENT", "LOCAL_PARTIAL", "LOCAL_FAILED"},
-    "LOCAL_SENT": {"LOCAL_SENT", "LOCAL_PARTIAL", "LOCAL_FAILED"},
-    "LOCAL_PARTIAL": {"LOCAL_SENT", "LOCAL_PARTIAL", "LOCAL_FAILED"},
-    "LOCAL_FAILED": {"LOCAL_SENT", "LOCAL_PARTIAL", "LOCAL_FAILED"},
+    None: _PLAN | {"ANALYZING"},
+    "ANALYZING": _PLAN | {"ANALYZING", "ANALYSIS_FAILED"},
+    "ANALYSIS_FAILED": {"ANALYZING", "ANALYSIS_FAILED"},
+    "PLANNED": _PLAN | {"PREPARED", "PILOT_READY", "ANALYZING"},
+    "NEEDS_INPUT": _PLAN | {"ANALYZING"},
+    "PILOT_READY": _PLAN | _PILOT | {"PILOT_READY"},
+    "PILOT_SENT": _PLAN | _PILOT | {"PILOT_READY", "APPROVED"},
+    "PILOT_PARTIAL": _PLAN | _PILOT | {"PILOT_READY"},
+    "PILOT_FAILED": _PLAN | _PILOT | {"PILOT_READY"},
+    "APPROVED": {"PREPARED", "APPROVED"},
+    "PREPARED": _LOCAL | _CENTRAL,
+    **{s: _LOCAL | _CENTRAL for s in _LOCAL | _CENTRAL},
 }
 
 
@@ -82,8 +95,8 @@ class Run:
     def store_plan(self, plan: dict, errors: list[str], event: str) -> dict:
         """Persist a (re)validated plan; a changed plan bumps the revision."""
         meta = self.meta
-        if meta["status"] not in (None, "PLANNED", "NEEDS_INPUT"):
-            raise RunError(f"{meta['status']} 상태의 run은 plan을 바꿀 수 없습니다 (새 run을 만드세요)")
+        if meta["status"] not in EDITABLE:
+            raise RunError(f"{meta['status']} 상태의 run은 plan을 바꿀 수 없습니다 (승인/준비 이후에는 새 run을 만드세요)")
         digest = sha256_json(plan)
         self.save("plan.json", plan)
         self.save("plan_errors.json", errors)

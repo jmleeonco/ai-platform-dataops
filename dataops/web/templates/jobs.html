@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status %}
+{% block title %}작업{% endblock %}
+{% block body %}
+<h1>작업</h1>
+<section>
+<p class="muted">브라우저에서 시작한 분석·파일럿·Central 전송 작업입니다. worker 하나가 순서대로 실행합니다 (<code>deploy/web.sh status</code>).</p>
+<div class="table-wrap"><table>
+<tr><th>작업</th><th>종류</th><th>run</th><th>상태</th><th>요청</th><th>시작</th><th>종료</th><th>오류</th></tr>
+{% for j in jobs %}<tr><td><a class="mono" href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td>{{ j.kind }}</td>
+<td><a class="mono" href="/runs/{{ j.run_id }}">{{ j.run_id }}</a></td><td>{{ status(j.status) }}</td><td>{{ j.requested_by }}</td>
+<td>{{ j.started_at or '' }}</td><td>{{ j.finished_at or '' }}</td><td>{{ (j.error or '')[:200] }}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">없음</td></tr>{% endfor %}
+</table></div>
+</section>
+{% endblock %}

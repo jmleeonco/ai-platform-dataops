@@ -63,8 +63,8 @@ def build_records(run: Run) -> dict:
         rows["dataset_series"].append({"dataset_uuid": duuid, "series_uid": s["series_uid"]})
     rows["ingest_runs"].append({"run_uuid": meta["run_uuid"], "run_label": run.id, "dataset_uuid": duuid,
                                 "revision": meta["revision"], "manifest_sha256": manifest["manifest_sha256"],
-                                "status": meta["status"], "plan_json": _plan_summary(plan), "approval_json": None,
-                                "input_root": plan["input_root"]})
+                                "status": meta["status"], "plan_json": _plan_summary(plan),
+                                "approval_json": meta.get("approval"), "input_root": plan["input_root"]})
     for inst in manifest["instances"]:
         rows["instances"].append({"sop_uid": inst["sop_uid"], "series_uid": inst["series_uid"],
                                   "sop_class_uid": inst["sop_class_uid"], "artifact_sha256": inst["sha256"],
@@ -73,8 +73,11 @@ def build_records(run: Run) -> dict:
                                   "size_bytes": inst["size"], "transfer_syntax_uid": inst["transfer_syntax"] or None,
                                   "source_relative_path": inst["source"]["rel"],
                                   "source_sha256": inst["source"]["sha256"]})
+    frozen = {i["sop_uid"] for i in manifest["instances"]}
     for j in journals(run):
         for sop, rec in sorted(j["instances"].items()):
+            if sop not in frozen:            # e.g. a pilot frozen from an earlier plan revision
+                continue
             rows["transfer_results"].append({
                 "run_uuid": meta["run_uuid"], "target_key": j["target_key"], "sop_uid": sop,
                 "target_snapshot": j["target"], "status": rec["status"], "attempts": rec.get("attempts", 0),

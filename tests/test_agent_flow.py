@@ -1,0 +1,319 @@
+"""Browser flow: folder -> agent proposal (test double) -> checked plan -> pilot (2 cases, RTSTRUCT) to a
+loopback local SCP -> approval -> Central publication (loopback) ; plus every refusal on the way."""
+import io
+import json
+import re
+
+import nibabel as nib
+import numpy as np
+import pydicom
+import pytest
+from conftest import ROOT, LoopbackSCP
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from dataops.config import CentralScp, Settings
+from dataops.jobs import check_input_root, list_jobs, run_job, start_analysis, worker
+from dataops.local_send import journals, send_local
+from dataops.plan import validate_plan
+from dataops.prepare import prepare, verify_artifacts
+from dataops.publish import approve, central_ready, publish_central
+from dataops.records import build_records
+from dataops.runs import Run, RunError
+from dataops.spec import SpecError, check_proposal
+from dataops.synthetic import CHALLENGE_PROPOSAL, make_challenge
+from dataops.web.app import create_app
+
+RS_CLASS = "1.2.840.10008.5.1.4.1.1.481.3"
+
+
+@pytest.fixture
+def challenge(tmp_path):
+    return make_challenge(tmp_path / "public" / "SynChallenge")
+
+
+def make_settings(tmp_path, monkeypatch, proposal=CHALLENGE_PROPOSAL, **kw):
+    pf = tmp_path / "proposal.json"
+    pf.write_text(json.dumps(proposal), encoding="utf-8")
+    monkeypatch.setenv("DATAOPS_FAKE_PROPOSAL", str(pf))
+    return Settings(runtime_dir=tmp_path / "runtime", backup_root=tmp_path / "b", input_roots=(str(tmp_path / "public"),),
+                    agent_cmd=str(ROOT / "tests" / "fake_agent.py"), agent_workdir=tmp_path / "agent", **kw)
+
+
+def analyzed(settings, challenge) -> Run:
+    run, job = start_analysis(settings, str(challenge), "test")
+    job = run_job(settings, job)
+    assert job["status"] == "done", job["error"]
+    return Run(settings.runs_dir, run.id)
+
+
+def piloted(settings, challenge, scp) -> Run:
+    run = analyzed(settings, challenge)
+    prepare(run, "pilot")
+    r = send_local(run, scp.target(), scope="pilot")
+    assert r["status"] == "PILOT_SENT", r
+    return run
+
+
+def test_analysis_builds_checked_plan(tmp_path, monkeypatch, challenge):
+    settings = make_settings(tmp_path, monkeypatch)
+    run = analyzed(settings, challenge)
+    meta, plan = run.meta, run.load("plan.json")
+    assert meta["status"] == "PLANNED" and run.load("plan_errors.json") == []
+    kinds = sorted((s["kind"], s["modality"], s["split"]) for s in plan["series"])
+    assert kinds == [("nifti", "CT", "test"), ("nifti", "CT", "train"), ("nifti", "CT", "train"),
+                     ("nifti", "MR", "train"), ("rtstruct", "RTSTRUCT", "train"), ("rtstruct", "RTSTRUCT", "train"),
+                     ("rtstruct", "RTSTRUCT", "train")]
+    mr = next(s for s in plan["series"] if s["subject_key"] == "case_0501" and s["kind"] == "nifti")
+    assert "id >= 500" in mr["modality_basis"] and mr["patient_id"] == "SYNCH_case_0501"
+    rt = next(s for s in plan["series"] if s["subject_key"] == "case_0501" and s["kind"] == "rtstruct")
+    assert rt["study_uid"] == mr["study_uid"] and rt["patient_id"] == mr["patient_id"]
+    left = {e["path"]: e for e in plan["analysis"]["left_out"]}
+    assert left["challenge_copy"]["reason"] == "imagesTr의 재정리 사본" and left["challenge_copy"]["files"] == 3
+    assert "archive.zip" in left and "readme.md" in left
+    assert plan["pilot"]["subjects"] == ["case_0001", "case_0501"]
+    assert run.load("scan.json")["totals"]["nifti"] == 10
+    again = analyzed(settings, challenge)          # the same folder keeps its dataset identity and UIDs
+    assert again.meta["dataset_uuid"] == meta["dataset_uuid"]
+    assert {s["series_uid"] for s in again.load("plan.json")["series"]} == {s["series_uid"] for s in plan["series"]}
+
+
+@pytest.mark.parametrize("patch, message", [
+    ({"sources": [{"path": "../outside", "role": "image", "split": "train", "note": ""}]}, "상대 경로"),
+    ({"sources": [{"path": "nope", "role": "image", "split": "train", "note": ""}]}, "없습니다"),
+    ({"sources": [{"path": "labelsTr", "role": "label", "split": "train", "note": ""}]}, "image 역할"),
+    ({"subject_pattern": {"regex": "case_\\d+", "note": ""}}, "그룹 1"),
+    ({"subject_pattern": {"regex": "(", "note": ""}}, "정규식 오류"),
+    ({"dataset": dict(CHALLENGE_PROPOSAL["dataset"], patient_id_prefix="bad prefix!")}, "patient_id_prefix"),
+])
+def test_proposal_checks_refuse(challenge, patch, message):
+    with pytest.raises(SpecError, match=message):
+        check_proposal(challenge.resolve(), {**CHALLENGE_PROPOSAL, **patch})
+
+
+def test_failed_proposal_marks_run_and_job(tmp_path, monkeypatch, challenge):
+    bad = {**CHALLENGE_PROPOSAL, "sources": [{"path": "/etc", "role": "image", "split": "train", "note": ""}]}
+    settings = make_settings(tmp_path, monkeypatch, bad)
+    run, job = start_analysis(settings, str(challenge), "test")
+    job = run_job(settings, job)
+    assert job["status"] == "failed" and "상대 경로" in job["error"]
+    assert Run(settings.runs_dir, run.id).meta["status"] == "ANALYSIS_FAILED"
+
+
+def test_input_root_must_be_allowed(tmp_path, monkeypatch, challenge):
+    settings = make_settings(tmp_path, monkeypatch)
+    with pytest.raises(RunError, match="허용된 입력 위치"):
+        check_input_root(settings, str(tmp_path))
+    (challenge / "backup").mkdir()
+    with pytest.raises(RunError, match="backup"):
+        check_input_root(settings, str(challenge / "backup"))
+    with pytest.raises(RunError, match="절대 경로"):
+        check_input_root(settings, "public/SynChallenge")
+
+
+def test_label_on_another_grid_is_not_converted(tmp_path, monkeypatch, challenge):
+    img = nib.load(str(challenge / "labelsTr" / "case_0002.nii.gz"))
+    nib.save(nib.Nifti1Image(np.asarray(img.dataobj)[:, :, :6], img.affine), str(challenge / "labelsTr" / "case_0002.nii.gz"))
+    run = analyzed(make_settings(tmp_path, monkeypatch), challenge)
+    plan = run.load("plan.json")
+    assert not any(s["kind"] == "rtstruct" and s["subject_key"] == "case_0002" for s in plan["series"])
+    assert any("격자" in s["reason"] for s in plan["skipped"] if s["rel"].endswith("labelsTr/case_0002.nii.gz"))
+
+
+def test_pilot_sends_two_cases_with_rtstruct(tmp_path, monkeypatch, challenge, scp):
+    run = piloted(make_settings(tmp_path, monkeypatch), challenge, scp)
+    m = run.load("manifest-pilot.json")
+    assert {s["subject_key"] for s in m["series"]} == {"case_0001", "case_0501"} and run.load("manifest.json") is None
+    assert set(scp.received) == {i["sop_uid"] for i in m["instances"]}
+    rts = [ds for ds in scp.received.values() if ds.SOPClassUID == RS_CLASS]
+    assert len(rts) == 2
+    for rs in rts:
+        assert {r.ROIName for r in rs.StructureSetROISequence} == {"liver", "spleen"}
+        image_sops = {uid for uid, ds in scp.received.items() if ds.SOPClassUID != RS_CLASS
+                      and ds.SeriesInstanceUID == rs.ReferencedFrameOfReferenceSequence[0].RTReferencedStudySequence[0]
+                      .RTReferencedSeriesSequence[0].SeriesInstanceUID}
+        refs = {c.ContourImageSequence[0].ReferencedSOPInstanceUID for rc in rs.ROIContourSequence
+                for c in rc.ContourSequence}
+        assert refs and refs <= image_sops
+    for s in m["series"]:
+        rep = s["conversion_report"]
+        if s["kind"] == "rtstruct":
+            assert rep["dice_ok"] and rep["min_dice_roundtrip"] >= 0.9
+        else:
+            assert rep["modality_check"] == "ok"
+    assert set(run.load("sources.json")) == {f"{d}/{c}.nii.gz" for d in ("imagesTr", "labelsTr")
+                                            for c in ("case_0001", "case_0501")}
+
+
+def test_approval_gates(tmp_path, monkeypatch, challenge):
+    settings = make_settings(tmp_path, monkeypatch)
+    run = analyzed(settings, challenge)
+    with pytest.raises(RunError, match="파일럿"):
+        approve(run, "검토자", "SynChallenge")
+    prepare(run, "pilot")
+    failing = LoopbackSCP(fail_sop_uids=[run.load("manifest-pilot.json")["instances"][0]["sop_uid"]])
+    try:
+        assert send_local(run, failing.target(), scope="pilot")["status"] == "PILOT_PARTIAL"
+        with pytest.raises(RunError, match="파일럿"):
+            approve(run, "검토자", "SynChallenge")
+        failing.fail.clear()
+        assert send_local(run, failing.target(), scope="pilot")["sent_now"] == 1   # only the missing one
+    finally:
+        failing.close()
+    with pytest.raises(RunError, match="확인 문구"):
+        approve(run, "검토자", "wrong name")
+    with pytest.raises(RunError, match="승인자"):
+        approve(run, "", "SynChallenge")
+    a = approve(run, "검토자", "SynChallenge", "OncoStudio에서 확인")
+    assert run.meta["status"] == "APPROVED" and a["plan_sha256"] == run.meta["plan_sha256"]
+    plan, inv = run.load("plan.json"), run.load("inventory.json")
+    with pytest.raises(RunError, match="plan을 바꿀 수 없습니다"):
+        run.store_plan(validate_plan(plan, inv)[0], [], "edit after approval")
+
+
+def test_plan_edit_after_pilot_makes_it_stale(tmp_path, monkeypatch, challenge, scp):
+    run = piloted(make_settings(tmp_path, monkeypatch), challenge, scp)
+    plan, inv = run.load("plan.json"), run.load("inventory.json")
+    plan["dataset"]["license"] = "CC-BY-SA 4.0 (checked)"
+    plan, errors = validate_plan(plan, inv)
+    run.store_plan(plan, errors, "edit")
+    assert run.meta["status"] == "PLANNED"
+    with pytest.raises(RunError, match="파일럿"):
+        approve(run, "검토자", "SynChallenge")
+
+
+def test_source_change_after_pilot_is_refused(tmp_path, monkeypatch, challenge, scp):
+    settings = make_settings(tmp_path, monkeypatch)
+    run = piloted(settings, challenge, scp)
+    approve(run, "검토자", "SynChallenge")
+    p = challenge / "imagesTr" / "case_0001.nii.gz"
+    img = nib.load(str(p))
+    nib.save(nib.Nifti1Image(np.asarray(img.dataobj) + np.int16(1), img.affine), str(p))
+    with pytest.raises(RunError, match="바뀌었습니다"):
+        prepare(run, "full")
+
+
+def test_central_publication_needs_config_and_approval(tmp_path, monkeypatch, challenge, scp):
+    settings = make_settings(tmp_path, monkeypatch)
+    run = piloted(settings, challenge, scp)
+    assert central_ready(settings.central) == (False, "Central SCP 미설정 (DATAOPS_CENTRAL_HOST/PORT/CALLED_AE)")
+    with pytest.raises(RunError, match="미설정"):
+        publish_central(run, settings)
+    central = LoopbackSCP()
+    try:
+        settings.central = CentralScp(host="127.0.0.1", port=central.port, called_ae="TESTSCP", enabled=False)
+        with pytest.raises(RunError, match="비활성"):
+            publish_central(run, settings)
+        settings.central.enabled = True
+        with pytest.raises(RunError, match="PREPARED"):
+            publish_central(run, settings)            # not approved / not frozen
+        pilot_sha = {i["sop_uid"]: i["sha256"] for i in run.load("manifest-pilot.json")["instances"]}
+        approve(run, "검토자", "SynChallenge")
+        m = prepare(run, "full")
+        assert all(pilot_sha[i["sop_uid"]] == i["sha256"] for i in m["instances"] if i["sop_uid"] in pilot_sha)
+        assert len(pilot_sha) < len(m["instances"])
+        r = publish_central(run, settings)
+        assert r["status"] == "CENTRAL_SENT" and set(central.received) == {i["sop_uid"] for i in m["instances"]}
+        assert publish_central(run, settings)["sent_now"] == 0
+        cj = next(j for j in journals(run) if j["target"]["kind"] == "central")
+        assert cj["target"]["approved_by"] == "검토자" and cj["scope"] == "full"
+        rec = build_records(run)
+        assert rec["ingest_runs"][0]["approval_json"]["approved_by"] == "검토자"
+        assert {r["source_kind"] for r in rec["series"]} == {"nifti", "rtstruct"}
+        sops = {i["sop_uid"] for i in m["instances"]}
+        assert all(t["sop_uid"] in sops for t in rec["transfer_results"])
+        assert verify_artifacts(run, m) == []
+    finally:
+        central.close()
+
+
+def _csrf(client, path="/new"):
+    r = client.get(path)
+    assert r.status_code == 200
+    return re.search(r'name="csrf" value="([^"]+)"', r.text).group(1)
+
+
+def test_browser_flow(tmp_path, monkeypatch, challenge, scp):
+    settings = make_settings(tmp_path, monkeypatch, local_scp=scp.target())
+    client = TestClient(create_app(settings))
+    token = _csrf(client)
+    assert client.post("/new", data={"input_root": str(challenge)}, follow_redirects=False).status_code == 403
+    r = client.post("/new", data={"input_root": str(challenge), "csrf": token}, follow_redirects=False,
+                    headers={"origin": "http://evil.example"})
+    assert r.status_code == 403
+    r = client.post("/new", data={"input_root": "/etc", "csrf": token}, follow_redirects=False)
+    assert r.status_code == 303 and "/new?err=" in r.headers["location"]
+    r = client.post("/new", data={"input_root": str(challenge), "csrf": token, "by": "tester"}, follow_redirects=False)
+    assert r.status_code == 303
+    run_id = r.headers["location"].split("/runs/")[1].split("?")[0]
+    assert client.get(f"/runs/{run_id}/state.json").json()["job"]["kind"] == "analyze"
+    worker(settings, once=True)
+    page = client.get(f"/runs/{run_id}").text
+    assert "분석 보고" in page and "imagesTr의 재정리 사본" in page and "SYNCH_case_0001" in page
+    assert "Ignore previous instructions" not in page
+    r = client.post(f"/runs/{run_id}/pilot-subjects", data={"csrf": token, "pilot1": "case_0002", "pilot2": "nobody"},
+                    follow_redirects=False)
+    assert "err=" in r.headers["location"]
+    r = client.post(f"/runs/{run_id}/pilot-subjects", data={"csrf": token, "pilot1": "case_0002", "pilot2": "case_0501"},
+                    follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    run = Run(settings.runs_dir, run_id)
+    assert run.load("plan.json")["pilot"]["subjects"] == ["case_0002", "case_0501"] and run.meta["revision"] == 2
+    assert "msg=" in client.post(f"/runs/{run_id}/pilot", data={"csrf": token}, follow_redirects=False).headers["location"]
+    assert "err=" in client.post(f"/runs/{run_id}/pilot", data={"csrf": token}, follow_redirects=False).headers["location"]
+    worker(settings, once=True)
+    assert run.meta["status"] == "PILOT_SENT" and [j["status"] for j in list_jobs(settings, run_id)] == ["done", "done"]
+    page = client.get(f"/runs/{run_id}").text
+    assert "최종 승인" in page and 'name="approver"' in page
+    plan = run.load("plan.json")
+    img = next(s for s in plan["series"] if s["subject_key"] == "case_0002" and s["kind"] == "nifti")
+    rs = next(s for s in plan["series"] if s["subject_key"] == "case_0002" and s["kind"] == "rtstruct")
+    page = client.get(f"/runs/{run_id}/series/{img['series_uid']}").text
+    assert "라벨 윤곽" in page and "liver" in page
+    m = run.load("manifest-pilot.json")
+    rs_sop = next(i["sop_uid"] for i in m["instances"] if i["series_uid"] == rs["series_uid"])
+    sop = next(i["sop_uid"] for i in m["instances"] if i["series_uid"] == img["series_uid"] and i["instance_number"] == 4)
+    png = client.get(f"/runs/{run_id}/instances/{sop}.png?rs={rs_sop}")
+    assert png.status_code == 200 and Image.open(io.BytesIO(png.content)).mode == "RGB"
+    assert client.get(f"/runs/{run_id}/instances/{sop}.png?rs={sop}").status_code == 404
+    r = client.post(f"/runs/{run_id}/approve", data={"csrf": token, "approver": "검토자", "confirm": "SynChallenge"},
+                    follow_redirects=False)
+    assert "msg=" in r.headers["location"] and run.meta["status"] == "APPROVED"
+    assert list_jobs(settings, run_id)[0]["kind"] == "pilot"       # Central unset: nothing queued
+    page = client.get(f"/runs/{run_id}").text
+    assert "Central SCP 미설정" in page and "승인자" in page
+    r = client.post(f"/runs/{run_id}/publish", data={"csrf": token}, follow_redirects=False)
+    assert "err=" in r.headers["location"]
+    r = client.post(f"/runs/{run_id}/dataset", data={"csrf": token, "name": "x", "commercial_use": "Y"},
+                    follow_redirects=False)
+    assert "err=" in r.headers["location"]                       # approved runs are frozen
+    for p in ("/", "/jobs", f"/jobs/{list_jobs(settings, run_id)[0]['id']}", "/new?dir=" + str(challenge)):
+        assert client.get(p).status_code == 200
+
+
+def test_publish_job_registers_in_db(tmp_path, monkeypatch, challenge, scp, test_db):
+    from dataops import db as dbmod
+    central = LoopbackSCP()
+    try:
+        settings = make_settings(tmp_path, monkeypatch, db=test_db, local_scp=scp.target(),
+                                 central=CentralScp(host="127.0.0.1", port=central.port, called_ae="TESTSCP",
+                                                    enabled=True))
+        with dbmod.connection(test_db) as conn:
+            dbmod.migrate(conn)
+        run = piloted(settings, challenge, scp)
+        approve(run, "검토자", "SynChallenge")
+        from dataops.jobs import submit
+        job = run_job(settings, submit(settings, "publish", run.id, {}, "검토자"))
+        assert job["status"] == "done", job["error"]
+        assert run.meta["status"] == "CENTRAL_SENT"
+        with dbmod.connection(test_db) as conn:
+            counts = dbmod.table_counts(conn)
+            kinds = dbmod.query(conn, "SELECT source_kind, modality, COUNT(*) AS n FROM series GROUP BY 1, 2 ORDER BY 1, 2")
+            approval = dbmod.query(conn, "SELECT approval_json FROM ingest_runs")[0]["approval_json"]
+        assert counts["subjects"] == 4 and counts["series"] == 7
+        assert [(k["source_kind"], k["modality"], k["n"]) for k in kinds] == [
+            ("nifti", "CT", 3), ("nifti", "MR", 1), ("rtstruct", "RTSTRUCT", 3)]
+        assert json.loads(approval)["approved_by"] == "검토자"
+        assert counts["transfer_results"] == counts["instances"] + len(run.load("manifest-pilot.json")["instances"])
+    finally:
+        central.close()

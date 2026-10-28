@@ -10,7 +10,12 @@
   ingest DIR --dataset ... [--send-local] [--register]   plan + prepare (+ send + register) in one go
   runs | show RUN                    list runs / print a run summary
   db-migrate | db-status             apply / show schema migrations
-  serve                              local HTML viewer (default http://127.0.0.1:8096)
+  serve                              local HTML app (default http://127.0.0.1:8096)
+  worker [--once]                    run queued browser jobs (analyze / pilot / publish)
+  analyze DIR [--wait]               agent analysis -> report + plan (queued as a job; --wait runs it here)
+  pilot RUN                          freeze the plan's pilot subjects and send them to the LOCAL SCP
+  approve RUN --by NAME --confirm DATASET_NAME   record approval after a fully received pilot
+  publish RUN [--dry-run]            approved run: full freeze -> Central SCP -> DB (needs DATAOPS_CENTRAL_*)
 """
 from __future__ import annotations
 
@@ -100,6 +105,20 @@ def main(argv=None) -> int:
     sub.add_parser("runs")
     sub.add_parser("db-migrate")
     sub.add_parser("db-status")
+    wk = sub.add_parser("worker")
+    wk.add_argument("--once", action="store_true")
+    an = sub.add_parser("analyze")
+    an.add_argument("dir")
+    an.add_argument("--wait", action="store_true")
+    sub.add_parser("pilot").add_argument("run")
+    ap = sub.add_parser("approve")
+    ap.add_argument("run")
+    ap.add_argument("--by", required=True)
+    ap.add_argument("--confirm", required=True)
+    ap.add_argument("--note", default="")
+    pb = sub.add_parser("publish")
+    pb.add_argument("run")
+    pb.add_argument("--dry-run", action="store_true")
     sv = sub.add_parser("serve")
     sv.add_argument("--host")
     sv.add_argument("--port", type=int)
@@ -151,6 +170,39 @@ def main(argv=None) -> int:
                 if args.cmd == "db-migrate":
                     print("applied:", dbmod.migrate(conn) or "nothing (up to date)")
                 _print(dbmod.migration_status(conn) | {"counts": dbmod.table_counts(conn)})
+        elif args.cmd == "worker":
+            from .jobs import worker
+            worker(settings, once=args.once)
+        elif args.cmd == "analyze":
+            from .jobs import run_job, start_analysis
+            run, job = start_analysis(settings, str(Path(args.dir).resolve()), "cli")
+            print(f"run {run.id}, job {job['id']}")
+            if args.wait:
+                job = run_job(settings, job)
+                print(job["status"], job.get("error") or job.get("result"))
+                return 0 if job["status"] == "done" else 1
+        elif args.cmd == "pilot":
+            from .prepare import prepare
+            run = Run(settings.runs_dir, args.run)
+            m = prepare(run, "pilot", print)
+            print(f"pilot frozen: {len(m['instances'])} instances")
+            _print(send_local(run, settings.local_scp, scope="pilot"))
+        elif args.cmd == "approve":
+            from .publish import approve
+            _print(approve(Run(settings.runs_dir, args.run), args.by, args.confirm, args.note))
+        elif args.cmd == "publish":
+            from .publish import publish_central
+            from .publish import central_ready
+            ok, why = central_ready(settings.central)
+            if not ok:
+                raise RunError(why)
+            run = Run(settings.runs_dir, args.run)
+            if run.meta["status"] == "APPROVED" and not args.dry_run:
+                m = prepare(run, "full", print)
+                print(f"full freeze: {len(m['instances'])} instances")
+            _print(publish_central(run, settings, dry_run=args.dry_run))
+            if not args.dry_run and settings.db_configured:
+                cmd_register(argparse.Namespace(run=run.id), settings)
         elif args.cmd == "serve":
             import uvicorn
             from .web.app import create_app

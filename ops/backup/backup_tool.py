@@ -93,7 +93,7 @@ def verify_files(day: Path) -> list[str]:
 
 def verify_artifacts(snapshot: Path) -> tuple[int, list[str]]:
     n, bad = 0, []
-    for man in sorted(snapshot.glob("*/manifest.json")):
+    for man in sorted(snapshot.glob("*/manifest*.json")):      # manifest.json and manifest-pilot.json
         m = json.loads(man.read_text(encoding="utf-8"))
         for inst in m["instances"]:
             p = man.parent / inst["path"]

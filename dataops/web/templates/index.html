@@ -13,7 +13,8 @@
   <div class="stat"><span>대상자 / 검사</span><b>{{ db_info.counts.subjects }} / {{ db_info.counts.studies }}</b></div>
   <div class="stat"><span>시리즈 / 인스턴스</span><b>{{ db_info.counts.series }} / {{ db_info.counts.instances }}</b></div>
   {% endif %}
-  <div class="stat"><span>로컬 SCP 대상</span><b class="mono small">{{ settings.local_scp.called_ae }}@{{ settings.local_scp.host }}:{{ settings.local_scp.port }}</b><span>Central 전송 없음</span></div>
+  <div class="stat"><span>Local SCP (파일럿)</span><b class="mono small">{{ settings.local_scp.called_ae }}@{{ settings.local_scp.host }}:{{ settings.local_scp.port }}</b><span>승인 전 2케이스 확인용</span></div>
+  <div class="stat"><span>Central SCP (승인 후)</span>{% if central[0] %}<b class="mono small b-ok">{{ central[1] }}</b><span>활성</span>{% else %}<b class="small b-warn">미설정</b><span>{{ central[1] }}</span>{% endif %}</div>
   <div class="stat"><span>최근 백업</span>
     {% if backups %}<b class="{{ 'b-ok' if backups[0].ok else 'b-bad' }}">{{ backups[0].date }}</b><span>{{ 'ok' if backups[0].ok else (backups[0].error or '실패') }}</span>
     {% else %}<b class="b-warn">없음</b><span>{{ settings.backup_root }}/{{ settings.backup_system }}</span>{% endif %}</div>
@@ -25,22 +26,23 @@
 
 <section>
 <h2>실행(run) 목록</h2>
-<p class="muted">입력 폴더 → plan → 고정 artifact(prepare) → 로컬 SCP 전송 → 관리 DB 등록. 작업은 CLI(<code>python -m dataops …</code>)로 수행하고 이 화면은 결과를 보여줍니다.</p>
+<p><a class="button primary" href="/new">새 데이터셋 분석</a></p>
+<p class="muted">폴더 지정 → 에이전트 분석·보고서 → 파일럿 2케이스 Local SCP → 최종 승인 → Central 전송 · DB 등록. CLI(<code>python -m dataops …</code>)로도 같은 단계를 실행할 수 있습니다.</p>
 <div class="table-wrap"><table>
-<tr><th>run</th><th>데이터셋</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th>로컬 전송</th><th>DB 등록</th><th>입력 폴더</th></tr>
+<tr><th>run</th><th>데이터셋</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th>전송</th><th>DB 등록</th><th>입력 폴더</th></tr>
 {% for r in runs %}
 <tr>
   <td><a class="mono" href="/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
   <td>{{ r.dataset_name or '' }}</td>
-  <td>{{ status(r.status) }}</td>
+  <td>{{ status(r.status) }}{% if r.job %} <span class="badge b-warn">{{ r.job.kind }} {{ r.job.status }}</span>{% endif %}</td>
   <td class="num">{{ r.revision }}</td>
   <td class="num">{{ r.instances if r.instances is not none else '-' }}</td>
-  <td>{% for t in r.transfers %}<div class="mono">{{ t.target }}</div>{% for k, v in t.counts.items() %}{{ status(k) }} {{ v }} {% endfor %}{% else %}<span class="muted">-</span>{% endfor %}</td>
+  <td>{% for t in r.transfers %}<div class="mono small">{{ '파일럿 ' if t.scope == 'pilot' }}{{ t.target }}</div>{% for k, v in t.counts.items() %}{{ status(k) }} {{ v }} {% endfor %}{% else %}<span class="muted">-</span>{% endfor %}</td>
   <td>{% if r.registered %}<span class="badge b-ok">등록</span> <span class="muted">{{ r.registered.at }}</span>{% else %}<span class="muted">미등록</span>{% endif %}</td>
   <td class="mono">{{ r.input_root }}</td>
 </tr>
 {% else %}
-<tr><td colspan="8" class="muted">아직 run이 없습니다. <code>python -m dataops plan DIR --dataset dataset.json</code></td></tr>
+<tr><td colspan="8" class="muted">아직 run이 없습니다. <a href="/new">새 데이터셋 분석</a></td></tr>
 {% endfor %}
 </table></div>
 </section>

@@ -1,10 +1,15 @@
-"""Read-only local HTML viewer: runs, extracted metadata, proposed vs registered DB rows, local delivery,
-prepared-slice preview, DB tables and nightly backups. No mutation routes (actions stay in the CLI)."""
+"""Local HTML app: start an analysis from a folder, read the agent's report, pilot 2 cases to the local SCP,
+approve, publish to Central; browse runs, extracted metadata, proposed vs registered DB rows, deliveries,
+prepared slices (with RTSTRUCT contours), DB tables and nightly backups. Mutations live in actions.py and
+run as worker jobs."""
 from __future__ import annotations
 
+import functools
 import io
 import json
 import re
+import secrets
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -17,10 +22,15 @@ from fastapi.templating import Jinja2Templates
 from .. import __version__
 from .. import db as dbmod
 from ..config import Settings
+from ..jobs import active_job, job_log, list_jobs
 from ..local_send import journals
+from ..prepare import MANIFESTS, pilot_series
+from ..publish import central_ready
 from ..records import TABLES, build_records, to_db_value
-from ..runs import Run, RunError, list_runs
+from ..rtstruct import read_overlay
+from ..runs import EDITABLE, Run, RunError, list_runs
 from ..util import RUN_ID_RE, valid_uid
+from .actions import CSRF_COOKIE, SPLIT_NAMES, register_actions
 
 HERE = Path(__file__).resolve().parent
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -54,14 +64,20 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.middleware("http")
     async def headers(request: Request, call_next):
+        token = request.cookies.get(CSRF_COOKIE)
+        request.state.csrf = token or secrets.token_urlsafe(24)
         resp = await call_next(request)
+        if not token:
+            resp.set_cookie(CSRF_COOKIE, request.state.csrf, httponly=True, samesite="strict", path="/")
         resp.headers["Content-Security-Policy"] = CSP
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
 
     def page(request, name, **ctx):
-        return tpl.TemplateResponse(request, name, {"settings": settings, **ctx})
+        return tpl.TemplateResponse(request, name, {"settings": settings, "csrf": request.state.csrf,
+                                                    "msg": request.query_params.get("msg"),
+                                                    "err_msg": request.query_params.get("err"), **ctx})
 
     def db_conn():
         if not settings.db_configured:
@@ -95,32 +111,21 @@ def create_app(settings: Settings) -> FastAPI:
             man = run.load("manifest.json")
             m["instances"] = len(man["instances"]) if man else None
             m["registered"] = (run.load("registration.json") or {}).get("last")
-            m["transfers"] = [{"target": j["target_key"], "counts": _counts(j)} for j in journals(run)]
+            m["transfers"] = [{"target": j["target_key"], "scope": j.get("scope", "full"), "counts": _counts(j)}
+                              for j in journals(run)]
+            m["job"] = active_job(settings, m["run_id"])
         return page(request, "index.html", runs=runs, db_info=db_info, db_error=db_error,
-                    backups=_backups(settings)[:5])
+                    backups=_backups(settings)[:5], central=central_ready(settings.central))
 
     # ------------------------------------------------------------------ run
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
-    def run_page(request: Request, run_id: str, skipped_page: int = Query(1, ge=1)):
+    def run_page(request: Request, run_id: str, skipped_page: int = Query(1, ge=1), sp: int = Query(1, ge=1),
+                 q: str = ""):
         run = get_run(run_id)
-        meta, inv, plan = run.meta, run.load("inventory.json", {}), run.load("plan.json", {})
-        manifest = run.load("manifest.json")
+        meta, inv, plan = run.meta, run.load("inventory.json", {}), run.load("plan.json", {}) or {}
+        manifest, pilot = run.load("manifest.json"), run.load("manifest-pilot.json")
         jlist = journals(run)
-        per_series = {}
-        if manifest:
-            status_of = {}
-            for j in jlist:
-                for sop, rec in j["instances"].items():
-                    status_of.setdefault(sop, []).append(rec["status"])
-            for inst in manifest["instances"]:
-                c = per_series.setdefault(inst["series_uid"], {"instances": 0, "accepted": 0, "warning": 0,
-                                                                "failed": 0, "sending": 0, "unsent": 0})
-                c["instances"] += 1
-                sts = status_of.get(inst["sop_uid"], [])
-                if not sts:
-                    c["unsent"] += 1
-                for st in sts:
-                    c[st] = c.get(st, 0) + 1
+        per_series = _per_series([m for m in (manifest, pilot) if m], jlist)
         records, compare, db_error = None, None, None
         if manifest:
             records = build_records(run)
@@ -133,26 +138,75 @@ def create_app(settings: Settings) -> FastAPI:
                 finally:
                     conn.close()
         skipped = plan.get("skipped", [])
-        return page(request, "run.html", run=run, meta=meta, inv=inv, plan=plan, manifest=manifest,
-                    journals=jlist, per_series=per_series, records=records, compare=compare, db_error=db_error,
-                    plan_errors=run.load("plan_errors.json", []), registration=run.load("registration.json"),
-                    tables=TABLES, skipped=skipped[(skipped_page - 1) * PAGE: skipped_page * PAGE],
-                    skipped_page=skipped_page, skipped_pages=max(1, -(-len(skipped) // PAGE)))
+        series = plan.get("series", [])
+        if q:
+            series = [x for x in series if q.lower() in (x.get("subject_key") or "").lower()
+                      or q.lower() in x["series_key"].lower()]
+        jobs = list_jobs(settings, run.id, limit=10)
+        job = jobs[0] if jobs else None
+        editable = (meta["status"] in EDITABLE and meta["status"] not in ("ANALYZING", "ANALYSIS_FAILED")
+                    and not active_job(settings, run.id))
+        pilot_stale = bool(pilot and pilot.get("plan_sha256") != meta.get("plan_sha256"))
+        return page(request, "run.html", run=run, meta=meta, inv=inv, plan=plan, manifest=manifest, pilot=pilot,
+                    pilot_stale=pilot_stale, journals=jlist, per_series=per_series, records=records, compare=compare,
+                    db_error=db_error, plan_errors=run.load("plan_errors.json", []),
+                    registration=run.load("registration.json"), tables=TABLES,
+                    skipped=skipped[(skipped_page - 1) * PAGE: skipped_page * PAGE], skipped_page=skipped_page,
+                    skipped_pages=max(1, -(-len(skipped) // PAGE)), series=series[(sp - 1) * PAGE: sp * PAGE],
+                    sp=sp, series_pages=max(1, -(-len(series) // PAGE)), q=q, summary=_summary(plan),
+                    subjects=sorted({x["subject_key"] for x in plan.get("series", []) if not x.get("excluded")}),
+                    job=job, job_log=job_log(settings, job["id"], 15) if job else [], jobs=jobs,
+                    active=active_job(settings, run.id), editable=editable, central=central_ready(settings.central),
+                    agent=run.load("agent_proposal.json"), split_names=SPLIT_NAMES,
+                    pilot_series_rows=_pilot_rows(plan, pilot, per_series), stage=_stage(meta))
+
+    @app.get("/runs/{run_id}/state.json")
+    def run_state(run_id: str):
+        run = get_run(run_id)
+        job = active_job(settings, run.id)
+        return {"status": run.meta["status"], "updated_at": run.meta["updated_at"],
+                "job": {"id": job["id"], "kind": job["kind"], "status": job["status"],
+                        "log": job_log(settings, job["id"], 8)} if job else None}
+
+    @app.get("/jobs", response_class=HTMLResponse)
+    def jobs_page(request: Request):
+        return page(request, "jobs.html", jobs=list_jobs(settings, limit=200))
+
+    @app.get("/jobs/{job_id}", response_class=HTMLResponse)
+    def job_page(request: Request, job_id: str):
+        job = next((j for j in list_jobs(settings, limit=10_000) if j["id"] == job_id), None)
+        if job is None:
+            raise HTTPException(404)
+        return page(request, "job.html", job=job, log=job_log(settings, job_id, 2000))
 
     @app.get("/runs/{run_id}/series/{series_uid}", response_class=HTMLResponse)
     def series_page(request: Request, run_id: str, series_uid: str):
         run = get_run(run_id)
         if not valid_uid(series_uid):
             raise HTTPException(404)
-        plan, manifest = run.load("plan.json", {}), run.load("manifest.json")
+        plan = run.load("plan.json", {})
         s = next((x for x in plan.get("series", []) if x.get("series_uid") == series_uid), None)
         if s is None:
             raise HTTPException(404)
-        instances, report = [], None
-        if manifest:
-            instances = [i for i in manifest["instances"] if i["series_uid"] == series_uid]
-            report = next((x.get("conversion_report") for x in manifest["series"] if x["series_uid"] == series_uid),
-                          None)
+        instances, report, frozen_in = [], None, None
+        for name in MANIFESTS.values():
+            manifest = run.load(name)
+            if manifest and any(i["series_uid"] == series_uid for i in manifest["instances"]):
+                instances = [i for i in manifest["instances"] if i["series_uid"] == series_uid]
+                report = next((x.get("conversion_report") for x in manifest["series"]
+                               if x["series_uid"] == series_uid), None)
+                frozen_in = name
+                break
+        overlays = []
+        if s["kind"] == "nifti" and frozen_in:
+            m = run.load(frozen_in)
+            for x in plan["series"]:
+                if x["kind"] == "rtstruct" and x.get("reference") == s["series_key"]:
+                    rs = next((i for i in m["instances"] if i["series_uid"] == x["series_uid"]), None)
+                    if rs:
+                        overlays.append({"sop_uid": rs["sop_uid"], "series_uid": x["series_uid"],
+                                         "legend": _overlay(run, rs["path"])["legend"]})
+        if s["kind"] != "rtstruct":
             instances = _slice_order(run, instances)
         status = {}
         for j in journals(run):
@@ -161,24 +215,33 @@ def create_app(settings: Settings) -> FastAPI:
                 if rec:
                     status.setdefault(i["sop_uid"], []).append(f"{j['target_key']}: {rec['status']}")
         geometry = _geometry(run, instances[0]) if instances else None
-        return page(request, "series.html", run=run, s=s, instances=instances, report=report, delivery=status,
+        return page(request, "series.html", run=run, s=s, instances=[] if s["kind"] == "rtstruct" else instances,
+                    rs_instances=instances if s["kind"] == "rtstruct" else [], report=report, delivery=status,
+                    frozen_in=frozen_in, overlays=overlays,
                     geometry=geometry, study=next((st for st in plan["studies"] if st["study_uid"] == s["study_uid"]),
                                                   None))
 
     @app.get("/runs/{run_id}/instances/{sop_uid}.png")
-    def slice_png(run_id: str, sop_uid: str, wc: float | None = None, ww: float | None = Query(None, gt=0)):
+    def slice_png(run_id: str, sop_uid: str, wc: float | None = None, ww: float | None = Query(None, gt=0),
+                  rs: str | None = None):
         run = get_run(run_id)
-        if not valid_uid(sop_uid):
+        if not valid_uid(sop_uid) or (rs is not None and not valid_uid(rs)):
             raise HTTPException(404)
-        manifest = run.load("manifest.json") or {"instances": []}
-        inst = next((i for i in manifest["instances"] if i["sop_uid"] == sop_uid), None)
+        frozen = _frozen(run)
+        inst = frozen.get(sop_uid)
         if inst is None:
             raise HTTPException(404)
         path = (run.dir / inst["path"]).resolve()
         if not path.is_relative_to(run.dir.resolve()) or not path.is_file():
             raise HTTPException(404)
+        contours = None
+        if rs:
+            rsi = frozen.get(rs)
+            if rsi is None or not rsi["sop_class_uid"].endswith(".481.3"):
+                raise HTTPException(404)
+            contours = _overlay(run, rsi["path"])["contours"].get(sop_uid, [])
         try:
-            png = _render(path, wc, ww)
+            png = _render(path, wc, ww, contours)
         except Exception as e:  # noqa: BLE001 - compressed / non-image objects
             return JSONResponse({"detail": f"미리보기 불가: {type(e).__name__}: {e}"}, status_code=422)
         return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
@@ -280,6 +343,8 @@ def create_app(settings: Settings) -> FastAPI:
         return page(request, "backups.html", backups=_backups(settings),
                     log_tail=_log_tail(settings.backup_root / settings.backup_system / "backup.log"))
 
+    register_actions(app, settings, page, get_run)
+
     @app.get("/healthz")
     def healthz():
         conn, err = db_conn()
@@ -321,6 +386,93 @@ def _compare(conn, records: dict) -> dict:
                 c["same"] += 1
         out[table] = c
     return out
+
+
+def _frozen(run: Run) -> dict:
+    out = {}
+    for name in MANIFESTS.values():
+        m = run.load(name)
+        for i in (m or {}).get("instances", []):
+            out.setdefault(i["sop_uid"], i)
+    return out
+
+
+def _overlay(run: Run, rel: str) -> dict:
+    p = (run.dir / rel).resolve()
+    if not p.is_relative_to(run.dir.resolve()) or not p.is_file():
+        return {"contours": {}, "legend": []}
+    return _overlay_cached(str(p), p.stat().st_mtime_ns)
+
+
+@functools.lru_cache(maxsize=16)
+def _overlay_cached(path: str, mtime_ns: int) -> dict:
+    return read_overlay(Path(path))
+
+
+def _per_series(manifests: list[dict], jlist: list[dict]) -> dict:
+    """{series_uid: {scope: counts}} over the pilot and full manifests."""
+    out = {}
+    for m in manifests:
+        scope = m.get("scope", "full")
+        status_of = defaultdict(list)
+        for j in jlist:
+            if j.get("scope", "full") == scope and j["manifest_sha256"] == m["manifest_sha256"]:
+                for sop, rec in j["instances"].items():
+                    status_of[sop].append((j["target"].get("kind", "local"), rec["status"]))
+        for inst in m["instances"]:
+            c = out.setdefault(inst["series_uid"], {}).setdefault(scope, Counter())
+            c["instances"] += 1
+            sts = status_of.get(inst["sop_uid"], [])
+            if not sts:
+                c["unsent"] += 1
+            for kind, st in sts:
+                c[f"{kind}:{st}"] += 1
+    return out
+
+
+def _summary(plan: dict) -> dict:
+    """Counts per split: subjects, CT/MR images, labels; active and left out."""
+    rows = defaultdict(lambda: Counter())
+    for s in plan.get("series", []):
+        split = s.get("split") or (s.get("metadata") or {}).get("split") or "none"
+        state = "out" if s.get("excluded") else "in"
+        kind = s["modality"] if s["kind"] in ("nifti", "dicom") else "labels"
+        rows[split][f"{state}:{kind}"] += 1
+        if s["kind"] != "rtstruct":
+            rows[split][f"{state}:subjects:{s['subject_key']}"] = 1
+    out = {}
+    for split, c in rows.items():
+        out[split] = {"subjects_in": sum(1 for k in c if k.startswith("in:subjects:")),
+                      "subjects_out": sum(1 for k in c if k.startswith("out:subjects:")),
+                      **{k: v for k, v in c.items() if ":subjects:" not in k}}
+    order = ["train", "validation", "test", "other", "none"]
+    return dict(sorted(out.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 99))
+
+
+def _pilot_rows(plan: dict, pilot: dict | None, per_series: dict) -> list[dict]:
+    if not plan.get("series"):
+        return []
+    reports = {x["series_uid"]: x.get("conversion_report") for x in (pilot or {}).get("series", [])}
+    rows = []
+    for s in pilot_series(plan):
+        rows.append({"s": s, "report": reports.get(s["series_uid"]),
+                     "counts": per_series.get(s["series_uid"], {}).get("pilot")})
+    return rows
+
+
+def _stage(meta: dict) -> int:
+    st = meta.get("status") or ""
+    if st in ("ANALYZING", "ANALYSIS_FAILED", None, ""):
+        return 0
+    if st in ("PLANNED", "NEEDS_INPUT"):
+        return 1
+    if st.startswith("PILOT_"):
+        return 2
+    if st == "APPROVED" or (st == "PREPARED" and meta.get("approval")):
+        return 3
+    if st.startswith("CENTRAL_"):
+        return 4
+    return 1
 
 
 def _slice_order(run: Run, instances: list[dict]) -> list[dict]:
@@ -368,8 +520,8 @@ def _lps_dir(v) -> str:
     return "".join(names[a][0 if v[a] > 0 else 1] for a in sorted(range(3), key=lambda a: -abs(v[a])) if abs(v[a]) > 0.3)
 
 
-def _render(path: Path, wc, ww) -> bytes:
-    from PIL import Image
+def _render(path: Path, wc, ww, contours=None) -> bytes:
+    from PIL import Image, ImageDraw
     ds = pydicom.dcmread(path)
     arr = ds.pixel_array.astype(np.float64)
     if arr.ndim == 3 and ds.get("SamplesPerPixel", 1) == 1:
@@ -383,8 +535,22 @@ def _render(path: Path, wc, ww) -> bytes:
     img = np.clip((arr - (wc - ww / 2)) / ww, 0, 1) * 255
     if ds.get("PhotometricInterpretation") == "MONOCHROME1":
         img = 255 - img
+    out = Image.fromarray(img.astype(np.uint8), mode="L")
+    if contours:
+        out = out.convert("RGB")
+        draw = ImageDraw.Draw(out)
+        ipp = np.array([float(v) for v in ds.ImagePositionPatient])
+        iop = [float(v) for v in ds.ImageOrientationPatient]
+        row_dir, col_dir = np.array(iop[:3]), np.array(iop[3:])
+        dr, dc = (float(v) for v in ds.PixelSpacing)          # row spacing, column spacing
+        for color, pts in contours:
+            col = (pts - ipp) @ row_dir / dc
+            row = (pts - ipp) @ col_dir / dr
+            xy = [(float(c), float(r)) for c, r in zip(col, row)]
+            if len(xy) >= 2:
+                draw.line(xy + [xy[0]], fill=tuple(color), width=1)
     buf = io.BytesIO()
-    Image.fromarray(img.astype(np.uint8), mode="L").save(buf, format="PNG", optimize=False)
+    out.save(buf, format="PNG", optimize=False)
     return buf.getvalue()
 
 

@@ -11,6 +11,20 @@ Update this checklist when actual acceptance criteria pass; retain limitations i
 - [x] Claude/Codex entrypoints and shared implementation brief.
 - [ ] Interactive application and end-to-end production flow (below).
 
+## Status 2026-10-28, later (owner: folder -> agent analysis -> HTML report -> 2-case local pilot ->
+approval -> Central, all in the browser; labels as RTSTRUCT; Central target not decided yet)
+- [x] Agent analysis job (`dataops/agent.py`, `scan.py`): headless Claude Code with Read/Glob/Grep only,
+  JSON-schema proposal; `spec.py` re-checks every field and builds the plan from NIfTI headers (no
+  voxels, no hashes: NIfTI UIDs use the dataset-relative path as identity, sources are hashed and pinned
+  at freeze time, `sources.json`).
+- [x] Label maps -> RTSTRUCT (`rtstruct.py`) on the converted image grid; per-ROI round-trip Dice in the
+  report; contours reference their slice; grid mismatch is not converted.
+- [x] Pilot scope (`manifest-pilot.json`), approval (`publish.approve`) bound to plan sha256 and a fully
+  received pilot; full freeze reuses pilot artifacts after re-hashing their sources.
+- [x] M4 Central publication adapter with journal/retry; refused unless configured + enabled + approved.
+  Not exercised against a real Central SCP (target not decided).
+- [x] Browser actions with CSRF/Origin checks; worker process for jobs; viewer with RTSTRUCT overlay.
+
 ## Status 2026-10-28 (owner: DB on 183, nightly NAS backup, local SCP only, local HTML viewer)
 - [x] M1 inventory, plan schema 1 + validator, frozen artifacts/manifest, UID policy audit
   (NIfTI Series UID = f(PatientID prefix+group, relative path, file sha256, modality, layout,

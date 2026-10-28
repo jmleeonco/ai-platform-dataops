@@ -11,13 +11,17 @@
   var ww = document.getElementById("ww");
   var preset = document.getElementById("preset");
   var msg = document.getElementById("msg");
+  var overlay = document.getElementById("overlay");
+  var rs = root.dataset.rs;
 
   function url(i) {
     var u = "/runs/" + encodeURIComponent(run) + "/instances/" + encodeURIComponent(sops[i]) + ".png";
+    var q = [];
     if (wc.value !== "" && ww.value !== "" && Number(ww.value) > 0) {
-      u += "?wc=" + encodeURIComponent(wc.value) + "&ww=" + encodeURIComponent(ww.value);
+      q.push("wc=" + encodeURIComponent(wc.value), "ww=" + encodeURIComponent(ww.value));
     }
-    return u;
+    if (rs && overlay && overlay.checked) q.push("rs=" + encodeURIComponent(rs));
+    return q.length ? u + "?" + q.join("&") : u;
   }
   function show() {
     var i = Number(idx.value);
@@ -27,6 +31,8 @@
   img.addEventListener("error", function () { msg.textContent = "이 슬라이스는 미리보기를 만들 수 없습니다 (압축/비영상 객체일 수 있음)"; });
   img.addEventListener("load", function () { msg.textContent = ""; });
   idx.addEventListener("input", show);
+  if (overlay) overlay.addEventListener("change", show);
+  document.querySelectorAll(".legend .sw").forEach(function (el) { el.style.background = "rgb(" + el.dataset.c + ")"; });
   wc.addEventListener("change", function () { preset.value = ""; show(); });
   ww.addEventListener("change", function () { preset.value = ""; show(); });
   preset.addEventListener("change", function () {

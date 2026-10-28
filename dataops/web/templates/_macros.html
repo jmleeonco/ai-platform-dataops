@@ -1,5 +1,13 @@
 {% macro status(s) -%}
 {%- set cls = {'PLANNED':'b-ok','PREPARED':'b-ok','LOCAL_SENT':'b-ok','accepted':'b-ok','NEEDS_INPUT':'b-warn',
-   'LOCAL_PARTIAL':'b-warn','warning':'b-warn','sending':'b-warn','unsent':'b-warn','LOCAL_FAILED':'b-bad','failed':'b-bad'} -%}
+   'LOCAL_PARTIAL':'b-warn','warning':'b-warn','sending':'b-warn','unsent':'b-warn','LOCAL_FAILED':'b-bad','failed':'b-bad',
+   'ANALYZING':'b-warn','ANALYSIS_FAILED':'b-bad','PILOT_READY':'b-ok','PILOT_SENT':'b-ok','PILOT_PARTIAL':'b-warn',
+   'PILOT_FAILED':'b-bad','APPROVED':'b-ok','CENTRAL_SENT':'b-ok','CENTRAL_PARTIAL':'b-warn','CENTRAL_FAILED':'b-bad',
+   'queued':'b-warn','running':'b-warn','done':'b-ok'} -%}
 <span class="badge {{ cls.get(s, '') }}">{{ s or '-' }}</span>
+{%- endmacro %}
+{% macro csrf_field(token) -%}<input type="hidden" name="csrf" value="{{ token }}">{%- endmacro %}
+{% macro counts(c) -%}
+{%- if c -%}{%- for k, v in c.items() if k != 'instances' -%}{{ status(k.split(':')[-1]) }}<span class="muted small">{{ k.split(':')[0] if ':' in k }}</span> {{ v }} {% endfor -%}
+{%- else -%}<span class="muted">-</span>{%- endif -%}
 {%- endmacro %}

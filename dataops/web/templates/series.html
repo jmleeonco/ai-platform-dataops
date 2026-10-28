@@ -7,12 +7,12 @@
 
 <section>
 <h2>준비된 artifact 미리보기</h2>
-<p class="notice">run 폴더에 고정된(prepare) DICOM을 렌더링한 화면입니다. OS_LJM이 받은 파일을 다시 가져온 것이 아니며, 진단용 뷰어가 아닙니다.</p>
+<p class="notice">run 폴더에 고정된 DICOM을 렌더링한 화면입니다{% if frozen_in %} ({{ '파일럿' if 'pilot' in frozen_in else '전체' }} manifest){% endif %}. OS_LJM이 받은 파일을 다시 가져온 것이 아니며, 진단용 뷰어가 아닙니다.</p>
 {% if instances %}
-<div class="viewer" id="viewer" data-run="{{ run.id }}" data-sops="{{ instances|map(attribute='sop_uid')|join(',') }}">
+<div class="viewer" id="viewer" data-run="{{ run.id }}" data-sops="{{ instances|map(attribute='sop_uid')|join(',') }}" data-rs="{{ overlays[0].sop_uid if overlays else '' }}">
   <div>
     <div class="canvas">
-      <img id="slice" alt="slice" src="/runs/{{ run.id }}/instances/{{ instances[0].sop_uid }}.png">
+      <img id="slice" alt="slice" src="/runs/{{ run.id }}/instances/{{ instances[0].sop_uid }}.png{{ ('?rs=' ~ overlays[0].sop_uid) if overlays }}">
       {% if geometry.edges %}{% for pos, label in geometry.edges.items() %}<span class="ori {{ pos }}">{{ label }}</span>{% endfor %}{% endif %}
     </div>
     <div class="controls">
@@ -26,8 +26,10 @@
         <option value="-600,1500">CT 폐 -600/1500</option>
         <option value="400,1800">CT 뼈 400/1800</option>
       </select>
+      {% if overlays %}<label><input type="checkbox" id="overlay" checked> 라벨 윤곽(RTSTRUCT)</label>{% endif %}
       <span class="muted" id="msg"></span>
     </div>
+    {% if overlays %}<div class="legend">{% for o in overlays %}{% for l in o.legend %}<span class="badge"><i class="sw" data-c="{{ l.color|join(',') }}"></i>{{ l.name }}</span> {% endfor %}{% endfor %}</div>{% endif %}
   </div>
   <div>
     <h3>기하 정보</h3>
@@ -39,6 +41,7 @@
   </div>
 </div>
 <script src="/static/viewer.js"></script>
+{% elif rs_instances %}<p>RTSTRUCT 시리즈입니다. 참조 영상 페이지에서 윤곽을 겹쳐 볼 수 있습니다.</p>
 {% else %}<p class="muted">prepare 전이거나 인스턴스가 없습니다.</p>{% endif %}
 </section>
 
@@ -66,10 +69,10 @@
 </section>
 
 <section>
-<h2>인스턴스 ({{ instances|length }})</h2>
+<h2>인스턴스 ({{ (instances or rs_instances)|length }})</h2>
 <details><summary>목록 보기</summary>
 <div class="table-wrap"><table><tr><th>#</th><th>SOP UID</th><th>sha256</th><th class="num">bytes</th><th>원본</th><th>전송</th></tr>
-{% for i in instances[:1000] %}<tr><td>{{ i.instance_number }}</td><td class="mono">{{ i.sop_uid }}</td><td class="mono" title="{{ i.sha256 }}">{{ i.sha256[:12] }}</td>
+{% for i in (instances or rs_instances)[:1000] %}<tr><td>{{ i.instance_number }}</td><td class="mono">{{ i.sop_uid }}</td><td class="mono" title="{{ i.sha256 }}">{{ i.sha256[:12] }}</td>
 <td class="num">{{ i.size }}</td><td class="mono">{{ i.source.rel }}{% if i.source.slice_index is defined %} [k={{ i.source.slice_index }}]{% endif %}</td>
 <td>{% for st in delivery.get(i.sop_uid, []) %}<div>{{ st }}</div>{% endfor %}</td></tr>{% endfor %}
 </table></div></details>

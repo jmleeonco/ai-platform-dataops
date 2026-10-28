@@ -1,6 +1,8 @@
 # Workflow contract
 
-> Current state (2026-10-28): steps 1–5 run through the CLI (`python -m dataops`), registration goes
+> Current state (2026-10-28, later): the browser drives folder → agent analysis → report → 2-case
+> local pilot → approval → Central (adapter ready, target not configured); see docs/OPERATIONS.md.
+> Earlier the same day: steps 1–5 run through the CLI (`python -m dataops`), registration goes
 > to the new DB after the local send, and the HTML viewer is read-only. Steps 6–7 (browser edits,
 > **Central에 등록**) are deferred by the owner. See docs/OPERATIONS.md.
 

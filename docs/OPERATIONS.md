@@ -13,7 +13,8 @@ shows runs, extracted metadata, DB rows, delivery results and backups.
 | Management DB | container `ai-platform-dataops-db` (`mariadb:11.4`), `127.0.0.1:13306`, volume `ai-platform-dataops-db-data` | schema `public_dataops`, app account `dataops_app` (rights on its schema and `dataops_test_%` only) |
 | Secrets | `~/.config/ai-platform-dataops/env` (mode 600) | DB app/root passwords; never in Git, never under `/drive`, never in backups |
 | Runtime | `runtime/runs/<run_id>/` in the repo (gitignored) | inventory, plan, frozen artifacts, manifest, transfer journals, registration |
-| Web viewer | `deploy/web.sh start`, `http://127.0.0.1:8096/` | read-only; loopback bind |
+| Web app + worker | `deploy/web.sh start`, `http://127.0.0.1:8096/` | loopback bind; CSRF + Origin checks on every POST; jobs in `runtime/jobs` |
+| Analysis agent | `~/.local/bin/claude` (headless), work dirs `~/.cache/ai-platform-dataops/agent/` | read-only tools, JSON-schema output, budget/time caps |
 | Nightly backup | `ops/backup/nightly_backup.sh`, user crontab `30 0 * * *` | block marked `# >>> ai-platform-dataops` |
 
 Hub 0:00, executor 0:10 and ai-pipeline 0:20 back up before this system's 0:30 slot.
@@ -33,6 +34,41 @@ The DB container has `--restart unless-stopped`; the web viewer does not restart
 To view it from a PC: `ssh -L 8096:127.0.0.1:8096 ubuntu@10.101.1.183`, then open
 http://127.0.0.1:8096/. (Binding to `0.0.0.0` via `DATAOPS_BIND_HOST` would expose dataset
 metadata to the LAN without authentication; decide that explicitly.)
+
+## Browser flow (owner decision 2026-10-28)
+
+`deploy/web.sh start` runs the web app and one **worker** (jobs run one at a time; logs in
+`runtime/jobs/<job>.log`, page `/jobs`).
+
+1. **새 분석** (`/new`): an absolute folder under `DATAOPS_INPUT_ROOTS` (default
+   `/mnt2/data/Public_dataset`; backup/hidden folders refused). Job `analyze`:
+   `scan` (directory overview + NIfTI headers, ~1 min for AMOS 62 GB) → analysis agent → `spec`
+   check → plan. Nothing is converted or sent.
+2. **Analysis agent**: `claude -p` with tools `Read,Glob,Grep` only, `--permission-mode dontAsk`, no MCP,
+   no settings, `--add-dir <dataset>`, work folder `~/.cache/ai-platform-dataops/agent/<run>/`,
+   `--json-schema` (proposal in `dataops/agent.py`), cap `DATAOPS_AGENT_BUDGET_USD` (5) and
+   `DATAOPS_AGENT_TIMEOUT_S` (1800), model `DATAOPS_AGENT_MODEL` (claude-opus-5-5). Dataset text is
+   data. Raw output: `runs/<run>/agent_proposal.json`.
+3. **Report** (`/runs/<run>`): summary, findings, questions, split × modality counts, included folders
+   and what was left out (with reasons), rules, label names. Editable until approval: dataset fields
+   (name, licence, commercial use, URL, PatientID prefix), included splits, labels on/off, modality of
+   unresolved images, the two pilot subjects. Every edit is re-validated and bumps the plan revision.
+4. **Pilot**: freezes only the pilot subjects (`manifest-pilot.json`: CT/MR DICOM + label RTSTRUCT) and
+   sends them to the local SCP. Check them in OncoStudio on 107. Viewer: `/runs/<run>/series/<uid>`
+   with the RTSTRUCT contours.
+5. **Approval**: needs status `PILOT_SENT` (every pilot instance accepted) for the current plan, the
+   approver's name and the dataset name typed as confirmation. Stored in `run.json` `approval`
+   (plan sha256, pilot manifest sha256, target) and later in `ingest_runs.approval_json`.
+6. **Central + DB** (job `publish`): full freeze (pilot artifacts reused after their sources are
+   re-hashed) → C-STORE to Central with a journal → registration in the management DB. Refused unless
+   `DATAOPS_CENTRAL_HOST/PORT/CALLED_AE` are set **and** `DATAOPS_CENTRAL_ENABLED=true`; the target is
+   not set (owner, 2026-10-28), so an approval is recorded and publication waits.
+
+CLI equivalents: `analyze DIR [--wait]`, `pilot RUN`, `approve RUN --by NAME --confirm NAME`,
+`publish RUN [--dry-run]`, `worker [--once]`.
+
+Space: a full AMOS freeze is roughly 40–60 GB of DICOM under `runtime/runs/<run>/artifacts` on
+`/drive`, and the nightly backup hard-links it into `ai-platform-dataops-files/<date>`.
 
 ## Local SCP target
 

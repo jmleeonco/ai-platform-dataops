@@ -68,7 +68,7 @@ docker exec "$CONTAINER" mariadb --version > "$WORK/db/server_version.txt"
 # 2. Run metadata (plans, inventories, manifests, UID maps, transfer journals, registrations).
 if [[ -d "$RUNTIME/runs" ]]; then
   tar -czf "$WORK/runs/runs-metadata.tar.gz" -C "$RUNTIME" --exclude='runs/*/artifacts' --exclude='*.lock' \
-    --exclude='*.tmp' runs
+    --exclude='*.tmp' runs $([[ -d "$RUNTIME/jobs" ]] && echo jobs)
 fi
 
 # 3. Frozen artifacts: hard-linked daily snapshot (unchanged files cost no space).

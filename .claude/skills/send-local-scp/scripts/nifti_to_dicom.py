@@ -209,6 +209,52 @@ def classify(path: Path, root: Path, layout: str = "auto",
         item.kind, item.reason, item.forced = "image", "", True
 
     # ---- geometry -----------------------------------------------------------
+    vol, reason = _volume(img, raw, slope, inter, layout)
+    if vol is None:
+        item.kind, item.reason = "unsupported", reason
+        return item, None
+    item.notes.extend(vol.notes)
+    return item, vol
+
+
+def _read_raw(img, layout: str):
+    """Scalar stored values as (X, Y, Z) [standard] or (Z, Y, X) [onco], plus slope/intercept; or a reason."""
+    hdr = img.header
+    if hdr.get_data_dtype().names is not None or hdr.get_data_dtype().kind == "c":
+        return None, 1.0, 0.0, f"voxel 형식 {hdr.get_data_dtype()} (RGB/complex) 미지원"
+    shape = list(img.shape)
+    while len(shape) > 3 and shape[-1] == 1:
+        shape.pop()
+    if len(shape) > 3:
+        return None, 1.0, 0.0, f"{len(shape)}D {tuple(img.shape)} 미지원"
+    raw = np.asarray(img.dataobj.get_unscaled()).reshape(shape)
+    slope, inter = img.dataobj.slope, img.dataobj.inter
+    slope = 1.0 if slope is None or not np.isfinite(slope) or slope == 0 else float(slope)
+    inter = 0.0 if inter is None or not np.isfinite(inter) else float(inter)
+    if raw.ndim == 2:
+        raw = raw[:, :, np.newaxis]
+    if raw.dtype == bool:
+        raw = raw.astype(np.uint8)
+    return raw, slope, inter, ""
+
+
+def load_volume(path: Path, layout: str = "standard") -> tuple[Volume | None, str]:
+    """Load any 2D/3D scalar NIfTI (image or label map) with the same geometry rules as classify()."""
+    if layout not in ("standard", "onco"):
+        return None, f"layout {layout!r} 은 standard 또는 onco 여야 합니다"
+    try:
+        img = nib.load(str(path))
+    except Exception as e:  # noqa: BLE001 - report any reader failure
+        return None, f"NIfTI 읽기 실패: {e}"
+    raw, slope, inter, reason = _read_raw(img, layout)
+    if raw is None:
+        return None, reason
+    return _volume(img, raw, slope, inter, layout)
+
+
+def _volume(img, raw, slope: float, inter: float, layout: str) -> tuple[Volume | None, str]:
+    hdr = img.header
+    stored_affine = img.affine
     notes = []
     if layout == "onco":
         data = np.transpose(raw, (2, 1, 0))            # (Z,Y,X) -> (X,Y,Z)
@@ -224,8 +270,7 @@ def classify(path: Path, root: Path, layout: str = "auto",
         elif qcode:
             affine = qform
         else:
-            item.kind, item.reason = "unsupported", "sform/qform 코드가 모두 0 — 방향/위치 정보가 없어 변환하지 않음"
-            return item, None
+            return None, "sform/qform 코드가 모두 0 — 방향/위치 정보가 없어 변환하지 않음"
         unit = hdr.get_xyzt_units()[0]
         scale = {"meter": 1000.0, "micron": 0.001}.get(unit, 1.0)
         if scale != 1.0:
@@ -238,17 +283,13 @@ def classify(path: Path, root: Path, layout: str = "auto",
     cols = affine_lps[:3, :3]
     norms = np.linalg.norm(cols, axis=0)
     if np.any(norms <= 0):
-        item.kind, item.reason = "unsupported", "affine에 0 길이 축이 있음"
-        return item, None
+        return None, "affine에 0 길이 축이 있음"
     unit_cols = cols / norms
     cos = np.abs(unit_cols.T @ unit_cols - np.eye(3))
     if cos.max() > ORTHO_TOL:
-        item.kind, item.reason = "unsupported", f"affine shear(축 비직교, |cos|={cos.max():.4f}) — DICOM으로 표현 불가"
-        return item, None
+        return None, f"affine shear(축 비직교, |cos|={cos.max():.4f}) — DICOM으로 표현 불가"
 
-    vol = Volume(data=data, slope=slope, inter=inter, affine_lps=affine_lps, notes=notes)
-    item.notes.extend(notes)
-    return item, vol
+    return Volume(data=data, slope=slope, inter=inter, affine_lps=affine_lps, notes=notes), ""
 
 
 # --------------------------------------------------------------------------- #
@@ -471,11 +512,13 @@ def make_series_ids(group_label: str, prefix: str, rel: str, content_hash: str,
 
 
 def write_series(vol: Volume, ids: SeriesIds, modality: str, rel: str, out_dir: Path,
-                 modality_basis: str = "user setting", deterministic: bool = False) -> dict:
+                 modality_basis: str = "user setting", deterministic: bool = False,
+                 image_comments: str | None = None) -> dict:
     """Write one single-frame DICOM file per slice. Returns a geometry/value report.
 
     deterministic=True leaves out the creation timestamp so the same input and settings
-    always give byte-identical files (needed when UIDs are reused across runs)."""
+    always give byte-identical files (needed when UIDs are reused across runs).
+    image_comments replaces the default local-review ImageComments text."""
     if modality not in SOP_CLASS_BY_MODALITY:
         raise ValueError(f"modality {modality!r} 미지원 (CT 또는 MR)")
     sop_class = SOP_CLASS_BY_MODALITY[modality]
@@ -541,7 +584,8 @@ def write_series(vol: Volume, ids: SeriesIds, modality: str, rel: str, out_dir: 
         ds.AcquisitionNumber = ""
         ds.ContentDate, ds.ContentTime = date, time
         ds.DerivationDescription = _clip(f"Converted from NIfTI without resampling ({CONVERTER_VERSION})", 1024)
-        ds.ImageComments = _clip(f"Local review conversion of NIfTI '{rel}'. Patient/study values are local "
+        ds.ImageComments = _clip(image_comments if image_comments is not None else
+                                 f"Local review conversion of NIfTI '{rel}'. Patient/study values are local "
                                  f"placeholders, not source metadata. Modality {modality} from: {modality_basis}.",
                                  10240)
         ds.ImagePositionPatient = [_ds(v) for v in ipp[:3]]

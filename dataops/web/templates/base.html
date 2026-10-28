@@ -11,13 +11,17 @@
   <span class="brand">AI Platform DataOps</span>
   <nav>
     <a href="/">대시보드</a>
+    <a href="/new">새 분석</a>
+    <a href="/jobs">작업</a>
     <a href="/datasets">데이터셋</a>
     <a href="/db">DB 테이블</a>
     <a href="/backups">백업</a>
   </nav>
-  <span class="muted push">읽기 전용 · v{{ version }}</span>
+  <span class="muted push">로컬 전용 · v{{ version }}</span>
 </div></header>
 <main>
+{% if msg %}<p class="ok-box">{{ msg }}</p>{% endif %}
+{% if err_msg %}<p class="err">{{ err_msg }}</p>{% endif %}
 {% block body %}{% endblock %}
 </main>
 </body>

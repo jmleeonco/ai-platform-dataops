@@ -54,3 +54,30 @@ Central publication (not implemented), MariaDB 10.5 compatibility of the exporte
   (OncoStudio SCP not running). Nothing was sent; the main session was asked to start it.
 - After the owner started OS_LJM on 107: `python -m dataops echo` → `C-ECHO 성공`
   (calling AE DATAOPS from 183). No C-STORE yet (no dataset chosen).
+
+## 2026-10-28 (evening) — browser flow: agent analysis, pilot with RTSTRUCT, approval gate
+
+- Tests: 81 passed (`pytest -q`), including `tests/test_agent_flow.py` (17): synthetic nnU-Net style
+  challenge with a duplicate copy, an archive and a README that tries to instruct the agent; agent test
+  double (`tests/fake_agent.py`); proposal refusals (path outside root, missing path, no image source,
+  regex without group / invalid, bad prefix); label on another grid not converted; pilot of 2 subjects
+  to a loopback SCP with RTSTRUCT ROI names and contour references checked on the received objects;
+  approval refused before/with a partial pilot, with a wrong confirmation, after a plan edit; source
+  file changed after the pilot refused at the full freeze (found and fixed: reused pilot artifacts now
+  re-hash their sources); Central refused when unset / disabled / not approved, then CENTRAL_SENT to a
+  loopback SCP with a no-op retry; publish job registers 4 subjects / 7 series (3 RTSTRUCT) with the
+  approval in `ingest_runs.approval_json` on a disposable schema; browser flow with CSRF and Origin
+  refusals, job queue, overlay PNG, approval without a Central target.
+- Real data, run `20261028T191410-e4d4c39c`, started through the web form:
+  `/mnt2/data/Public_dataset/09 Multi-Modality Abdominal Multi-Organ Segmentation Challenge (AMOS)`
+  (62 GB). Scan + agent (claude-opus-5-5, 10 turns, $0.47) + plan in about 1 minute: 600 subjects,
+  CT 500 / MR 100 (agent derived from the split counts that id 0500 is CT), 360 label RTSTRUCTs,
+  `amos22_2` (reorganised copy, 357 cases), `amos22.zip` and `data_info` left out with reasons;
+  0 plan errors. The agent's only question: whether to send the unlabelled test split.
+- Pilot (amos_0001 CT, amos_0507 MR) frozen in ~18 s and sent to OS_LJM@10.101.1.107:4001:
+  164/164 accepted. RTSTRUCT: 15 and 13 ROIs, round-trip Dice 1.0 for every ROI; independent check of
+  the frozen files: every contour lies on its referenced slice plane (0.0 mm), inside the image, same
+  Study / FrameOfReference. Overlay screenshots show kidneys, liver, spleen and aorta on the right
+  anatomy (patient left/right correct).
+- Not done: approval (owner's decision), full freeze of AMOS (~40–60 GB), Central publication (no
+  target), verification of the pilot in OncoStudio by the owner.

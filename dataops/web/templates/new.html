@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}새 분석{% endblock %}
+{% block body %}
+<h1>새 데이터셋 분석</h1>
+{% if err %}<p class="err">{{ err }}</p>{% endif %}
+<section>
+<h2>폴더 지정</h2>
+<p class="muted">공공 데이터셋 폴더를 주면 분석 에이전트(Claude, 읽기 전용)가 README·dataset.json·폴더 구조를 읽고
+포함 범위·대상자·modality·라벨을 제안합니다. 코드가 그 제안을 검증해 plan을 만들고, 이 화면에 보고서로 보여줍니다.
+아무것도 전송하지 않습니다. 허용 위치: {% for r in browse.roots %}<code>{{ r }}</code> {% endfor %}</p>
+<form method="post" action="/new" class="stack">
+  {{ csrf_field(csrf) }}
+  <label>입력 폴더 (절대 경로)<input name="input_root" required value="{{ browse.current or '' }}" class="wide"></label>
+  <label>요청자 <input name="by" maxlength="64" placeholder="이름 (선택)"></label>
+  <button type="submit" class="primary">분석 시작</button>
+</form>
+</section>
+<section>
+<h2>폴더 찾아보기 {% if browse.current %}<span class="mono small">{{ browse.current }}</span>{% endif %}</h2>
+{% if browse.parent %}<p><a href="/new?dir={{ browse.parent|urlencode }}">↑ 상위 폴더</a></p>{% elif browse.current %}<p><a href="/new">↑ 처음</a></p>{% endif %}
+<ul class="dirs">
+{% for d in browse.entries %}<li><a href="/new?dir={{ d|urlencode }}">{{ d.split('/')[-1] }}</a></li>{% else %}<li class="muted">하위 폴더 없음</li>{% endfor %}
+</ul>
+</section>
+{% endblock %}

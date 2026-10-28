@@ -25,6 +25,13 @@
   called AE `ONCOPACS`(Central)는 어떤 host든 거부한다. 2026-10-28 확인 시 107은 ping 응답, 4001은 연결 거부
   (OncoStudio SCP 꺼짐). 같은 날 소유자가 107에서 기동한 뒤 183에서 C-ECHO(calling AE DATAOPS) 성공. 183의 Orthanc(`ORTHANC`, 4242/8042)는 대상 아님.
 
+## 2026-10-28 소유자 결정 (오후)
+- 폴더 경로만 주면 에이전트가 분석해 HTML 보고서를 만들고, 2케이스를 Local SCP로 시험 전송하고,
+  최종 승인 후 Central SCP로 보내는 흐름을 웹 브라우저에서 진행한다.
+- 분석: Claude 에이전트(headless, 읽기 전용) 제안 + 코드의 결정적 검증.
+- 라벨(NIfTI label map)은 RTSTRUCT로 변환해 영상과 함께 보낸다(ROI 이름은 데이터셋의 라벨 정의).
+- Central SCP 대상은 아직 미정: 승인/전송 단계는 만들되 설정 전까지 전송 버튼은 비활성.
+
 ## 구현 전에 구별할 것
 - Central SCP의 실제 접속 설정과 수신 소프트웨어/조회 API는 아직 검증하지 않았다.
   DB 포트 3306을 DICOM 포트로 사용하지 않는다. 기존 문서의 후보를 운영 기본값으로 넣지 않는다.

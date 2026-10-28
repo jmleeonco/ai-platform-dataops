@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status %}
+{% block title %}작업 {{ job.id }}{% endblock %}
+{% block body %}
+<p><a href="/runs/{{ job.run_id }}">← run {{ job.run_id }}</a></p>
+<h1>{{ job.kind }} {{ status(job.status) }}</h1>
+<dl class="kv"><dt>작업</dt><dd class="mono">{{ job.id }}</dd><dt>요청</dt><dd>{{ job.requested_by }} · {{ job.created_at }}</dd>
+<dt>시작/종료</dt><dd>{{ job.started_at or '-' }} / {{ job.finished_at or '-' }}</dd>
+{% if job.error %}<dt>오류</dt><dd class="b-bad">{{ job.error }}</dd>{% endif %}
+{% if job.result %}<dt>결과</dt><dd class="mono">{{ job.result|jsonfmt(2000) }}</dd>{% endif %}</dl>
+<section><h2>로그</h2><pre>{% for l in log %}{{ l }}
+{% endfor %}</pre></section>
+{% endblock %}

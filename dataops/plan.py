@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import UUID
 
 from .legacy import n2d
+from .rtstruct import rtstruct_ids
 from .util import now_iso, sha256_file, valid_uid
 
 SCHEMA_VERSION = 1
@@ -183,12 +184,38 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
         return plan, errors
     prefix = plan["dataset"]["patient_id_prefix"]
     inv_files = {f["rel"]: f for f in inv["files"]}
-    active = [s for s in plan["series"] if not s.get("excluded")]
     subjects, studies = {}, {}
+    all_by_key = {s["series_key"]: s for s in plan["series"]}
+    agent_spec = plan.get("adapter") == "agent-spec"
 
-    for s in plan["series"]:
+    # Images first: an RTSTRUCT takes its patient/study/UID from the image it is drawn on.
+    for s in sorted(plan["series"], key=lambda x: x["kind"] == "rtstruct"):
         key = s["series_key"]
-        if s["kind"] == "nifti":
+        if s["kind"] == "rtstruct":
+            conv, rel = s["conversion"], s["sources"][0]
+            ref = all_by_key.get(s.get("reference"))
+            if ref is None or ref["kind"] != "nifti":
+                errors.append(f"{key}: 참조 영상 시리즈 {s.get('reference')!r} 가 없습니다")
+                continue
+            if ref.get("excluded"):
+                if not s.get("excluded"):
+                    s["excluded"], s["excluded_by_reference"] = True, True
+            elif s.pop("excluded_by_reference", False):
+                s["excluded"] = False
+            if not ref.get("series_uid"):
+                if not s.get("excluded"):
+                    errors.append(f"{key}: 참조 영상의 UID가 아직 정해지지 않았습니다 (영상 시리즈 오류 먼저 해결)")
+                continue
+            uid, _ = rtstruct_ids(ref["series_uid"], conv["identity"])
+            s.update(subject_key=ref["subject_key"], patient_id=ref["patient_id"], study_uid=ref["study_uid"],
+                     series_uid=uid, series_number=1000 + int(ref["series_number"]),
+                     description=s.get("description") or n2d._clip(f"{ref['description']} labels"))
+            if s.get("excluded"):
+                continue
+            f = inv_files.get(rel)
+            if f is None or f["kind"] != "nifti":
+                errors.append(f"{key}: 입력 목록에 없는 라벨 NIfTI {rel}")
+        elif s["kind"] == "nifti":
             conv = s["conversion"]
             rel = s["sources"][0]
             if s.get("modality") not in NIFTI_MODALITIES:
@@ -199,12 +226,12 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
                 if not s.get("excluded"):
                     errors.append(f"{key}: dataset.patient_id_prefix 없음 — PatientID를 정할 수 없습니다")
                 continue
-            ids = nifti_ids(prefix, conv["group_label"], rel, conv["source_sha256"], s["modality"],
-                            conv["layout"], int(s["series_number"]))
+            ids = nifti_ids(prefix, conv["group_label"], rel, conv.get("source_sha256") or conv["identity"],
+                            s["modality"], conv["layout"], int(s["series_number"]))
             s.update(subject_key=conv["group_label"], patient_id=ids.patient_id, study_uid=ids.study_uid,
                      series_uid=ids.series_uid, description=s.get("description") or ids.series_description)
             conv["patient_name"] = ids.patient_name
-            conv["study_description"] = ids.study_description
+            conv["study_description"] = n2d._clip(plan["dataset"]["name"]) if agent_spec else ids.study_description
             conv["frame_of_reference_uid"] = ids.frame_of_reference_uid
             if s.get("excluded"):
                 continue
@@ -239,6 +266,7 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
             errors.append(f"{key}: 대상자 {s['subject_key']!r} 에 PatientID가 여러 개")
         if studies.setdefault(s["study_uid"], s["subject_key"]) != s["subject_key"]:
             errors.append(f"{key}: Study UID {s['study_uid']} 가 여러 대상자에 속함")
+    active = [s for s in plan["series"] if not s.get("excluded")]
     pids = defaultdict(set)
     for skey, pid in subjects.items():
         pids[pid].add(skey)
