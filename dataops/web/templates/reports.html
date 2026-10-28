@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_report.html" import cell %}
+{% block title %}데이터셋 비교{% endblock %}
+{% block body %}
+<h1>데이터셋 비교 <span class="muted small">{{ rows|length }}개</span></h1>
+<p class="small"><a href="/reports.csv">CSV</a></p>
+<section><div class="table-wrap"><table class="std">
+<tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in rows %}<tr>{% for v in r %}
+<td class="{{ 'num' if v is number }}">{% if loop.first %}<a href="/runs/{{ r[-1] }}/report">{{ cell(v) }}</a>{% elif loop.last %}<a class="mono small" href="/runs/{{ v }}">{{ v }}</a>{% else %}{{ cell(v) }}{% endif %}</td>{% endfor %}</tr>
+{% else %}<tr><td colspan="{{ columns|length }}" class="muted">없음</td></tr>{% endfor %}
+</table></div></section>
+{% endblock %}

@@ -249,7 +249,7 @@ def test_browser_flow(tmp_path, monkeypatch, challenge, scp):
     assert client.get(f"/runs/{run_id}/state.json").json()["job"]["kind"] == "analyze"
     worker(settings, once=True)
     page = client.get(f"/runs/{run_id}").text
-    assert "분석 보고" in page and "imagesTr의 재정리 사본" in page and "SYNCH_case_0001" in page
+    assert "1</span> 데이터셋" in page and "imagesTr의 재정리 사본" in page and "SYNCH_case_0001" in page
     assert "Ignore previous instructions" not in page
     r = client.post(f"/runs/{run_id}/pilot-subjects", data={"csrf": token, "pilot1": "case_0002", "pilot2": "nobody"},
                     follow_redirects=False)

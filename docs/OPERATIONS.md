@@ -32,8 +32,9 @@ deploy/web.sh start      # not started automatically after a reboot
 
 The DB container has `--restart unless-stopped`; the web viewer does not restart by itself.
 To view it from a PC: `ssh -L 8096:127.0.0.1:8096 ubuntu@10.101.1.183`, then open
-http://127.0.0.1:8096/. (Binding to `0.0.0.0` via `DATAOPS_BIND_HOST` would expose dataset
-metadata to the LAN without authentication; decide that explicitly.)
+http://127.0.0.1:8096/. Since 2026-10-29 the owner has it bound to the LAN address
+(`DATAOPS_BIND_HOST=10.101.1.183` in the env file): http://10.101.1.183:8096/ — no authentication, so
+anyone on the LAN can use the pilot and approval forms.
 
 ## Browser flow (owner decision 2026-10-28)
 
@@ -49,18 +50,31 @@ metadata to the LAN without authentication; decide that explicitly.)
    `--json-schema` (proposal in `dataops/agent.py`), cap `DATAOPS_AGENT_BUDGET_USD` (5) and
    `DATAOPS_AGENT_TIMEOUT_S` (1800), model `DATAOPS_AGENT_MODEL` (claude-opus-5-5). Dataset text is
    data. Raw output: `runs/<run>/agent_proposal.json`.
-3. **Report** (`/runs/<run>`): summary, findings, questions, split × modality counts, included folders
-   and what was left out (with reasons), rules, label names. Editable until approval: dataset fields
-   (name, licence, commercial use, URL, PatientID prefix), included splits, labels on/off, modality of
-   unresolved images, the two pilot subjects. Every edit is re-validated and bumps the plan revision.
-   **Metadata** (`/runs/<run>/metadata`, also `.json` / `.csv`): every series with its extracted values
-   (analysis decisions, source file, the full NIfTI header, normalised geometry, DICOM identifiers) and,
-   per value, where it goes: DICOM header (local SCP pilot, Central after approval), management DB
-   (`table.column`), or nowhere. Each DB claim is checked against the rows registration would write
-   (`records.build_records(preview=True)`), each DICOM claim against the real pilot headers once frozen;
-   the page also lists every tag of the pilot DICOM files with its origin. NIfTI headers are read once
-   after the analysis into `runs/<run>/nifti_headers.json`; "원본 헤더 다시 읽기" re-reads changed or
-   missing files (prepare never uses this cache).
+3. **Report**: every dataset gets the same standard report (`dataops/report.py`, schema_version 1) —
+   the same numbered tables with the same columns, whatever the dataset; agent text only appears as
+   cell values. `/runs/<run>/report` (all 9), `/runs/<run>` (1–5 above the forms), `report.json`,
+   `series.json` / `series.csv` (table 6), and `/reports` (+ `.csv`): one row per dataset (latest run
+   of each folder) with fixed columns for comparison.
+
+   | # | Table | Columns |
+   |---|---|---|
+   | 1 | 데이터셋 | 24 fixed fields (name, UUID, path, size, licence, counts, rules, agent summary, status…) |
+   | 2 | 분할 구성 | train / validation / test / other / none + total × 대상자, CT, MR, 라벨, 인스턴스, 포함 |
+   | 3 | 폴더 판정 | 경로, 판정 (포함/무시/제외), 역할, 분할, 파일 수, 크기, 근거 |
+   | 4 | 확인 사항 | #, 구분 (오류/미해결/경고/질문/사실), 내용, 출처 |
+   | 5 | 전송·등록 | 파일럿→Local SCP, 최종 승인, Central, DB × 대상, 대상자, 시리즈, 인스턴스, 결과, 일시 |
+   | 6 | 시리즈 메타데이터 | 30 fixed fields (`metadata.FIELDS`), one row per series |
+   | 7 | 필드 정의 | each field's DICOM tag and DB column, checked: DB against the rows registration would write, DICOM against the real pilot headers |
+   | 8 | DICOM 헤더 | every tag of the pilot files per modality with its origin |
+   | 9 | DB 등록 예정 | rows per table (+ first 20) |
+
+   Source metadata that has no field of its own (the rest of the NIfTI header, or the DICOM series tags
+   of a pass-through series) is kept whole in field 15 "원본 기타 메타데이터" and goes nowhere. NIfTI
+   headers are read once after the analysis into `runs/<run>/nifti_headers.json`
+   (`/runs/<run>/report?refresh=1` re-reads changed or missing files; prepare never uses this cache).
+   Editable until approval (forms on `/runs/<run>`): dataset fields (name, licence, commercial use, URL,
+   PatientID prefix), included splits, labels on/off, modality of unresolved images, the two pilot
+   subjects. Every edit is re-validated and bumps the plan revision.
 4. **Pilot**: freezes only the pilot subjects (`manifest-pilot.json`: CT/MR DICOM + label RTSTRUCT) and
    sends them to the local SCP. Check them in OncoStudio on 107. Viewer: `/runs/<run>/series/<uid>`
    with the RTSTRUCT contours.

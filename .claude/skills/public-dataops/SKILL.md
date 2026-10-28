@@ -10,8 +10,10 @@ Read AGENTS.md and docs/OPERATIONS.md first. Python is `~/.venvs/ai-platform-dat
 Analysing a folder for the owner:
 1. Start it like the browser does: `python -m dataops analyze DIR` (queued for the worker) or
    `--wait` to run it in this shell. DIR must be under DATAOPS_INPUT_ROOTS.
-2. Open http://127.0.0.1:8096/runs/<run> and report the summary, counts, what was left out and why,
-   unresolved items and the agent's questions. Ask the owner only about real ambiguities.
+2. Report with the standard report, never free-form: http://10.101.1.183:8096/runs/<run>/report (tables
+   1–9, identical for every dataset; `report.json` for the values) and `/reports` to compare datasets.
+   Quote table rows (e.g. table 4 확인 사항) rather than rewording them. Ask the owner only about real
+   ambiguities (table 4 질문/미해결).
 3. Pilot (`python -m dataops pilot RUN` or the button) sends ONLY the two pilot subjects to the local
    SCP OS_LJM@10.101.1.107:4001 (`python -m dataops echo` checks it). Tell the owner to check them in
    OncoStudio on 107.

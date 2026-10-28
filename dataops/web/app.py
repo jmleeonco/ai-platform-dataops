@@ -17,7 +17,7 @@ import numpy as np
 import pydicom
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -26,8 +26,10 @@ from .. import db as dbmod
 from ..config import Settings
 from ..jobs import active_job, job_log, list_jobs
 from ..local_send import journals
-from ..metadata import GROUPS
 from ..metadata import build as build_metadata
+from ..metadata import series_delivery
+from ..report import INDEX_COLUMNS, TITLES, dataset_index
+from ..report import build as build_report
 from ..prepare import MANIFESTS, pilot_series
 from ..publish import central_ready
 from ..records import TABLES, build_records, to_db_value
@@ -130,7 +132,7 @@ def create_app(settings: Settings) -> FastAPI:
         meta, inv, plan = run.meta, run.load("inventory.json", {}), run.load("plan.json", {}) or {}
         manifest, pilot = run.load("manifest.json"), run.load("manifest-pilot.json")
         jlist = journals(run)
-        per_series = _per_series([m for m in (manifest, pilot) if m], jlist)
+        per_series = series_delivery(run)
         records, compare, db_error = None, None, None
         if manifest:
             records = build_records(run)
@@ -163,38 +165,46 @@ def create_app(settings: Settings) -> FastAPI:
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], jobs=jobs,
                     active=active_job(settings, run.id), editable=editable, central=central_ready(settings.central),
                     agent=run.load("agent_proposal.json"), split_names=SPLIT_NAMES,
-                    pilot_series_rows=_pilot_rows(plan, pilot, per_series), stage=_stage(meta))
+                    pilot_series_rows=_pilot_rows(plan, pilot, per_series), stage=_stage(meta),
+                    report=build_report(run, settings) if plan.get("series") else None)
 
-    @app.get("/runs/{run_id}/metadata", response_class=HTMLResponse)
-    def metadata_page(request: Request, run_id: str, refresh: bool = False):
+    @app.get("/runs/{run_id}/report", response_class=HTMLResponse)
+    def report_page(request: Request, run_id: str, refresh: bool = False):
         run = get_run(run_id)
-        md = build_metadata(run, refresh)
-        return page(request, "metadata.html", run=run, meta=run.meta, md=md, groups=GROUPS,
-                    central=central_ready(settings.central), split_names=SPLIT_NAMES)
+        return page(request, "report.html", run=run, report=build_report(run, settings, refresh), titles=TITLES)
 
-    @app.get("/runs/{run_id}/metadata.json")
-    def metadata_json(run_id: str):
+    @app.get("/runs/{run_id}/report.json")
+    def report_json(run_id: str):
+        return build_report(get_run(run_id), settings)
+
+    @app.get("/runs/{run_id}/metadata")
+    def metadata_redirect(run_id: str):
+        return RedirectResponse(f"/runs/{get_run(run_id).id}/report#s6", status_code=301)
+
+    @app.get("/runs/{run_id}/series.json")
+    def series_json(run_id: str):
         md = build_metadata(get_run(run_id))
         if not md["ready"]:
             raise HTTPException(404)
-        return {"columns": md["columns"], "groups": GROUPS, "rows": md["rows"]}
+        return {"fields": md["fields"], "rows": md["rows"]}
 
-    @app.get("/runs/{run_id}/metadata.csv")
-    def metadata_csv(run_id: str):
+    @app.get("/runs/{run_id}/series.csv")
+    def series_csv(run_id: str):
         run = get_run(run_id)
         md = build_metadata(run)
         if not md["ready"]:
             raise HTTPException(404)
-        buf = io.StringIO()
-        w = csv.writer(buf)
-        cols = md["columns"]
-        w.writerow([c["label"] for c in cols])
-        w.writerow(["DICOM: " + c["dicom"] if c["dicom"] else "" for c in cols])
-        w.writerow(["DB: " + c["db"] if c["db"] else "" for c in cols])
-        for r in md["rows"]:
-            w.writerow([_cell(r.get(c["key"])) for c in cols])
-        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": f'attachment; filename="metadata-{run.id}.csv"'})
+        name = (md["plan"].get("dataset") or {}).get("name")
+        return _csv([["데이터셋"] + [f["label"] for f in md["fields"]]] +
+                    [[name] + [r[f["key"]] for f in md["fields"]] for r in md["rows"]], f"series-{run.id}.csv")
+
+    @app.get("/reports", response_class=HTMLResponse)
+    def reports_page(request: Request):
+        return page(request, "reports.html", rows=dataset_index(settings.runs_dir), columns=INDEX_COLUMNS)
+
+    @app.get("/reports.csv")
+    def reports_csv():
+        return _csv([INDEX_COLUMNS] + dataset_index(settings.runs_dir), "datasets.csv")
 
     @app.get("/runs/{run_id}/state.json")
     def run_state(run_id: str):
@@ -392,6 +402,13 @@ def create_app(settings: Settings) -> FastAPI:
 
 
 # ---------------------------------------------------------------------- helpers
+def _csv(rows: list[list], filename: str) -> Response:
+    buf = io.StringIO()
+    csv.writer(buf).writerows([[_cell(v) for v in r] for r in rows])
+    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 def _cell(v) -> str:
     if v is None:
         return ""
@@ -455,27 +472,6 @@ def _overlay(run: Run, rel: str) -> dict:
 @functools.lru_cache(maxsize=16)
 def _overlay_cached(path: str, mtime_ns: int) -> dict:
     return read_overlay(Path(path))
-
-
-def _per_series(manifests: list[dict], jlist: list[dict]) -> dict:
-    """{series_uid: {scope: counts}} over the pilot and full manifests."""
-    out = {}
-    for m in manifests:
-        scope = m.get("scope", "full")
-        status_of = defaultdict(list)
-        for j in jlist:
-            if j.get("scope", "full") == scope and j["manifest_sha256"] == m["manifest_sha256"]:
-                for sop, rec in j["instances"].items():
-                    status_of[sop].append((j["target"].get("kind", "local"), rec["status"]))
-        for inst in m["instances"]:
-            c = out.setdefault(inst["series_uid"], {}).setdefault(scope, Counter())
-            c["instances"] += 1
-            sts = status_of.get(inst["sop_uid"], [])
-            if not sts:
-                c["unsent"] += 1
-            for kind, st in sts:
-                c[f"{kind}:{st}"] += 1
-    return out
 
 
 def _summary(plan: dict) -> dict:

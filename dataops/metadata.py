@@ -1,12 +1,13 @@
-"""Metadata view of a run: every value extracted from the dataset, per series, and where each one goes —
-into the DICOM headers (the pilot to the local SCP and, after approval, Central), into the management DB, or
-nowhere (it stays in the run folder). A read-only projection of the plan, a cached NIfTI header extract and,
-once the pilot is frozen, the real DICOM headers; every claimed destination is checked against the real
-DB-row projection (`records.build_records`) and the real pilot headers, so the table cannot drift from the code.
+"""Per-series metadata in one fixed schema for every dataset (`FIELDS`): what was extracted from the source,
+what the converters write into the DICOM headers (pilot to the local SCP, Central after approval) and what is
+registered in the management DB. Every claimed destination is checked against the real DB-row projection
+(`records.build_records`) and, once the pilot is frozen, against the real DICOM headers, so the schema cannot
+drift from the code. Source headers are read once into a cache in the run folder.
 """
 from __future__ import annotations
 
 import math
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -15,6 +16,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 
+from .local_send import journals
 from .prepare import MANIFESTS, pilot_series
 from .records import build_records, subject_uuid
 from .runs import Run
@@ -26,8 +28,6 @@ NIFTI_FIELDS = ["dim", "pixdim", "datatype", "bitpix", "scl_slope", "scl_inter",
                 "qoffset_z", "srow_x", "srow_y", "srow_z", "xyzt_units", "descrip", "aux_file", "intent_code",
                 "intent_name", "intent_p1", "intent_p2", "intent_p3", "dim_info", "slice_code", "slice_start",
                 "slice_end", "slice_duration", "toffset", "vox_offset", "magic"]
-GROUPS = {"plan": "판정 (분석 결과)", "file": "원본 파일", "nifti": "NIfTI 헤더 (주요)",
-          "nifti_all": "NIfTI 헤더 (나머지)", "conv": "정규화한 기하", "ids": "DICOM 식별자", "db": "DB 전용"}
 
 
 # ---------------------------------------------------------------------- NIfTI header extract (cached)
@@ -91,33 +91,19 @@ def nifti_headers(run: Run, plan: dict, refresh: bool = False) -> dict:
     return out
 
 
-# ---------------------------------------------------------------------- columns
+# ---------------------------------------------------------------------- the fixed series schema
 @dataclass
-class Col:
+class Field:
     key: str
     label: str
-    group: str
+    desc: str
     value: Callable[[dict], Any]
     kinds: tuple = ("nifti", "rtstruct", "dicom")
-    dicom: str | None = None                     # where it lands in the DICOM header
-    dicom_val: Callable[[Any], Any] | None = None    # read that value back from a real header
+    dicom: str = ""                                   # where it lands in the DICOM header ("" = not written)
+    dicom_val: Callable[[Any], Any] | None = None     # read it back from a real header
     dicom_expect: Callable[[dict], Any] | None = None
-    db: str | None = None                        # table.column it is registered in
-    db_val: Callable[[dict, dict], Any] | None = None    # read it back from the DB-row projection
-    note: str = ""
-
-
-def _h(ctx, field):
-    return (ctx["hdr"] or {}).get(field)
-
-
-def _origin(ctx):
-    h = ctx["hdr"] or {}
-    if h.get("sform_code"):
-        return [r[3] for r in (h.get("srow_x"), h.get("srow_y"), h.get("srow_z")) if r]
-    if "qoffset_x" in h:
-        return [h.get("qoffset_x"), h.get("qoffset_y"), h.get("qoffset_z")]
-    return None
+    db: str = ""                                      # table.column it is registered in ("" = not stored)
+    db_val: Callable[[dict, dict], Any] | None = None  # read it back from the DB-row projection
 
 
 def _m(ctx, k):
@@ -128,8 +114,8 @@ def _ser(idx, s):
     return idx["series"].get(s["series_uid"]) or {}
 
 
-def _rois(ds):
-    return [str(r.ROIName) for r in ds.get("StructureSetROISequence", [])]
+def _ser_meta(k):
+    return lambda i, s: (_ser(i, s).get("metadata_json") or {}).get(k)
 
 
 def _rs_ref_series(ds):
@@ -140,129 +126,107 @@ def _rs_ref_series(ds):
         return None
 
 
-COLUMNS = [
-    Col("included", "포함", "plan", lambda c: not c["s"].get("excluded"),
-        note="제외된 시리즈는 어디로도 보내지 않습니다"),
-    Col("pilot", "파일럿", "plan", lambda c: c["pilot"],
-        note="파일럿 대상자 2명의 시리즈만 Local SCP로 갑니다"),
-    Col("split", "분할", "plan", lambda c: c["s"].get("split"),
-        db="series.metadata_json.split", db_val=lambda i, s: (_ser(i, s).get("metadata_json") or {}).get("split")),
-    Col("subject_key", "대상자 키", "plan", lambda c: c["s"]["subject_key"],
-        dicom="PatientID·PatientName 안에 포함",
-        db="subjects.source_subject_key",
-        db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("source_subject_key")),
-    Col("kind", "종류", "plan", lambda c: c["s"]["kind"],
-        db="series.source_kind", db_val=lambda i, s: _ser(i, s).get("source_kind")),
-    Col("modality", "Modality", "plan", lambda c: c["s"].get("modality"),
-        dicom="Modality (0008,0060)", dicom_val=lambda ds: ds.get("Modality"),
-        db="series.modality", db_val=lambda i, s: _ser(i, s).get("modality")),
-    Col("modality_basis", "Modality 근거", "plan", lambda c: c["s"].get("modality_basis"),
-        dicom="ImageComments (0020,4000) 안에 포함 (영상만)",
-        db="series.modality_basis", db_val=lambda i, s: _ser(i, s).get("modality_basis")),
-    Col("label_of", "라벨의 영상", "plan", lambda c: _m(c, "label_of"), kinds=("rtstruct",),
-        dicom="ReferencedFrameOfReferenceSequence → 참조 Series UID",
-        dicom_val=_rs_ref_series, dicom_expect=lambda c: (c["image"] or {}).get("series_uid"),
-        db="series.metadata_json.label_of",
-        db_val=lambda i, s: (_ser(i, s).get("metadata_json") or {}).get("label_of")),
-    Col("roi_names", "ROI 이름", "plan", lambda c: c["roi_names"], kinds=("rtstruct",),
-        dicom="StructureSetROISequence.ROIName (라벨 맵에 있는 값만)",
-        db="ingest_runs.plan_json (conversion.label_names)",
-        note="RTSTRUCT에는 실제 라벨 맵에 있는 값만 ROI로 들어갑니다"),
-    Col("source", "원본 파일", "file", lambda c: (c["s"].get("sources") or [None])[0],
-        dicom="ImageComments (0020,4000) 안에 포함 (영상)",
-        db="instances.source_relative_path", note="instances 행은 전체 변환 뒤에 생깁니다"),
-    Col("size", "파일 크기(B)", "file", lambda c: c["size"], note="어디에도 기록하지 않음"),
-    Col("dicom_metadata", "원본 DICOM 태그", "file", lambda c: c["s"].get("metadata"), kinds=("dicom",),
-        dicom="원본 파일 그대로 전송", db="series.metadata_json",
-        db_val=lambda i, s: _ser(i, s).get("metadata_json")),
-    # NIfTI header — main fields
-    Col("n_dim", "dim", "nifti", lambda c: (_h(c, "dim") or [None])[1:1 + (_h(c, "dim") or [0])[0]] or None,
-        kinds=("nifti", "rtstruct")),
-    Col("n_pixdim", "pixdim", "nifti", lambda c: (_h(c, "pixdim") or [None] * 4)[1:4], kinds=("nifti", "rtstruct")),
-    Col("n_datatype", "datatype", "nifti", lambda c: _h(c, "datatype"), kinds=("nifti", "rtstruct")),
-    Col("n_scl", "scl_slope/inter", "nifti", lambda c: [_h(c, "scl_slope"), _h(c, "scl_inter")],
-        kinds=("nifti",), dicom="RescaleSlope/Intercept 계산에 반영"),
-    Col("n_codes", "qform/sform", "nifti", lambda c: [_h(c, "qform_code"), _h(c, "sform_code")],
-        kinds=("nifti", "rtstruct"), dicom="방향·위치 계산에 사용"),
-    Col("n_origin", "원점(RAS)", "nifti", _origin, kinds=("nifti", "rtstruct"),
-        dicom="ImagePositionPatient 계산에 사용 (LPS로 변환)"),
-    Col("n_units", "xyzt_units", "nifti", lambda c: _h(c, "xyzt_units"), kinds=("nifti", "rtstruct")),
-    Col("n_descrip", "descrip", "nifti", lambda c: _h(c, "descrip"), kinds=("nifti", "rtstruct"),
-        note="원본에만 있음"),
-    Col("n_aux", "aux_file", "nifti", lambda c: _h(c, "aux_file"), kinds=("nifti", "rtstruct"),
-        note="원본에만 있음"),
-    Col("n_intent", "intent", "nifti", lambda c: [_h(c, "intent_code"), _h(c, "intent_name")],
-        kinds=("nifti", "rtstruct")),
-    Col("n_cal", "cal_min/max", "nifti", lambda c: [_h(c, "cal_min"), _h(c, "cal_max")], kinds=("nifti", "rtstruct")),
-    *[Col(f"n_{f}", f, "nifti_all", (lambda f: lambda c: _h(c, f))(f), kinds=("nifti", "rtstruct"))
-      for f in ["bitpix", "quatern_b", "quatern_c", "quatern_d", "qoffset_x", "qoffset_y", "qoffset_z",
-                "srow_x", "srow_y", "srow_z", "intent_p1", "intent_p2", "intent_p3", "dim_info", "slice_code",
-                "slice_start", "slice_end", "slice_duration", "toffset", "vox_offset", "magic"]],
-    # normalised geometry (what the converter writes)
-    Col("shape_xyz", "크기 x·y·z", "conv", lambda c: _m(c, "shape_xyz"), kinds=("nifti",),
-        dicom="Columns·Rows (0028,0011/0010)", dicom_val=lambda ds: [int(ds.Columns), int(ds.Rows)],
-        dicom_expect=lambda c: (_m(c, "shape_xyz") or [None, None])[:2],
-        db="series.metadata_json.shape_xyz",
-        db_val=lambda i, s: (_ser(i, s).get("metadata_json") or {}).get("shape_xyz")),
-    Col("spacing_mm", "간격 mm", "conv", lambda c: _m(c, "spacing_mm"), kinds=("nifti",),
-        dicom="PixelSpacing·SliceThickness",
-        dicom_val=lambda ds: [float(ds.PixelSpacing[1]), float(ds.PixelSpacing[0]), float(ds.SliceThickness)],
-        db="series.metadata_json.spacing_mm",
-        db_val=lambda i, s: (_ser(i, s).get("metadata_json") or {}).get("spacing_mm")),
-    Col("axcodes", "축 방향", "conv", lambda c: _m(c, "axcodes"), kinds=("nifti",),
-        dicom="ImageOrientationPatient 계산에 반영",
-        db="series.metadata_json.axcodes",
-        db_val=lambda i, s: (_ser(i, s).get("metadata_json") or {}).get("axcodes")),
-    Col("dtype", "자료형", "conv", lambda c: _m(c, "dtype"), kinds=("nifti",),
-        dicom="BitsStored·PixelRepresentation 계산에 반영",
-        db="series.metadata_json.dtype",
-        db_val=lambda i, s: (_ser(i, s).get("metadata_json") or {}).get("dtype")),
-    # DICOM identifiers
-    Col("patient_id", "PatientID", "ids", lambda c: c["s"].get("patient_id"),
-        dicom="PatientID (0010,0020)", dicom_val=lambda ds: ds.get("PatientID"),
-        db="subjects.patient_id", db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("patient_id")),
-    Col("patient_name", "PatientName", "ids", lambda c: c["conv"].get("patient_name"),
-        dicom="PatientName (0010,0010)", dicom_val=lambda ds: str(ds.get("PatientName", "")),
-        db="ingest_runs.plan_json (conversion.patient_name)"),
-    Col("study_uid", "Study UID", "ids", lambda c: c["s"].get("study_uid"),
-        dicom="StudyInstanceUID (0020,000D)", dicom_val=lambda ds: ds.get("StudyInstanceUID"),
-        db="studies.study_uid", db_val=lambda i, s: (i["studies"].get(s["study_uid"]) or {}).get("study_uid")),
-    Col("study_description", "StudyDescription", "ids", lambda c: c["conv"].get("study_description"),
-        dicom="StudyDescription (0008,1030)", dicom_val=lambda ds: ds.get("StudyDescription"),
-        db="studies.description", db_val=lambda i, s: (i["studies"].get(s["study_uid"]) or {}).get("description"),
-        note="데이터셋 이름 (64자 제한, 길면 끝에 해시)"),
-    Col("series_uid", "Series UID", "ids", lambda c: c["s"].get("series_uid"),
-        dicom="SeriesInstanceUID (0020,000E)", dicom_val=lambda ds: ds.get("SeriesInstanceUID"),
-        db="series.series_uid", db_val=lambda i, s: _ser(i, s).get("series_uid")),
-    Col("series_number", "SeriesNumber", "ids", lambda c: c["s"].get("series_number"),
-        dicom="SeriesNumber (0020,0011)", dicom_val=lambda ds: int(ds.SeriesNumber),
-        db="series.series_number", db_val=lambda i, s: _ser(i, s).get("series_number")),
-    Col("series_description", "SeriesDescription", "ids", lambda c: (c["s"].get("description") or "")[:64] or None,
-        dicom="SeriesDescription (0008,103E)", dicom_val=lambda ds: ds.get("SeriesDescription"),
-        db="series.description", db_val=lambda i, s: (_ser(i, s).get("description") or "")[:64] or None),
-    Col("frame_of_reference", "FrameOfReference UID", "ids",
-        lambda c: (c["image"] or c["s"]).get("conversion", {}).get("frame_of_reference_uid"),
-        kinds=("nifti", "rtstruct"), dicom="FrameOfReferenceUID / ReferencedFrameOfReference",
-        dicom_val=lambda ds: ds.get("FrameOfReferenceUID") or
-        ds.ReferencedFrameOfReferenceSequence[0].FrameOfReferenceUID,
-        db="ingest_runs.plan_json (conversion.frame_of_reference_uid)", note="영상과 RTSTRUCT가 같은 값"),
-    Col("instance_count", "인스턴스 수", "ids", lambda c: c["s"].get("instance_count"),
-        dicom="파일(SOP Instance) 개수", db="series.instance_count",
-        db_val=lambda i, s: _ser(i, s).get("instance_count")),
-    Col("subject_uuid", "subject UUID", "db", lambda c: c["subject_uuid"],
-        db="subjects.subject_uuid", db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("subject_uuid"),
-        note="DB 전용 식별자 (dataset UUID + 대상자 키)"),
-]
+SHOWN = {"dim", "pixdim"}          # NIfTI fields already shown as size / spacing
 
-DATASET_ITEMS = [  # (key, label, DICOM destination, DB destination)
-    ("name", "데이터셋 이름", "StudyDescription (64자) · ImageComments", "datasets.name"),
-    ("description", "설명", None, "datasets.description"),
-    ("license", "라이선스", None, "datasets.license"),
-    ("commercial_use", "상업적 이용", None, "datasets.commercial_use"),
-    ("source_url", "출처 URL", None, "datasets.source_url"),
-    ("patient_id_prefix", "PatientID 접두어", "PatientID·PatientName 앞부분", "datasets.patient_id_prefix"),
-    ("dataset_uuid", "dataset UUID", None, "datasets.dataset_uuid · subjects · dataset_series"),
+
+def _extra(ctx) -> str | None:
+    """Every other source metadata value as `key=value; ...` (NIfTI header fields that are not 0/empty, or the
+    DICOM series tags of a pass-through series)."""
+    s = ctx["s"]
+    if s["kind"] == "dicom":
+        items = (s.get("metadata") or {}).items()
+    else:
+        h = ctx["hdr"] or {}
+        if "error" in h:
+            return f"헤더 읽기 실패: {h['error'].split(':')[0]}"
+        items = [(k, v) for k, v in h.items() if k not in SHOWN and v not in (None, "", 0, 0.0)
+                 and not (isinstance(v, list) and not any(v))]
+    out = "; ".join(f"{k}={' '.join(map(str, v)) if isinstance(v, list) else v}" for k, v in items)
+    return out or None
+
+
+KIND_LABEL = {"nifti": "영상", "rtstruct": "라벨", "dicom": "영상(DICOM)"}
+FORMAT = {"nifti": "NIfTI", "rtstruct": "NIfTI 라벨", "dicom": "DICOM"}
+
+FIELDS = [
+    Field("subject_key", "대상자 키", "원본 파일명에서 뽑은 대상자 식별자", lambda c: c["s"]["subject_key"],
+          dicom="PatientID·PatientName 일부", db="subjects.source_subject_key",
+          db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("source_subject_key")),
+    Field("split", "분할", "train / validation / test / other / none", lambda c: c["s"].get("split"),
+          db="series.metadata_json.split", db_val=_ser_meta("split")),
+    Field("kind", "종류", "영상 / 라벨 / 영상(DICOM)", lambda c: KIND_LABEL.get(c["s"]["kind"]),
+          db="series.source_kind", db_val=lambda i, s: KIND_LABEL.get(_ser(i, s).get("source_kind"))),
+    Field("modality", "Modality", "CT / MR / RTSTRUCT", lambda c: c["s"].get("modality"),
+          dicom="Modality (0008,0060)", dicom_val=lambda ds: ds.get("Modality"),
+          db="series.modality", db_val=lambda i, s: _ser(i, s).get("modality")),
+    Field("modality_basis", "Modality 근거", "modality를 정한 규칙과 근거 문서", lambda c: c["s"].get("modality_basis"),
+          dicom="ImageComments (0020,4000) 일부, 영상만", db="series.modality_basis",
+          db_val=lambda i, s: _ser(i, s).get("modality_basis")),
+    Field("source", "원본 파일", "데이터셋 폴더 기준 상대 경로", lambda c: (c["s"].get("sources") or [None])[0],
+          dicom="ImageComments (0020,4000) 일부, 영상만", db="instances.source_relative_path"),
+    Field("format", "원본 형식", "NIfTI / NIfTI 라벨 / DICOM", lambda c: FORMAT.get(c["s"]["kind"])),
+    Field("size_mb", "원본 크기(MB)", "원본 파일 크기",
+          lambda c: round(c["size"] / 1e6, 1) if c["size"] is not None else None),
+    Field("shape", "크기 x·y·z", "변환 기준 격자 크기(열·행·장)", lambda c: _m(c, "shape_xyz"), kinds=("nifti",),
+          dicom="Columns·Rows (0028,0011/0010), 장 수", dicom_val=lambda ds: [int(ds.Columns), int(ds.Rows)],
+          dicom_expect=lambda c: (_m(c, "shape_xyz") or [None, None])[:2],
+          db="series.metadata_json.shape_xyz", db_val=_ser_meta("shape_xyz")),
+    Field("spacing", "간격 mm", "x·y·z 화소 간격", lambda c: _m(c, "spacing_mm"), kinds=("nifti",),
+          dicom="PixelSpacing (0028,0030)·SliceThickness (0018,0050)",
+          dicom_val=lambda ds: [float(ds.PixelSpacing[1]), float(ds.PixelSpacing[0]), float(ds.SliceThickness)],
+          db="series.metadata_json.spacing_mm", db_val=_ser_meta("spacing_mm")),
+    Field("axcodes", "축 방향", "원본 축 방향(RAS 기준)", lambda c: _m(c, "axcodes"), kinds=("nifti",),
+          dicom="ImageOrientationPatient (0020,0037) 계산", db="series.metadata_json.axcodes",
+          db_val=_ser_meta("axcodes")),
+    Field("dtype", "자료형", "원본 화소 자료형", lambda c: _m(c, "dtype"), kinds=("nifti",),
+          dicom="BitsStored·PixelRepresentation 계산", db="series.metadata_json.dtype", db_val=_ser_meta("dtype")),
+    Field("label_of", "라벨 대상 영상", "라벨이 붙는 영상의 원본 파일", lambda c: _m(c, "label_of"), kinds=("rtstruct",),
+          dicom="ReferencedFrameOfReferenceSequence (3006,0010)", dicom_val=_rs_ref_series,
+          dicom_expect=lambda c: (c["image"] or {}).get("series_uid"),
+          db="series.metadata_json.label_of", db_val=_ser_meta("label_of")),
+    Field("rois", "ROI", "라벨 값과 이름", lambda c: c["roi_names"], kinds=("rtstruct",),
+          dicom="StructureSetROISequence (3006,0020), 맵에 있는 값만", db="ingest_runs.plan_json"),
+    Field("source_extra", "원본 기타 메타데이터", "그 밖의 원본 헤더 값 전체 (0·빈 값 제외)", _extra),
+    Field("patient_id", "PatientID", "접두어_대상자 키", lambda c: c["s"].get("patient_id"),
+          dicom="PatientID (0010,0020)", dicom_val=lambda ds: ds.get("PatientID"),
+          db="subjects.patient_id", db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("patient_id")),
+    Field("patient_name", "PatientName", "접두어^대상자 키", lambda c: c["conv"].get("patient_name"),
+          dicom="PatientName (0010,0010)", dicom_val=lambda ds: str(ds.get("PatientName", "")),
+          db="ingest_runs.plan_json"),
+    Field("study_uid", "Study UID", "대상자별 검사 UID", lambda c: c["s"].get("study_uid"),
+          dicom="StudyInstanceUID (0020,000D)", dicom_val=lambda ds: ds.get("StudyInstanceUID"),
+          db="studies.study_uid", db_val=lambda i, s: (i["studies"].get(s["study_uid"]) or {}).get("study_uid")),
+    Field("study_description", "StudyDescription", "데이터셋 이름 (64자 제한)", lambda c: c["conv"].get("study_description"),
+          dicom="StudyDescription (0008,1030)", dicom_val=lambda ds: ds.get("StudyDescription"),
+          db="studies.description", db_val=lambda i, s: (i["studies"].get(s["study_uid"]) or {}).get("description")),
+    Field("series_uid", "Series UID", "시리즈 UID", lambda c: c["s"].get("series_uid"),
+          dicom="SeriesInstanceUID (0020,000E)", dicom_val=lambda ds: ds.get("SeriesInstanceUID"),
+          db="series.series_uid", db_val=lambda i, s: _ser(i, s).get("series_uid")),
+    Field("series_number", "SeriesNumber", "대상자 안의 순번 (라벨 1000+)", lambda c: c["s"].get("series_number"),
+          dicom="SeriesNumber (0020,0011)", dicom_val=lambda ds: int(ds.SeriesNumber),
+          db="series.series_number", db_val=lambda i, s: _ser(i, s).get("series_number")),
+    Field("series_description", "SeriesDescription", "대상자 키 / '… labels'",
+          lambda c: (c["s"].get("description") or "")[:64] or None,
+          dicom="SeriesDescription (0008,103E)", dicom_val=lambda ds: ds.get("SeriesDescription"),
+          db="series.description", db_val=lambda i, s: (_ser(i, s).get("description") or "")[:64] or None),
+    Field("frame_of_reference", "FrameOfReference UID", "영상과 라벨이 공유하는 좌표계 UID",
+          lambda c: (c["image"] or c["s"]).get("conversion", {}).get("frame_of_reference_uid"),
+          kinds=("nifti", "rtstruct"), dicom="FrameOfReferenceUID (0020,0052)",
+          dicom_val=lambda ds: ds.get("FrameOfReferenceUID") or
+          ds.ReferencedFrameOfReferenceSequence[0].FrameOfReferenceUID, db="ingest_runs.plan_json"),
+    Field("instance_count", "인스턴스 수", "DICOM 파일 수 (영상 장 수, 라벨 1)", lambda c: c["s"].get("instance_count"),
+          dicom="SOP Instance 개수", db="series.instance_count", db_val=lambda i, s: _ser(i, s).get("instance_count")),
+    Field("subject_uuid", "subject UUID", "DB 대상자 키 (dataset UUID + 대상자 키)", lambda c: c["subject_uuid"],
+          db="subjects.subject_uuid",
+          db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("subject_uuid")),
+    Field("included", "포함", "Y: 전송·등록 대상, N: 제외", lambda c: not c["s"].get("excluded")),
+    Field("pilot", "파일럿", "Y: 파일럿 대상자(Local SCP로 전송)", lambda c: c["pilot"]),
+    Field("local_status", "Local SCP", "파일럿 전송 결과 (수신/전체)", lambda c: c["status"]["local"]),
+    Field("central_status", "Central", "Central 전송 결과 (수신/전체)", lambda c: c["status"]["central"]),
+    Field("db_status", "DB", "관리 DB 등록 여부", lambda c: c["status"]["db"]),
 ]
+FIELD_KEYS = [f.key for f in FIELDS]
+
 
 TAG_SOURCE = {   # keyword -> (kind, explanation) for every top-level element the converters write
     "SpecificCharacterSet": ("고정", "ISO_IR 192 (UTF-8)"),
@@ -328,7 +292,41 @@ def _same(a, b) -> bool:
     return str(a) == str(b)
 
 
-def _contexts(plan: dict, headers: dict) -> list[dict]:
+def series_delivery(run: Run) -> dict:
+    """{series_uid: {scope: Counter}} over the pilot and full manifests: instances, unsent, "<kind>:<status>"."""
+    jlist = journals(run)
+    out = {}
+    for scope, name in MANIFESTS.items():
+        m = run.load(name)
+        if not m:
+            continue
+        status_of = defaultdict(list)
+        for j in jlist:
+            if j.get("scope", "full") == scope and j["manifest_sha256"] == m["manifest_sha256"]:
+                for sop, rec in j["instances"].items():
+                    status_of[sop].append((j["target"].get("kind", "local"), rec["status"]))
+        for inst in m["instances"]:
+            c = out.setdefault(inst["series_uid"], {}).setdefault(scope, Counter())
+            c["instances"] += 1
+            sts = status_of.get(inst["sop_uid"], [])
+            if not sts:
+                c["unsent"] += 1
+            for kind, st in sts:
+                c[f"{kind}:{st}"] += 1
+    return out
+
+
+def _status(counts: Counter | None, kind: str) -> str | None:
+    """'수신 90/90' / '일부 80/90' / '실패 0/90' / '미전송' — the same wording for every target."""
+    if not counts:
+        return None
+    total, ok = counts["instances"], counts[f"{kind}:accepted"] + counts[f"{kind}:warning"]
+    if not any(k.startswith(kind + ":") for k in counts):
+        return "미전송"
+    return f"{'수신' if ok == total else ('실패' if ok == 0 else '일부')} {ok}/{total}"
+
+
+def _contexts(plan: dict, headers: dict, delivery: dict, registered: bool) -> list[dict]:
     by_key = {s["series_key"]: s for s in plan.get("series", [])}
     pilot = {s["series_key"] for s in pilot_series(plan)} if plan.get("series") else set()
     duuid = plan["dataset"]["dataset_uuid"]
@@ -339,7 +337,10 @@ def _contexts(plan: dict, headers: dict) -> list[dict]:
         h = headers.get(src) or {}
         conv = dict((image or s).get("conversion") or {})
         names = (s.get("conversion") or {}).get("label_names")
-        out.append({"s": s, "image": image, "hdr": h.get("header"), "size": h.get("size"),
+        d = delivery.get(s.get("series_uid"), {})
+        status = {"local": _status(d.get("pilot"), "local"), "central": _status(d.get("full"), "central"),
+                  "db": ("등록" if registered else "미등록") if not s.get("excluded") else None}
+        out.append({"s": s, "image": image, "hdr": h.get("header"), "size": h.get("size"), "status": status,
                     "conv": conv, "pilot": s["series_key"] in pilot,
                     "roi_names": [f"{k} {v}" for k, v in sorted(names.items(), key=lambda kv: int(kv[0]))]
                     if names else None,
@@ -369,39 +370,39 @@ def _frozen_headers(run: Run, uids: set) -> dict:
 
 
 def build(run: Run, refresh: bool = False) -> dict:
-    """Everything the metadata page shows; also the source of the JSON/CSV downloads."""
+    """Series rows in the fixed schema, the field definitions with their checks, the real pilot DICOM headers
+    and the DB rows registration would write."""
     plan = run.load("plan.json") or {}
     if not plan.get("series"):
         return {"ready": False}
     headers = nifti_headers(run, plan, refresh)
-    ctxs = _contexts(plan, headers)
+    ctxs = _contexts(plan, headers, series_delivery(run), bool(run.load("registration.json")))
     records = build_records(run, preview=True)
     idx = _index(records)
     active = [c for c in ctxs if not c["s"].get("excluded")]
-    pilot_uids = {c["s"]["series_uid"] for c in active if c["pilot"]}
-    real = _frozen_headers(run, pilot_uids)
+    real = _frozen_headers(run, {c["s"]["series_uid"] for c in active if c["pilot"]})
 
-    rows, checks = [], {col.key: {"db_ok": 0, "db_bad": [], "dicom_ok": 0, "dicom_bad": []} for col in COLUMNS}
+    rows, checks = [], {f.key: {"db_ok": 0, "db_bad": [], "dicom_ok": 0, "dicom_bad": []} for f in FIELDS}
     for c in ctxs:
         s = c["s"]
         row = {"_uid": s["series_uid"], "_kind": s["kind"]}
-        for col in COLUMNS:
-            v = col.value(c) if s["kind"] in col.kinds else None
-            row[col.key] = v
-            if s.get("excluded") or s["kind"] not in col.kinds:
+        for f in FIELDS:
+            v = f.value(c) if s["kind"] in f.kinds else None
+            row[f.key] = v
+            if s.get("excluded") or s["kind"] not in f.kinds:
                 continue
-            ck = checks[col.key]
-            if col.db_val:
-                got = col.db_val(idx, s)
+            ck = checks[f.key]
+            if f.db_val:
+                got = f.db_val(idx, s)
                 if _same(v, got):
                     ck["db_ok"] += 1
                 elif len(ck["db_bad"]) < 5:
                     ck["db_bad"].append({"series": s["series_key"], "expected": v, "db": got})
             ds = real.get(s["series_uid"])
-            if col.dicom_val and ds is not None:
-                want = col.dicom_expect(c) if col.dicom_expect else v
+            if f.dicom_val and ds is not None:
+                want = f.dicom_expect(c) if f.dicom_expect else v
                 try:
-                    got = col.dicom_val(ds)
+                    got = f.dicom_val(ds)
                 except (AttributeError, IndexError, KeyError, ValueError) as e:
                     got = f"읽기 실패: {e}"
                 if _same(want, got):
@@ -410,36 +411,14 @@ def build(run: Run, refresh: bool = False) -> dict:
                     ck["dicom_bad"].append({"series": s["series_key"], "expected": want, "dicom": str(got)})
         rows.append(row)
 
-    example = next((c for c in active if c["pilot"] and c["s"]["kind"] != "rtstruct"), active[0] if active else None)
-    example_rt = next((c for c in active if c["pilot"] and c["s"]["kind"] == "rtstruct"), None)
-    flow = []
-    kinds = {c["s"]["kind"] for c in active}
-    for col in COLUMNS:
-        if col.group == "nifti_all" or col.key in ("included", "pilot") or not kinds & set(col.kinds):
-            continue                                   # filters of the table, not data that travels
-        ex = example_rt if (example and example["s"]["kind"] not in col.kinds) else example
-        ck = checks[col.key]
-        flow.append({"key": col.key, "label": col.label, "group": GROUPS[col.group],
-                     "example": col.value(ex) if ex and ex["s"]["kind"] in col.kinds else None,
-                     "dicom": col.dicom, "db": col.db, "note": col.note,
-                     "db_check": ("ok" if not ck["db_bad"] else "bad") if ck["db_ok"] or ck["db_bad"] else None,
-                     "db_checked": ck["db_ok"] + len(ck["db_bad"]), "db_bad": ck["db_bad"],
-                     "dicom_check": (("ok" if not ck["dicom_bad"] else "bad") if ck["dicom_ok"] or ck["dicom_bad"]
-                                     else "pending") if col.dicom_val else None,
-                     "dicom_checked": ck["dicom_ok"] + len(ck["dicom_bad"]), "dicom_bad": ck["dicom_bad"]})
-
-    ds_row = records["datasets"][0]
-    dataset = [{"label": label, "value": plan["dataset"].get(k), "dicom": dicom, "db": db,
-                "db_check": _same(plan["dataset"].get(k), ds_row.get(k))} for k, label, dicom, db in DATASET_ITEMS]
-    a = plan.get("analysis") or {}
-    dataset += [{"label": "인용", "value": a.get("citation"), "dicom": None, "db": None},
-                {"label": "에이전트 요약·사실·질문", "value": f"{len(a.get('findings', []))}개 사실, "
-                 f"{len(a.get('questions', []))}개 질문", "dicom": None, "db": None},
-                {"label": "plan (규칙·라벨 이름·변환 설정)", "value": f"rev {run.meta.get('revision')}",
-                 "dicom": None, "db": "ingest_runs.plan_json"},
-                {"label": "승인 기록", "value": (run.meta.get("approval") or {}).get("approved_by"),
-                 "dicom": None, "db": "ingest_runs.approval_json"}]
-
+    fields = []
+    for no, f in enumerate(FIELDS, start=1):
+        ck = checks[f.key]
+        fields.append({"no": no, "key": f.key, "label": f.label, "desc": f.desc, "dicom": f.dicom, "db": f.db,
+                       "dicom_check": _verdict(ck["dicom_ok"], ck["dicom_bad"], "해당 없음" if real else "파일럿 후")
+                       if f.dicom_val else None,
+                       "db_check": _verdict(ck["db_ok"], ck["db_bad"], "해당 없음") if f.db_val else None,
+                       "bad": ck["db_bad"] + ck["dicom_bad"]})
     headers_view = []
     for c in active:
         ds = real.get(c["s"]["series_uid"])
@@ -447,22 +426,17 @@ def build(run: Run, refresh: bool = False) -> dict:
             continue
         headers_view.append({"modality": ds.get("Modality"), "series": c["s"]["series_key"],
                              "tags": [_tag_row(el) for el in ds if el.keyword != "PixelData"]})
-    pilot_m = run.load(MANIFESTS["pilot"])
-    dest = {
-        "local": {"subjects": (plan.get("pilot") or {}).get("subjects", []),
-                  "series": len(pilot_uids),
-                  "instances": len(pilot_m["instances"]) if pilot_m else sum(
-                      c["s"].get("instance_count") or 0 for c in active if c["pilot"]),
-                  "frozen": bool(pilot_m)},
-        "central": {"series": len(active), "instances": sum(c["s"].get("instance_count") or 0 for c in active),
-                    "subjects": len({c["s"]["subject_key"] for c in active})},
-        "db": {t: len(v) for t, v in records.items()},
-    }
-    unknown = sorted({t["keyword"] for h in headers_view for t in h["tags"] if t["source"] == "?"})
-    unreadable = sorted(rel for rel, h in headers.items() if "error" in (h.get("header") or {}))
-    return {"ready": True, "plan": plan, "rows": rows, "columns": columns_meta(), "flow": flow,
-            "dataset": dataset, "headers": headers_view, "dest": dest, "records": records,
-            "unknown_tags": unknown, "unreadable": unreadable, "excluded": sum(1 for c in ctxs if c["s"].get("excluded"))}
+    return {"ready": True, "plan": plan, "rows": rows, "fields": fields, "headers": headers_view,
+            "records": records,
+            "unknown_tags": sorted({t["keyword"] for h in headers_view for t in h["tags"] if t["source"] == "?"}),
+            "unreadable": sorted(rel for rel, h in headers.items() if "error" in (h.get("header") or {}))}
+
+
+def _verdict(ok: int, bad: list, none: str) -> str:
+    """'일치 960' / '불일치 2' / `none` when nothing was compared ('파일럿 후', '해당 없음')."""
+    if bad:
+        return f"불일치 {len(bad)}"
+    return f"일치 {ok}" if ok else none
 
 
 def _tag_row(el) -> dict:
@@ -476,8 +450,3 @@ def _tag_row(el) -> dict:
     kind, why = TAG_SOURCE.get(el.keyword, ("?", "출처 미정"))
     return {"tag": f"({el.tag.group:04X},{el.tag.element:04X})", "keyword": el.keyword, "vr": el.VR,
             "value": value, "source": kind, "why": why}
-
-
-def columns_meta() -> list[dict]:
-    return [{"key": c.key, "label": c.label, "group": c.group, "group_label": GROUPS[c.group],
-             "dicom": c.dicom, "db": c.db, "note": c.note} for c in COLUMNS]

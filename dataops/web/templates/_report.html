@@ -1,0 +1,39 @@
+{# The standard report tables: one renderer for every dataset, so every report has the same shape. #}
+{% macro cell(v) -%}
+{%- if v is none or v == '' %}-{% elif v is sameas true %}Y{% elif v is sameas false %}N
+{%- elif v is number and v is not float %}{{ '{:,}'.format(v) }}{% elif v is string %}{{ v }}
+{%- elif v is mapping %}{{ v|jsonfmt(300) }}{% elif v is iterable %}{{ v|join(', ') }}{% else %}{{ v }}{% endif -%}
+{%- endmacro %}
+{% macro std_section(sec) -%}
+<section id="s{{ sec.no }}" class="std">
+<h2><span class="sno">{{ sec.no }}</span> {{ sec.title }}{% if sec.subtitle %} <span class="muted small mono">{{ sec.subtitle }}</span>{% endif %}</h2>
+<div class="table-wrap"><table class="std{{ ' std-kv' if sec.kv }}">
+{% if not sec.kv %}<tr>{% for c in sec.columns %}<th>{{ c }}</th>{% endfor %}</tr>{% endif %}
+{% for r in sec.rows %}<tr class="{{ 'total' if sec.total_row and loop.last }}">{% for v in r %}
+{% if sec.kv and loop.first %}<th>{{ v }}</th>{% else %}<td class="{{ 'num' if v is number and not sec.kv }}">{{ cell(v) }}</td>{% endif %}{% endfor %}</tr>
+{% else %}<tr><td colspan="{{ sec.columns|length }}" class="muted">없음</td></tr>{% endfor %}
+</table></div>
+{% if sec.samples %}{% for t, rows in sec.samples.items() %}
+<details><summary>{{ t }} — 처음 {{ rows|length }}행</summary><div class="table-wrap"><table class="std">
+<tr>{% for c in rows[0].keys() %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in rows %}<tr>{% for v in r.values() %}<td class="mono small">{{ cell(v) }}</td>{% endfor %}</tr>{% endfor %}
+</table></div></details>{% endfor %}{% endif %}
+</section>
+{%- endmacro %}
+{% macro series_section(sec, run) -%}
+<section id="s6" class="std">
+<h2><span class="sno">6</span> {{ sec.title }}</h2>
+<div id="mt" data-run="{{ run.id }}" data-src="/runs/{{ run.id }}/series.json">
+  <form class="inline" id="mt-controls">
+    <input type="search" id="mt-q" placeholder="검색">
+    <select id="mt-split"><option value="">분할 전체</option>{% for k in ['train', 'validation', 'test', 'other', 'none'] %}<option>{{ k }}</option>{% endfor %}</select>
+    <select id="mt-kind"><option value="">종류 전체</option><option>영상</option><option>라벨</option><option>영상(DICOM)</option></select>
+    <select id="mt-inc"><option value="">포함·제외</option><option value="in">포함</option><option value="out">제외</option><option value="pilot">파일럿</option></select>
+    <a class="button" href="/runs/{{ run.id }}/series.csv">CSV</a>
+  </form>
+  <p class="muted small" id="mt-info"></p>
+  <div class="table-wrap mt-wrap"><table id="mt-table" class="std"></table></div>
+  <p class="pager" id="mt-pager"></p>
+</div>
+</section>
+{%- endmacro %}

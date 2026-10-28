@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status, csrf_field, counts %}
+{% from "_report.html" import std_section %}
 {% block title %}{{ plan.dataset.name if plan and plan.dataset else 'run' }} · {{ run.id }}{% endblock %}
 {% block body %}
 <h1>{{ plan.dataset.name if plan and plan.dataset else '분석 중인 폴더' }} {{ status(meta.status) }}</h1>
@@ -11,7 +12,6 @@
   {% endfor %}
 </ol>
 
-{% if plan and plan.series %}<p><a class="button primary" href="/runs/{{ run.id }}/metadata">메타데이터 표 · 어디로 가는지 (DICOM / Local SCP / DB)</a></p>{% endif %}
 <div id="live" data-run="{{ run.id }}" data-status="{{ meta.status }}" data-active="{{ '1' if active else '' }}"></div>
 {% if job %}
 <section class="{{ 'job-active' if active else '' }}">
@@ -28,50 +28,11 @@
 <form method="post" action="/runs/{{ run.id }}/reanalyze">{{ csrf_field(csrf) }}<button>다시 분석</button></form></section>
 {% endif %}
 
-{% if plan.analysis %}{% set a = plan.analysis %}
-<section id="report">
-<h2>분석 보고</h2>
-{% if a.summary_ko %}<div class="report">{{ a.summary_ko }}</div>{% endif %}
-<div class="cols">
-  <div>
-    <h3>확인한 사실</h3>
-    <ul>{% for f in a.findings %}<li>{{ f }}</li>{% else %}<li class="muted">없음</li>{% endfor %}</ul>
-  </div>
-  <div>
-    <h3>에이전트 질문</h3>
-    <ul>{% for qn in a.questions %}<li>{{ qn }}</li>{% else %}<li class="muted">없음</li>{% endfor %}</ul>
-  </div>
-</div>
-<p class="muted small">에이전트 {{ a.agent.model or '-' }} · {{ a.agent.turns or '-' }} turns · ${{ '%.2f'|format(a.agent.cost_usd) if a.agent.cost_usd is not none else '-' }} ·
-읽기 전용 도구(Read/Glob/Grep)만 사용. 제안은 코드가 다시 검증했습니다(경로·정규식·짝맞춤·영상/라벨 격자).</p>
-
-<h3>구성</h3>
-<div class="table-wrap"><table>
-<tr><th>분할</th><th class="num">대상자</th><th class="num">CT</th><th class="num">MR</th><th class="num">라벨(RTSTRUCT)</th><th class="num">제외된 대상자</th></tr>
-{% for split, c in summary.items() %}
-<tr><td>{{ split_names.get(split, split) }} <span class="muted mono">{{ split }}</span></td><td class="num">{{ c.subjects_in }}</td>
-<td class="num">{{ c.get('in:CT', 0) }}</td><td class="num">{{ c.get('in:MR', 0) }}</td><td class="num">{{ c.get('in:labels', 0) }}</td>
-<td class="num muted">{{ c.subjects_out or '' }}</td></tr>
-{% endfor %}
-</table></div>
-
-<h3>포함한 폴더</h3>
-<div class="table-wrap"><table><tr><th>경로</th><th>역할</th><th>분할</th><th>메모</th></tr>
-{% for s in a.sources %}<tr><td class="mono">{{ s.path }}</td><td>{{ {'image':'영상','label':'라벨','ignore':'무시'}[s.role] }}</td><td>{{ split_names.get(s.split, s.split) }}</td><td>{{ s.note }}</td></tr>{% endfor %}
-</table></div>
-<h3>넣지 않은 것</h3>
-<div class="table-wrap"><table><tr><th>경로</th><th class="num">파일</th><th class="num">크기</th><th>이유</th></tr>
-{% for e in a.left_out %}<tr><td class="mono">{{ e.path }}</td><td class="num">{{ e.files }}</td><td class="num">{{ '%.2f'|format(e.bytes / 1e9) }} GB</td><td>{{ e.reason }}</td></tr>{% else %}<tr><td colspan="4" class="muted">없음</td></tr>{% endfor %}
-</table></div>
-<h3>규칙</h3>
-<dl class="kv">
-  <dt>대상자 키</dt><dd><code>{{ a.subject_pattern.regex }}</code> <span class="muted">{{ a.subject_pattern.note }}</span></dd>
-  <dt>Modality</dt><dd>{% for r in a.modality_rules %}<div><code>{{ r.regex }}</code> → <b>{{ r.modality }}</b> <span class="muted">{{ r.basis }}</span></div>{% endfor %}</dd>
-  <dt>라벨 짝</dt><dd>{{ {'same_name': '같은 파일명', 'subject': '같은 대상자'}[a.label_pairing] }}</dd>
-  <dt>라벨 이름</dt><dd>{% for v, n in a.label_names.items() %}<span class="badge">{{ v }} {{ n }}</span> {% else %}<span class="muted">없음 (label_N 으로 표시)</span>{% endfor %}</dd>
-  {% if a.citation %}<dt>인용</dt><dd class="small">{{ a.citation }}</dd>{% endif %}
-</dl>
-</section>
+{% if report and report.ready %}
+<p class="small"><a class="button primary" href="/runs/{{ run.id }}/report">표준 보고서 1–9 전체</a>
+<a href="/runs/{{ run.id }}/report#s6">6 시리즈 메타데이터</a> · <a href="/runs/{{ run.id }}/report#s7">7 필드 정의</a> ·
+<a href="/runs/{{ run.id }}/report#s8">8 DICOM 헤더</a> · <a href="/runs/{{ run.id }}/report#s9">9 DB 등록 예정</a></p>
+{% for sec in report.sections if sec.no <= 5 %}{{ std_section(sec) }}{% endfor %}
 {% endif %}
 
 {% if plan and plan.dataset %}
@@ -203,29 +164,6 @@
   <div class="stat"><span>전체 manifest</span><b>{{ manifest.instances|length if manifest else '-' }}</b><span class="mono">{{ (meta.manifest_sha256 or '준비 전')[:16] }}</span></div>
   <div class="stat"><span>DB 등록</span>{% if registration %}<b class="b-ok">등록됨</b><span>{{ registration.last.at }}</span>{% else %}<b class="b-warn">미등록</b><span>Central 전송 후 자동 등록</span>{% endif %}</div>
 </div>
-
-<section>
-<h2>시리즈 ({{ plan.series|length if plan.series else 0 }})</h2>
-<form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="대상자/경로 검색"><button>찾기</button></form>
-<div class="table-wrap"><table>
-<tr><th>PatientID</th><th>분할</th><th>Series UID</th><th>종류</th><th>Modality</th><th>설명</th><th class="num">인스턴스</th><th>전송</th></tr>
-{% for s in series %}
-{% set c = per_series.get(s.series_uid, {}) %}
-<tr{% if s.excluded %} class="muted"{% endif %}>
-  <td>{{ s.patient_id or '-' }}<div class="muted mono small">{{ s.subject_key }}</div></td>
-  <td>{{ split_names.get(s.split, s.split) if s.split else '' }}</td>
-  <td class="mono" title="{{ s.series_uid }}">{% if c and s.kind != 'rtstruct' and not s.excluded %}<a href="/runs/{{ run.id }}/series/{{ s.series_uid }}">{{ s.series_uid|short }}</a>{% else %}{{ s.series_uid|short }}{% endif %}</td>
-  <td>{{ {'dicom': 'DICOM 원본', 'nifti': 'NIfTI→DICOM', 'rtstruct': '라벨→RTSTRUCT'}[s.kind] }}{% if s.excluded %} <span class="badge">제외</span>{% endif %}</td>
-  <td>{{ s.modality or '?' }} {% if s.needs_review %}<span class="badge b-warn" title="{{ s.modality_basis }}">추정</span>{% else %}<span class="badge" title="{{ s.modality_basis }}">근거</span>{% endif %}</td>
-  <td class="small">{{ s.description or '' }}</td>
-  <td class="num">{{ s.instance_count }}</td>
-  <td class="small">{% for scope, cc in c.items() %}<div><span class="muted">{{ '파일럿' if scope == 'pilot' else '전체' }}</span> {{ counts(cc) }}</div>{% endfor %}</td>
-</tr>
-{% endfor %}
-</table></div>
-{% if series_pages > 1 %}<p class="pager">{% for i in range(1, series_pages + 1) %}{% if i == sp %}<span>{{ i }}</span>{% else %}<a href="?sp={{ i }}&q={{ q|urlencode }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
-<p class="muted small">“근거”에 마우스를 올리면 modality를 정한 근거(에이전트 규칙·DICOM 태그 등)가 보입니다.</p>
-</section>
 
 <section>
 <h2>전송 기록</h2>

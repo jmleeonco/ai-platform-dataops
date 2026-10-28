@@ -34,10 +34,12 @@ def test_pages_render_without_db_and_escape(settings, prepared):
     assert "accepted" in r.text and "DB 설정 없음" in r.text
     for page in ("/datasets", "/db", "/backups", "/healthz"):
         assert client.get(page).status_code == 200
-    r = client.get(f"/runs/{prepared.id}/metadata")        # legacy plan: DICOM pass-through + NIfTI
+    r = client.get(f"/runs/{prepared.id}/report")          # legacy plan: DICOM pass-through + NIfTI
     assert r.status_code == 200 and XSS not in r.text and "&lt;script&gt;" in r.text
-    rows = client.get(f"/runs/{prepared.id}/metadata.json").json()["rows"]
-    assert {r["kind"] for r in rows} >= {"dicom", "nifti"}
+    rows = client.get(f"/runs/{prepared.id}/series.json").json()["rows"]
+    assert {r["_kind"] for r in rows} >= {"dicom", "nifti"}
+    r = client.get("/reports")
+    assert r.status_code == 200 and XSS not in r.text
 
 
 def test_series_viewer_and_png(settings, prepared):
