@@ -93,22 +93,26 @@ def local_addresses() -> set[str]:
     return addrs
 
 
-def check_local_host(host: str) -> None:
-    """Refuse anything that is not this machine: the tool is for a local SCP only."""
+CENTRAL_AES = {"ONCOPACS"}     # the central SCP (dicom_nodes.json centralSCP): never a destination here
+
+
+def check_local_host(host: str, review_hosts=()) -> None:
+    """Refuse anything that is not this machine or an owner-listed review workstation (exact IPs in
+    ``review_hosts``, e.g. the Windows test PC's OncoStudio SCP): the tool is for a local SCP only."""
     try:
         resolved = {i[4][0] for i in socket.getaddrinfo(host, None)}
     except OSError as e:
         raise ConfigError(f"host {host!r} 이름 해석 실패: {e}") from e
-    local = local_addresses()
+    allowed = local_addresses() | set(review_hosts)
     for a in resolved:
         ip = ipaddress.ip_address(a.split("%")[0])
-        if ip.is_unspecified or not (ip.is_loopback or a in local):
+        if ip.is_unspecified or not (ip.is_loopback or a in allowed):
             raise ConfigError(
-                f"host {host!r} ({a}) 는 이 PC의 주소가 아닙니다. send-local-scp 는 로컬 SCP 전용이며 "
+                f"host {host!r} ({a}) 는 이 PC의 주소도, 지정된 검토용 PC도 아닙니다. send-local-scp 는 로컬 SCP 전용이며 "
                 "Central/원격 SCP로는 보내지 않습니다. 로컬 SCP 주소(예: 127.0.0.1)를 설정하세요.")
 
 
-def destination_from(cfg: dict, cfg_path: Path) -> Destination:
+def destination_from(cfg: dict, cfg_path: Path, review_hosts=()) -> Destination:
     d = cfg.get("destination") or {}
     missing = [k for k in ("host", "port", "called_ae", "calling_ae") if d.get(k) in (None, "")]
     if missing:
@@ -125,7 +129,9 @@ def destination_from(cfg: dict, cfg_path: Path) -> Destination:
                        called_ae=_check_ae("destination.called_ae", d["called_ae"]),
                        calling_ae=_check_ae("destination.calling_ae", d["calling_ae"]),
                        timeout_s=float(d.get("timeout_s", 30)))
-    check_local_host(dest.host)
+    if dest.called_ae.strip().upper() in CENTRAL_AES:
+        raise ConfigError(f"called AE {dest.called_ae!r} 는 Central SCP입니다. send-local-scp 는 로컬 SCP 전용입니다.")
+    check_local_host(dest.host, review_hosts)
     return dest
 
 

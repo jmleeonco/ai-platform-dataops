@@ -4,6 +4,7 @@
   validate RUN                       re-validate plan.json after an edit (bumps the revision when it changed)
   prepare RUN                        freeze artifacts (copy DICOM / convert NIfTI, hash, manifest)
   verify RUN                         re-hash artifacts
+  echo                               C-ECHO the configured LOCAL SCP (default OS_LJM@10.101.1.107:4001)
   send-local RUN [--dry-run]         C-STORE the frozen artifacts to the configured LOCAL SCP
   register RUN                       write the run's records to the management DB
   ingest DIR --dataset ... [--send-local] [--register]   plan + prepare (+ send + register) in one go
@@ -21,7 +22,8 @@ from pathlib import Path
 from . import db as dbmod
 from .config import load_settings
 from .inventory import inventory
-from .local_send import send_local
+from .legacy import sender
+from .local_send import destination, send_local
 from .plan import build_plan, validate_plan
 from .prepare import prepare, verify_artifacts
 from .runs import Run, RunError, list_runs, new_run_id
@@ -94,6 +96,7 @@ def main(argv=None) -> int:
     sl = sub.add_parser("send-local")
     sl.add_argument("run")
     sl.add_argument("--dry-run", action="store_true")
+    sub.add_parser("echo")
     sub.add_parser("runs")
     sub.add_parser("db-migrate")
     sub.add_parser("db-status")
@@ -124,6 +127,10 @@ def main(argv=None) -> int:
             problems = verify_artifacts(Run(settings.runs_dir, args.run))
             print("artifacts intact" if not problems else "\n".join(problems))
             return 1 if problems else 0
+        elif args.cmd == "echo":
+            ok, msg = sender.echo(destination(settings.local_scp))
+            print(f"{settings.local_scp.key}: {msg}")
+            return 0 if ok else 1
         elif args.cmd == "send-local":
             _print(send_local(Run(settings.runs_dir, args.run), settings.local_scp, dry_run=args.dry_run))
         elif args.cmd == "register":

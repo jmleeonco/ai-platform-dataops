@@ -11,6 +11,9 @@ from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 CONFIG_DIR = Path(os.environ.get("DATAOPS_CONFIG_DIR", Path.home() / ".config" / "ai-platform-dataops"))
+# Owner decision 2026-10-28: the local SCP is OncoStudio's OS_LJM on the Windows test PC, not on this server.
+# Only addresses listed here (plus this machine) pass the sender's host guard.
+REVIEW_WORKSTATION = "10.101.1.107"
 
 
 def _read_env_file(path: Path) -> dict:
@@ -32,6 +35,7 @@ class LocalScp:
     port: int
     called_ae: str
     calling_ae: str
+    review_hosts: tuple = ()        # remote hosts the local-host guard accepts (exact IPs)
 
     @property
     def key(self) -> str:
@@ -65,10 +69,13 @@ def load_settings(env: dict | None = None) -> Settings:
     if not runtime.is_absolute():
         runtime = REPO_DIR / runtime
     example = json.loads((REPO_DIR / "config" / "local-scp.example.json").read_text(encoding="utf-8"))["destination"]
-    scp = LocalScp(host=get("DATAOPS_LOCAL_SCP_HOST") or example["host"],
+    review = get("DATAOPS_LOCAL_SCP_REVIEW_HOSTS")
+    scp = LocalScp(host=get("DATAOPS_LOCAL_SCP_HOST") or REVIEW_WORKSTATION,
                    port=int(get("DATAOPS_LOCAL_SCP_PORT") or example["port"]),
                    called_ae=get("DATAOPS_LOCAL_SCP_CALLED_AE") or example["called_ae"],
-                   calling_ae=get("DATAOPS_LOCAL_SCP_CALLING_AE") or "DATAOPS")
+                   calling_ae=get("DATAOPS_LOCAL_SCP_CALLING_AE") or "DATAOPS",
+                   review_hosts=tuple(h for h in (review if review is not None else REVIEW_WORKSTATION)
+                                      .replace(",", " ").split()))
     return Settings(
         runtime_dir=runtime,
         db={"host": get("DATAOPS_DB_HOST"), "port": int(get("DATAOPS_DB_PORT") or 3306),

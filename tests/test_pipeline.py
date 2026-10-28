@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from conftest import DATASET, LoopbackSCP
 
-from dataops.config import LocalScp
+from dataops.config import LocalScp, load_settings
 from dataops.inventory import inventory
-from dataops.local_send import send_local
+from dataops.local_send import destination, send_local
 from dataops.plan import build_plan, validate_plan
 from dataops.prepare import prepare, verify_artifacts
 from dataops.records import build_records
@@ -210,6 +210,26 @@ def test_non_local_target_refused(settings, mixed):
     with pytest.raises(RunError, match="로컬 SCP 전용"):
         send_local(run, LocalScp("10.101.1.4", 104, "CENTRAL", "DATAOPS"))
     assert run.path("transfers").exists() is False
+
+
+def test_review_workstation_must_be_listed():
+    ws = LocalScp("10.101.1.107", 4001, "OS_LJM", "DATAOPS", review_hosts=("10.101.1.107",))
+    assert destination(ws).host == "10.101.1.107"
+    with pytest.raises(RunError, match="로컬 SCP 전용"):
+        destination(LocalScp("10.101.1.107", 4001, "OS_LJM", "DATAOPS"))
+    with pytest.raises(RunError, match="로컬 SCP 전용"):        # listing one PC does not open the LAN
+        destination(LocalScp("10.101.1.4", 104, "OS_LJM", "DATAOPS", review_hosts=("10.101.1.107",)))
+
+
+def test_central_ae_refused_even_on_loopback():
+    with pytest.raises(RunError, match="Central"):
+        destination(LocalScp("127.0.0.1", 4001, "oncopacs", "DATAOPS"))
+
+
+def test_default_target_is_os_ljm_on_review_pc():
+    scp = load_settings({}).local_scp
+    assert (scp.called_ae, scp.host, scp.port, scp.review_hosts) == ("OS_LJM", "10.101.1.107", 4001, ("10.101.1.107",))
+    assert load_settings({"DATAOPS_LOCAL_SCP_REVIEW_HOSTS": ""}).local_scp.review_hosts == ()
 
 
 def test_concurrent_mutation_is_locked(settings, mixed):

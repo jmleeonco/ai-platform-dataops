@@ -40,5 +40,15 @@ inside the venv the inherited 24 pass.
 - Web viewer started with `deploy/web.sh start` on 127.0.0.1:8096; all pages 200, headless Chromium
   screenshots without console errors (CSP: no inline script/style).
 
-Not verified: sending to a real local SCP (OS_LJM is not on 183; no target chosen), any real dataset,
+Not verified: sending to a real local SCP (target OS_LJM@10.101.1.107:4001 chosen later the same day; it was down), any real dataset,
 Central publication (not implemented), MariaDB 10.5 compatibility of the exporter (not written).
+
+## 2026-10-28 (later) — local SCP target OS_LJM@10.101.1.107:4001
+
+- The owner named the target: OncoStudio's OS_LJM on the Windows test PC 10.101.1.107. The sender's
+  host guard gained an explicit review-host list (`DATAOPS_LOCAL_SCP_REVIEW_HOSTS`, default
+  10.101.1.107) and refuses the called AE `ONCOPACS` on any host. Tests: a listed PC passes, an
+  unlisted PC and another LAN host are refused, `ONCOPACS` on loopback is refused, defaults resolve
+  to OS_LJM@10.101.1.107:4001 (64 passed).
+- `python -m dataops echo` from 183: the guard passes; 107 answers ping but refuses TCP 4001
+  (OncoStudio SCP not running). Nothing was sent; the main session was asked to start it.

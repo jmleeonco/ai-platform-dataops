@@ -36,12 +36,24 @@ metadata to the LAN without authentication; decide that explicitly.)
 
 ## Local SCP target
 
-Default from `config/local-scp.example.json`: `OS_LJM@127.0.0.1:4001` (calling AE `DATAOPS`).
+Owner decision 2026-10-28: the local SCP is OncoStudio's local OncoPACS **`OS_LJM@10.101.1.107:4001`**
+on the Windows test PC (calling AE `DATAOPS`; the same node CONTRACT lists as the dev destination).
 Override in `~/.config/ai-platform-dataops/env`:
-`DATAOPS_LOCAL_SCP_HOST/PORT/CALLED_AE/CALLING_AE`. The inherited host guard accepts only
-addresses of this machine. Nothing listens on 4001 on 183 as of 2026-10-28 (OS_LJM is the
-OncoStudio SCP on the workstation); an Orthanc (`ORTHANC@127.0.0.1:4242`) runs on 183 as a
-system service but has not been chosen as a target. `send-local --dry-run` shows what would go.
+`DATAOPS_LOCAL_SCP_HOST/PORT/CALLED_AE/CALLING_AE`.
+
+The inherited host guard still refuses every host that is not this machine, except exact IPs in
+`DATAOPS_LOCAL_SCP_REVIEW_HOSTS` (default `10.101.1.107`; empty = this machine only). It also refuses
+the called AE `ONCOPACS` (the central SCP) on any host. The standalone `/send-local-scp` passes no
+review hosts and stays this-machine-only.
+
+```bash
+python -m dataops echo                 # C-ECHO the configured target
+python -m dataops send-local RUN --dry-run
+```
+
+OncoStudio must be running on 107 with its SCP open. As of 2026-10-28 the PC answers ping, but
+4001 refused connections, so OS_LJM was down. An Orthanc (`ORTHANC@127.0.0.1:4242`) runs on 183 as a
+system service and is not a target.
 
 ## Nightly backup (CONTRACT §65)
 

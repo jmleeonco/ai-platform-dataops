@@ -20,8 +20,10 @@
 - Nightly backup: `/mnt/ai-pipeline/backups/ai-platform-dataops/` (CONTRACT §65, 00:30).
 - Central SCP에는 아직 올리지 않음. Local SCP까지만 전송하고 메타데이터를 새 DB에 등록.
 - 모든 결과를 보는 로컬 HTML 페이지(183에서 호스팅, loopback).
-- 183에는 4001 포트 SCP가 없음(OS_LJM은 워크스테이션의 OncoStudio). 183에는 시스템 서비스
-  Orthanc(`ORTHANC`, 4242/8042)가 있으나 대상으로 정하지 않음 — 실제 Local SCP 대상은 확인 필요.
+- Local SCP 대상(소유자 2026-10-28): Windows 테스트 PC의 OncoStudio `OS_LJM@10.101.1.107:4001`.
+  183의 sender 안전장치는 이 PC 주소와 `DATAOPS_LOCAL_SCP_REVIEW_HOSTS`(기본 10.101.1.107)에 있는 IP만 허용하고,
+  called AE `ONCOPACS`(Central)는 어떤 host든 거부한다. 2026-10-28 확인 시 107은 ping 응답, 4001은 연결 거부
+  (OncoStudio SCP 꺼짐) — main 세션(MLOPS)에 기동 요청함. 183의 Orthanc(`ORTHANC`, 4242/8042)는 대상 아님.
 
 ## 구현 전에 구별할 것
 - Central SCP의 실제 접속 설정과 수신 소프트웨어/조회 API는 아직 검증하지 않았다.

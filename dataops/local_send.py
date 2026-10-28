@@ -1,6 +1,7 @@
 """Send a prepared run's frozen artifacts to the LOCAL SCP, with a per-instance journal.
 
-Reuses the inherited sender's local-host guard (no Central/remote SCP) and C-STORE loop.
+Reuses the inherited sender's local-host guard (this machine or a listed review workstation; never
+Central) and C-STORE loop.
 Artifacts are re-hashed first; nothing is converted here.
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ def destination(scp: LocalScp) -> "sender.Destination":
     cfg = {"destination": {"host": scp.host, "port": scp.port, "called_ae": scp.called_ae,
                            "calling_ae": scp.calling_ae}}
     try:
-        return sender.destination_from(cfg, sender.DEFAULT_CONFIG)
+        return sender.destination_from(cfg, sender.DEFAULT_CONFIG, scp.review_hosts)
     except sender.ConfigError as e:
         raise RunError(str(e)) from None
 
