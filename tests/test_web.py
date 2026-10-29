@@ -129,6 +129,41 @@ def test_db_browser_follows_links_and_stays_read_only(settings, prepared, test_d
         assert dbmod.query(conn, "SELECT COUNT(*) n FROM series")[0]["n"] == n_series
 
 
+def test_db_pages_are_live(settings, prepared, test_db):
+    settings.db = test_db
+    with dbmod.connection(test_db) as conn:
+        dbmod.migrate(conn)
+        dbmod.register_run(conn, prepared)
+        uid = dbmod.query(conn, "SELECT series_uid FROM series LIMIT 1")[0]["series_uid"]
+    client = TestClient(create_app(settings))
+    r = client.get("/db/series")
+    sig = r.text.split('data-sig="')[1].split('"')[0]
+    assert 'data-tables="series" data-exact="1"' in r.text and "/static/dblive.js" in r.text
+    state = lambda: client.get("/db/state.json?t=series,nope&exact=1").json()["marks"]   # noqa: E731
+    assert list(state()) == ["series"] and state()["series"] == sig
+    with dbmod.connection(test_db) as conn:          # a change within the same second is still seen
+        with conn.cursor() as cur:
+            cur.execute("UPDATE series SET description=%s WHERE series_uid=%s", ("changed", uid))
+        conn.commit()
+    assert state()["series"] != sig
+    assert "changed" in client.get("/db/series").text
+    r = client.get(f"/db/series/row?series_uid={uid}")
+    assert 'data-tables="series,dataset_series,instances"' in r.text
+    r = client.get("/db")
+    assert 'data-exact="0"' in r.text and set(client.get("/db/state.json").json()["marks"]) >= {"series", "instances"}
+    # the report's table 7 compares every planned row with the live DB
+    rec = client.get(f"/runs/{prepared.id}/records.json").json()
+    assert rec["db"] == "ok"
+    series = rec["tables"]["series"]
+    assert series["counts"] == {"같음": len(series["rows"]) - 1, "변경": 1}
+    assert next(x for x in series["rows"] if x["series_uid"] == uid)["_diff"] == "description"
+    assert rec["tables"]["instances"]["counts"] == {"같음": len(rec["tables"]["instances"]["rows"])}
+
+
+def test_db_state_without_db(settings):
+    assert TestClient(create_app(settings)).get("/db/state.json").json()["error"] == "DB 설정 없음"
+
+
 def test_db_browser_without_db(settings):
     r = TestClient(create_app(settings)).get("/db/series")
     assert r.status_code == 200 and "DB 설정 없음" in r.text

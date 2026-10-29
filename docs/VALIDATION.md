@@ -107,3 +107,17 @@ Central publication (not implemented), MariaDB 10.5 compatibility of the exporte
   value and in `sort` finds nothing and changes nothing); without a DB the pages say so.
 - Rendered on a temporary populated schema (dropped afterwards) and checked visually; the real management
   DB is empty until the first Central publication registers a run.
+
+## 2026-10-29 — report tables 6/7 = what goes out; live DB pages
+
+- Tests: 89 passed. Owner: the report must show what goes into the DB and the metadata that goes to the local SCP; the DB
+  pages must be live. Report schema_version 2: table 6 is the DICOM values per series (20 series-level
+  tags), table 7 the rows of every DB table with the DB's column names and each row's state in the live DB.
+- AMOS run 20261028T191410-e4d4c39c: table 6 has 960 series, 4 read from the pilot files (CT, MR and both
+  RTSTRUCTs; every checked tag 일치), 956 plan values. Table 7: datasets 1, subjects 600, studies 600,
+  series 960, dataset_series 960, ingest_runs 1, instances 164 and transfer_results 164 (pilot files only;
+  98,975 instances after the full conversion), all 신규 because the management DB is empty.
+  `records.json` 0.6 s, `/runs/<run>/report` 0.3 s.
+- Live pages: a change within the same second is detected (CHECKSUM TABLE, not timestamps), shown by
+  `tests/test_web.py::test_db_pages_are_live`: an UPDATE after registration changes the mark, the table
+  page shows the new value, and `records.json` turns that one series into 변경 with `_diff` description.

@@ -1,18 +1,21 @@
 """Read-only browser for the management DB: an overview of the tables and how they link, a table view with
 search / exact filters / sorting / CSV, and a row view that follows foreign keys up (parent rows) and down
-(child rows). Only SELECTs; table and column names come from information_schema and are whitelisted, values
-are always bound parameters."""
+(child rows). Every page is live: it polls /db/state.json and re-renders itself when a table it shows
+changes. Only SELECTs; table and column names come from information_schema and are whitelisted, values are
+always bound parameters."""
 from __future__ import annotations
 
 import json
 from urllib.parse import urlencode
 
 from fastapi import HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import db as dbmod
+from ..util import now_iso
 
 PAGE_SIZES = (25, 50, 100, 200)
+LIVE_SECONDS = 5
 CSV_LIMIT = 100_000
 RESERVED = {"q", "sort", "dir", "p", "n"}
 TABLE_DESC = {
@@ -87,6 +90,11 @@ def fk_href(sch: dict, fk, value) -> str | None:
     return f"/db/{rt}?" + urlencode({rc: str(value)})
 
 
+def live_sig(marks: dict, tables: list[str]) -> str:
+    """What dblive.js compares: the change marks of the tables a page shows, in page order."""
+    return ";".join(marks.get(t, "") for t in tables)
+
+
 def _display(v, limit=160):
     if v is None:
         return None
@@ -122,15 +130,34 @@ def register_db_views(app, settings, page, db_conn, to_csv):
             raise HTTPException(404)
         return sch, sch[table]
 
+    def live(conn, tables, exact=True) -> dict:
+        return {"tables": ",".join(tables), "exact": int(exact), "every": LIVE_SECONDS, "at": now_iso(),
+                "sig": live_sig(dbmod.change_marks(conn, tables, exact), tables)}
+
+    @app.get("/db/state.json")
+    def db_state(t: str = "", exact: int = 0):
+        conn, err = db_conn()
+        if conn is None:
+            return JSONResponse({"error": err, "checked_at": now_iso()})
+        try:
+            sch = schema(conn)
+            tables = [x for x in t.split(",") if x in sch] if t else list(sch)
+            return {"marks": dbmod.change_marks(conn, tables, bool(exact)), "checked_at": now_iso()}
+        except Exception as e:  # noqa: BLE001 - the page shows it and keeps polling
+            return JSONResponse({"error": str(e)[:300], "checked_at": now_iso()})
+        finally:
+            conn.close()
+
     @app.get("/db", response_class=HTMLResponse)
     def db_overview(request: Request):
         conn = open_db()
         try:
             sch = schema(conn)
             info = {"migrations": dbmod.migration_status(conn), "counts": dbmod.table_counts(conn), "schema": sch}
+            lv = live(conn, list(sch), exact=False)          # the overview shows row counts only
         finally:
             conn.close()
-        return page(request, "db.html", info=info, db_error=None, desc=TABLE_DESC,
+        return page(request, "db.html", info=info, db_error=None, desc=TABLE_DESC, live=lv,
                     chain=[t for t in CHAIN if t in sch], others=[t for t in sch if t not in CHAIN])
 
     def select(request, table, q, sort, dir, p, n, limit=None):
@@ -146,13 +173,14 @@ def register_db_views(app, settings, page, db_conn, to_csv):
             lim = limit or n
             rows = dbmod.query(conn, f"SELECT * FROM `{table}`{where}{order} LIMIT {int(lim)} OFFSET %s",
                                [*args, 0 if limit else (p - 1) * n])
+            lv = None if limit else live(conn, [table])
         finally:
             conn.close()
-        return sch, meta, rows, total, filters, order_col
+        return sch, meta, rows, total, filters, order_col, lv
 
     @app.get("/db/{table}.csv")
     def db_table_csv(request: Request, table: str, q: str = "", sort: str = "", dir: str = "asc"):
-        sch, meta, rows, total, filters, _ = select(request, table, q, sort, dir, 1, 0, limit=CSV_LIMIT)
+        sch, meta, rows, total, filters, _, _ = select(request, table, q, sort, dir, 1, 0, limit=CSV_LIMIT)
         return to_csv([meta["columns"]] + [[_display(r[c], 10**9) for c in meta["columns"]] for r in rows],
                       f"{table}.csv")
 
@@ -160,7 +188,7 @@ def register_db_views(app, settings, page, db_conn, to_csv):
     def db_table(request: Request, table: str, q: str = "", sort: str = "", dir: str = "asc",
                  p: int = Query(1, ge=1), n: int = Query(50)):
         n = n if n in PAGE_SIZES else 50
-        sch, meta, rows, total, filters, order_col = select(request, table, q, sort, dir, p, n)
+        sch, meta, rows, total, filters, order_col, lv = select(request, table, q, sort, dir, p, n)
         base = {**filters, **({"q": q} if q else {})}
 
         def link(**kw):
@@ -170,7 +198,7 @@ def register_db_views(app, settings, page, db_conn, to_csv):
         pk_links = [urlencode({k: str(r[k]) for k in meta["pk"]}) if meta["pk"] else None for r in rows]
         return page(request, "table.html", table=table, meta=meta, desc=TABLE_DESC.get(table, ""), cells=cells,
                     pk_links=pk_links, total=total, p=p, n=n, pages=max(1, -(-total // n)), q=q, filters=filters,
-                    sort=order_col, dir=dir, link=link, page_sizes=PAGE_SIZES,
+                    sort=order_col, dir=dir, link=link, page_sizes=PAGE_SIZES, live=lv,
                     csv_link=f"/db/{table}.csv?" + urlencode({**base, "sort": order_col, "dir": dir}))
 
     @app.get("/db/{table}/row", response_class=HTMLResponse)
@@ -193,13 +221,14 @@ def register_db_views(app, settings, page, db_conn, to_csv):
                 cnt = dbmod.query(conn, f"SELECT COUNT(*) AS n FROM `{child}` WHERE `{ccol}`=%s", (row[pcol],))[0]["n"]
                 children.append({"table": child, "col": ccol, "n": cnt,
                                  "href": f"/db/{child}?" + urlencode({ccol: str(row[pcol])})})
+            lv = live(conn, [table] + sorted({c[0] for c in meta["children"]} - {table}))
         finally:
             conn.close()
         fields = [{"col": c, "type": meta["types"][c], "value": _pretty(row[c]),
                    "href": fk_href(sch, meta["fks"].get(c), row[c]), "fk": meta["fks"].get(c)}
                   for c in meta["columns"]]
         return page(request, "db_row.html", table=table, desc=TABLE_DESC.get(table, ""), key=key, fields=fields,
-                    children=children)
+                    children=children, live=lv)
 
 
 class _NoDb(Exception):

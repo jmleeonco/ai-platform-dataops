@@ -47,6 +47,11 @@ as `?column=value` (`NULL` for IS NULL), sorting, 25–200 rows per page, CSV of
 rows in each referencing table. SELECT only; table/column names are whitelisted from information_schema
 and values are bound parameters (`dataops/web/dbview.py`).
 
+The pages are live: every 5 s they poll `/db/state.json?t=<tables>&exact=1` (the live `CHECKSUM TABLE` of
+the tables the page shows rows of; the overview polls row counts only) and re-render in place when a mark
+differs from the one the page was drawn with, so a registration, update or delete shows up without a
+reload. Polling pauses while the tab is hidden or after "일시 정지".
+
 ## Browser flow (owner decision 2026-10-28)
 
 `deploy/web.sh start` runs the web app and one **worker** (jobs run one at a time; logs in
@@ -61,11 +66,13 @@ and values are bound parameters (`dataops/web/dbview.py`).
    `--json-schema` (proposal in `dataops/agent.py`), cap `DATAOPS_AGENT_BUDGET_USD` (5) and
    `DATAOPS_AGENT_TIMEOUT_S` (1800), model `DATAOPS_AGENT_MODEL` (claude-opus-5-5). Dataset text is
    data. Raw output: `runs/<run>/agent_proposal.json`.
-3. **Report**: every dataset gets the same standard report (`dataops/report.py`, schema_version 1) —
+3. **Report**: every dataset gets the same standard report (`dataops/report.py`, schema_version 2) —
    the same numbered tables with the same columns, whatever the dataset; agent text only appears as
-   cell values. `/runs/<run>/report` (all 9), `/runs/<run>` (1–5 above the forms), `report.json`,
-   `series.json` / `series.csv` (table 6), and `/reports` (+ `.csv`): one row per dataset (latest run
-   of each folder) with fixed columns for comparison.
+   cell values. Tables 6 and 7 are what leaves this machine: the DICOM values the local SCP receives, and
+   the rows of every management-DB table. `/runs/<run>/report` (all 10), `/runs/<run>` (1–5 above the
+   forms), `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
+   the live DB state), `series.json` / `series.csv` (8), and `/reports` (+ `.csv`): one row per dataset
+   (latest run of each folder) with fixed columns for comparison.
 
    | # | Table | Columns |
    |---|---|---|
@@ -74,13 +81,22 @@ and values are bound parameters (`dataops/web/dbview.py`).
    | 3 | 폴더 판정 | 경로, 판정 (포함/무시/제외), 역할, 분할, 파일 수, 크기, 근거 |
    | 4 | 확인 사항 | #, 구분 (오류/미해결/경고/질문/사실), 내용, 출처 |
    | 5 | 전송·등록 | 파일럿→Local SCP, 최종 승인, Central, DB × 대상, 대상자, 시리즈, 인스턴스, 결과, 일시 |
-   | 6 | 시리즈 메타데이터 | 30 fixed fields (`metadata.FIELDS`), one row per series |
-   | 7 | 필드 정의 | each field's DICOM tag and DB column, checked: DB against the rows registration would write, DICOM against the real pilot headers |
-   | 8 | DICOM 헤더 | every tag of the pilot files per modality with its origin |
-   | 9 | DB 등록 예정 | rows per table (+ first 20) |
+   | 6 | Local SCP 메타데이터 (DICOM) | one row per included series: 대상자, 분할, 종류, 파일럿, Local SCP, 값 출처 + 20 series-level tags (`metadata.TAGS`: PatientID … ROIName) + 실제 파일 확인 |
+   | 7 | DB 등록 예정 | summary per table (예정 행, 신규/같음/변경/충돌 in the live DB), then every table with its DB column names, one row per row registration would write, plus DB 상태 and 차이 컬럼 |
+   | 8 | 원본 메타데이터 | 21 source fields (`metadata.FIELDS`), one row per series |
+   | 9 | 열 정의 | every table-6 tag, the remaining written tags (fixed / per slice), every DB column (+ the ones the DB fills), every source field with where it goes; with the checks |
+   | 10 | DICOM 헤더 | every tag of the pilot files per modality with its origin |
+
+   Table 6 values come from the converted files once a series is frozen (pilot first; cached in
+   `runs/<run>/dicom_tags.json` per manifest hash) and are compared with the values predicted from the
+   plan; a difference is an 오류 in table 4. Series not yet converted show the plan values. Table 7 is
+   `records.build_records(preview=True)`: before the full conversion the pilot's files stand in for
+   `instances` and `transfer_results` (same deterministic SOP UIDs) and the note says how many rows the
+   full conversion makes. Each row's DB state is what registration would do (`db.row_status`, SELECT
+   only); the report re-checks it every 15 s.
 
    Source metadata that has no field of its own (the rest of the NIfTI header, or the DICOM series tags
-   of a pass-through series) is kept whole in field 15 "원본 기타 메타데이터" and goes nowhere. NIfTI
+   of a pass-through series) is kept whole in the 8 field "원본 기타 메타데이터" and goes nowhere. NIfTI
    headers are read once after the analysis into `runs/<run>/nifti_headers.json`
    (`/runs/<run>/report?refresh=1` re-reads changed or missing files; prepare never uses this cache).
    Editable until approval (forms on `/runs/<run>`): dataset fields (name, licence, commercial use, URL,

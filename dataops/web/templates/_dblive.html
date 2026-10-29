@@ -1,0 +1,9 @@
+{# Live DB pages: dblive.js polls /db/state.json and re-renders #dblive when a table on the page changes. #}
+{% macro live_bar(live) -%}
+{% if live %}<div class="live small"><span class="badge b-ok" id="dblive-status">실시간 · {{ live.at[11:19] }} 확인</span>
+<button type="button" id="dblive-pause">일시 정지</button>
+<span class="muted">{{ live.every }}초마다 DB를 확인하고, 이 화면의 테이블({{ live.tables|replace(',', ', ') }}){{ '의 행 수' if not live.exact }}이 바뀌면 바로 다시 그립니다.</span></div>{% endif %}
+{%- endmacro %}
+{% macro live_open(live) -%}
+<div id="dblive"{% if live %} data-tables="{{ live.tables }}" data-exact="{{ live.exact }}" data-sig="{{ live.sig }}" data-every="{{ live.every }}"{% endif %}>
+{%- endmacro %}

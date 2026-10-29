@@ -1,7 +1,10 @@
 {% extends "base.html" %}
+{% from "_dblive.html" import live_bar, live_open %}
 {% from "_report.html" import cell %}
 {% block title %}{{ table }} · DB{% endblock %}
 {% block body %}
+{{ live_bar(live) }}
+{{ live_open(live) }}
 <p class="small"><a href="/db">← DB</a></p>
 <h1>{{ table }} <span class="muted small">{{ '{:,}'.format(total) }}행{% if filters or q %} (필터 적용){% endif %}</span></h1>
 <p class="muted small">{{ desc }}</p>
@@ -24,4 +27,6 @@
 </table></div>
 {% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs < 3 %}<a href="{{ link(p=i) }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
 </section>
+</div>
+<script src="/static/dblive.js"></script>
 {% endblock %}

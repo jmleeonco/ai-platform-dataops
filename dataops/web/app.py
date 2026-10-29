@@ -28,11 +28,11 @@ from ..jobs import active_job, job_log, list_jobs
 from ..local_send import journals
 from ..metadata import build as build_metadata
 from ..metadata import series_delivery
-from ..report import INDEX_COLUMNS, TITLES, dataset_index
+from ..report import INDEX_COLUMNS, TITLES, dataset_index, db_preview, dicom_columns, source_columns
 from ..report import build as build_report
 from ..prepare import MANIFESTS, pilot_series
 from ..publish import central_ready
-from ..records import TABLES, build_records, to_db_value
+from ..records import TABLES, build_records
 from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
 from ..util import RUN_ID_RE, valid_uid
@@ -182,22 +182,65 @@ def create_app(settings: Settings) -> FastAPI:
     def metadata_redirect(run_id: str):
         return RedirectResponse(f"/runs/{get_run(run_id).id}/report#s6", status_code=301)
 
-    @app.get("/runs/{run_id}/series.json")
-    def series_json(run_id: str):
-        md = build_metadata(get_run(run_id))
-        if not md["ready"]:
-            raise HTTPException(404)
-        return {"fields": md["fields"], "rows": md["rows"]}
-
-    @app.get("/runs/{run_id}/series.csv")
-    def series_csv(run_id: str):
-        run = get_run(run_id)
+    def series_tables(run: Run, which: str) -> dict:
         md = build_metadata(run)
         if not md["ready"]:
             raise HTTPException(404)
-        name = (md["plan"].get("dataset") or {}).get("name")
-        return _csv([["데이터셋"] + [f["label"] for f in md["fields"]]] +
-                    [[name] + [r[f["key"]] for f in md["fields"]] for r in md["rows"]], f"series-{run.id}.csv")
+        if which == "dicom":
+            return {"columns": dicom_columns(), "rows": md["dicom"]["rows"],
+                    "filters": ["split", "kind", "pilot", "origin", "check"],
+                    "dataset": (md["plan"].get("dataset") or {}).get("name")}
+        return {"columns": source_columns(md), "rows": md["rows"], "filters": ["split", "kind", "included", "pilot"],
+                "dataset": (md["plan"].get("dataset") or {}).get("name")}
+
+    @app.get("/runs/{run_id}/dicom.json")
+    def dicom_json(run_id: str):
+        return series_tables(get_run(run_id), "dicom")
+
+    @app.get("/runs/{run_id}/series.json")
+    def series_json(run_id: str):
+        return series_tables(get_run(run_id), "series")
+
+    @app.get("/runs/{run_id}/dicom.csv")
+    def dicom_csv(run_id: str):
+        return table_csv(get_run(run_id), "dicom")
+
+    @app.get("/runs/{run_id}/series.csv")
+    def series_csv(run_id: str):
+        return table_csv(get_run(run_id), "series")
+
+    def table_csv(run: Run, which: str):
+        t = series_tables(run, which)
+        return _csv([["데이터셋"] + [c["label"] for c in t["columns"]]] +
+                    [[t["dataset"]] + [r.get(c["key"]) for c in t["columns"]] for r in t["rows"]],
+                    f"{which}-{run.id}.csv")
+
+    def live_preview(run: Run) -> dict:
+        """Table 7 with each row's state in the DB as of now (the report polls this)."""
+        conn, err = db_conn()
+        try:
+            return db_preview(run, conn, err)
+        except Exception as e:  # noqa: BLE001 - show without the DB state rather than fail
+            return db_preview(run, None, f"DB 비교 실패: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    @app.get("/runs/{run_id}/records.json")
+    def records_json(run_id: str):
+        run = get_run(run_id)
+        if not (run.load("plan.json") or {}).get("series"):
+            raise HTTPException(404)
+        return live_preview(run)
+
+    @app.get("/runs/{run_id}/records/{table}.csv")
+    def records_csv(run_id: str, table: str):
+        if table not in TABLES:
+            raise HTTPException(404)
+        run = get_run(run_id)
+        t = live_preview(run)["tables"][table]
+        return _csv([[c["label"] for c in t["columns"]]] + [[r.get(c["key"]) for c in t["columns"]] for r in t["rows"]],
+                    f"{table}-{run.id}.csv")
 
     @app.get("/reports", response_class=HTMLResponse)
     def reports_page(request: Request):
@@ -402,25 +445,15 @@ def _counts(journal: dict) -> dict:
 def _compare(conn, records: dict) -> dict:
     """Per table: how many proposed rows are missing / identical / different in the DB."""
     out = {}
-    for table in TABLES:
-        rows = records[table]
-        keys = dbmod.KEYS[table]
-        existing = dbmod._fetch_existing(conn.cursor(), table, rows) if rows else {}
-        c = {"missing": 0, "same": 0, "different": 0, "diff_examples": []}
-        for row in rows:
-            old = existing.get(tuple(row[k] for k in keys))
-            if old is None:
-                c["missing"] += 1
-                continue
-            diffs = [col for col, v in row.items() if col not in dbmod.KEEP_FIRST.get(table, set())
-                     and dbmod._norm(old.get(col)) != dbmod._norm(to_db_value(col, v))]
-            if diffs:
-                c["different"] += 1
-                if len(c["diff_examples"]) < 5:
-                    c["diff_examples"].append({"key": [row[k] for k in keys], "columns": diffs})
-            else:
-                c["same"] += 1
-        out[table] = c
+    with conn.cursor() as cur:
+        for table in TABLES:
+            rows = records[table]
+            c = {"missing": 0, "same": 0, "different": 0, "diff_examples": []}
+            for row, (state, cols) in zip(rows, dbmod.row_status(cur, table, rows)):
+                c[{"신규": "missing", "같음": "same"}.get(state, "different")] += 1
+                if cols and len(c["diff_examples"]) < 5:
+                    c["diff_examples"].append({"key": [row[k] for k in dbmod.KEYS[table]], "columns": cols})
+            out[table] = c
     return out
 
 

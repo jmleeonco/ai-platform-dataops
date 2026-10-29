@@ -183,6 +183,23 @@ def register(conn, records: dict) -> dict:
     return stats
 
 
+def row_status(cur, table: str, rows: list[dict]) -> list[tuple[str, list[str]]]:
+    """What registration would do with each proposed row, read-only: ("신규", []) not in the DB, ("같음", []),
+    ("변경", columns) it would update, ("충돌", columns) an identity column differs, so it would refuse."""
+    existing = _fetch_existing(cur, table, rows) if rows else {}
+    out = []
+    for row in rows:
+        old = existing.get(tuple(row[k] for k in KEYS[table]))
+        if old is None:
+            out.append(("신규", []))
+            continue
+        bad = [c for c in IDENTITY.get(table, []) if c in row and old.get(c) != row[c]]
+        diffs = [c for c, v in row.items() if c not in KEYS[table] and c not in KEEP_FIRST.get(table, set())
+                 and _norm(old.get(c)) != _norm(to_db_value(c, v))]
+        out.append(("충돌", bad) if bad else (("변경", diffs) if diffs else ("같음", [])))
+    return out
+
+
 def _norm(v):
     import json
     if isinstance(v, str):
@@ -216,6 +233,21 @@ def table_counts(conn) -> dict:
                 out[t] = cur.fetchone()["n"]
             except pymysql.MySQLError:
                 out[t] = None
+    return out
+
+
+def change_marks(conn, tables: list[str], exact: bool = False) -> dict:
+    """{table: mark} that changes when the table changes, for the live DB pages: the row count, or with `exact`
+    the live CHECKSUM TABLE (a scan, so only for the tables a page shows rows of). `tables` must already be
+    whitelisted names."""
+    out = {}
+    with conn.cursor() as cur:
+        if exact and tables:
+            cur.execute("CHECKSUM TABLE " + ", ".join(f"`{t}`" for t in tables))
+            return {r["Table"].rsplit(".", 1)[-1]: str(r["Checksum"]) for r in cur.fetchall()}
+        for t in tables:
+            cur.execute(f"SELECT COUNT(*) AS n FROM `{t}`")
+            out[t] = str(cur.fetchone()["n"])
     return out
 
 

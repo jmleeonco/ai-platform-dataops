@@ -33,7 +33,6 @@ def build_records(run: Run, preview: bool = False) -> dict:
         raise ValueError("prepare 이후에만 DB 레코드를 만들 수 있습니다")
     if manifest is None:
         manifest = {"manifest_sha256": None, "instances": []}
-    from .local_send import journals  # local import: avoids a cycle at module load
     ds = plan["dataset"]
     duuid = ds["dataset_uuid"]
     active = [s for s in plan["series"] if not s.get("excluded")]
@@ -71,24 +70,78 @@ def build_records(run: Run, preview: bool = False) -> dict:
                                 "revision": meta["revision"], "manifest_sha256": manifest["manifest_sha256"],
                                 "status": meta["status"], "plan_json": _plan_summary(plan),
                                 "approval_json": meta.get("approval"), "input_root": plan["input_root"]})
-    for inst in manifest["instances"]:
-        rows["instances"].append({"sop_uid": inst["sop_uid"], "series_uid": inst["series_uid"],
-                                  "sop_class_uid": inst["sop_class_uid"], "artifact_sha256": inst["sha256"],
-                                  "artifact_relative_path": f"{run.id}/{inst['path']}",
-                                  "prepared_run_uuid": meta["run_uuid"], "instance_number": inst["instance_number"],
-                                  "size_bytes": inst["size"], "transfer_syntax_uid": inst["transfer_syntax"] or None,
-                                  "source_relative_path": inst["source"]["rel"],
-                                  "source_sha256": inst["source"]["sha256"]})
-    frozen = {i["sop_uid"] for i in manifest["instances"]}
+    rows["instances"] = instance_rows(run, manifest)
+    rows["transfer_results"] = transfer_rows(run, {i["sop_uid"] for i in manifest["instances"]})
+    return rows
+
+
+def instance_rows(run: Run, manifest: dict) -> list[dict]:
+    """instances rows for a frozen manifest (the full one at registration; the pilot one as a preview)."""
+    return [{"sop_uid": inst["sop_uid"], "series_uid": inst["series_uid"], "sop_class_uid": inst["sop_class_uid"],
+             "artifact_sha256": inst["sha256"], "artifact_relative_path": f"{run.id}/{inst['path']}",
+             "prepared_run_uuid": run.meta["run_uuid"], "instance_number": inst["instance_number"],
+             "size_bytes": inst["size"], "transfer_syntax_uid": inst["transfer_syntax"] or None,
+             "source_relative_path": inst["source"]["rel"], "source_sha256": inst["source"]["sha256"]}
+            for inst in manifest["instances"]]
+
+
+def transfer_rows(run: Run, frozen: set) -> list[dict]:
+    """transfer_results rows: every journal entry for a frozen SOP (any target, pilot or full send)."""
+    from .local_send import journals  # local import: avoids a cycle at module load
+    out = []
     for j in journals(run) if frozen else []:
         for sop, rec in sorted(j["instances"].items()):
             if sop not in frozen:            # e.g. a pilot frozen from an earlier plan revision
                 continue
-            rows["transfer_results"].append({
-                "run_uuid": meta["run_uuid"], "target_key": j["target_key"], "sop_uid": sop,
-                "target_snapshot": j["target"], "status": rec["status"], "attempts": rec.get("attempts", 0),
-                "response_code": None, "verification_json": None, "error_message": rec.get("detail") or None})
-    return rows
+            out.append({"run_uuid": run.meta["run_uuid"], "target_key": j["target_key"], "sop_uid": sop,
+                        "target_snapshot": j["target"], "status": rec["status"], "attempts": rec.get("attempts", 0),
+                        "response_code": None, "verification_json": None, "error_message": rec.get("detail") or None})
+    return out
+
+
+TABLE_DESC = {
+    "datasets": "공개 데이터셋 1행", "subjects": "대상자 (원본 키 → PatientID)", "studies": "대상자별 검사",
+    "series": "검사별 시리즈", "dataset_series": "데이터셋과 시리즈의 소속", "ingest_runs": "이 등록 실행 1행",
+    "instances": "DICOM 파일 (SOP Instance)", "transfer_results": "SOP별 전송 결과",
+}
+# Every column registration writes, in the order of build_records; the DB fills AUTO_COLUMNS itself.
+COLUMN_DESC = {
+    "datasets": {
+        "dataset_uuid": "데이터셋 UUID (원본 폴더에서 결정)", "name": "데이터셋 이름", "source_url": "출처 URL",
+        "license": "라이선스", "commercial_use": "상업적 이용 Y/N/U", "description": "설명",
+        "patient_id_prefix": "PatientID 접두어"},
+    "subjects": {
+        "subject_uuid": "dataset UUID + 대상자 키로 결정적 생성", "dataset_uuid": "→ datasets",
+        "source_subject_key": "원본 파일명에서 뽑은 대상자 키", "patient_id": "DICOM PatientID (접두어_대상자 키)"},
+    "studies": {
+        "study_uid": "DICOM StudyInstanceUID", "subject_uuid": "→ subjects", "study_date": "StudyDate (원본에 있을 때)",
+        "description": "StudyDescription", "metadata_json": "원본 DICOM의 검사 태그 (DICOM 원본일 때)"},
+    "series": {
+        "series_uid": "DICOM SeriesInstanceUID", "study_uid": "→ studies", "modality": "CT / MR / RTSTRUCT",
+        "description": "SeriesDescription", "metadata_json": "원본에서 뽑은 값: 분할, 크기, 간격, 축 방향, 자료형, 라벨 대상",
+        "series_number": "SeriesNumber", "instance_count": "DICOM 파일 수", "source_kind": "원본 형식 nifti / rtstruct / dicom",
+        "modality_basis": "modality를 정한 근거", "needs_review": "검토 필요 1/0", "first_run_uuid": "처음 등록한 실행"},
+    "dataset_series": {"dataset_uuid": "→ datasets", "series_uid": "→ series"},
+    "ingest_runs": {
+        "run_uuid": "실행 UUID", "run_label": "실행 ID (run 폴더 이름)", "dataset_uuid": "→ datasets",
+        "revision": "plan revision", "manifest_sha256": "전체 변환 manifest 해시 (변환 뒤)", "status": "실행 상태",
+        "plan_json": "plan 요약 (규칙·옵션·시리즈별 modality)", "approval_json": "최종 승인 기록",
+        "input_root": "원본 경로"},
+    "instances": {
+        "sop_uid": "DICOM SOPInstanceUID", "series_uid": "→ series", "sop_class_uid": "SOPClassUID",
+        "artifact_sha256": "변환된 DICOM 파일 해시", "artifact_relative_path": "run 폴더 기준 파일 경로",
+        "prepared_run_uuid": "→ ingest_runs (처음 변환한 실행)", "instance_number": "InstanceNumber",
+        "size_bytes": "파일 크기", "transfer_syntax_uid": "TransferSyntaxUID", "source_relative_path": "원본 파일",
+        "source_sha256": "원본 파일 해시"},
+    "transfer_results": {
+        "run_uuid": "→ ingest_runs", "target_key": "전송 대상 AE@host:port", "sop_uid": "→ instances",
+        "target_snapshot": "전송 당시 대상 설정", "status": "accepted / warning / failed", "attempts": "시도 횟수",
+        "response_code": "응답 코드", "verification_json": "수신 확인 결과", "error_message": "오류"},
+}
+AUTO_COLUMNS = {"datasets": ["created_at", "updated_at"], "subjects": ["created_at"], "studies": ["created_at"],
+                "series": ["created_at", "updated_at"], "dataset_series": [],
+                "ingest_runs": ["created_at", "updated_at", "registered_at"], "instances": ["created_at"],
+                "transfer_results": ["updated_at"]}
 
 
 JSON_COLUMNS = {"metadata_json", "plan_json", "approval_json", "target_snapshot", "verification_json"}

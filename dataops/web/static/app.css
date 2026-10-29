@@ -81,10 +81,12 @@ table.std-kv th { width: 220px; text-align: left; font-weight: 600; }
 table.std tr.total td { font-weight: 700; background: var(--chip); }
 h2 .sno { display: inline-block; min-width: 26px; padding: 0 6px; margin-right: 6px; border-radius: 4px; background: var(--accent); color: #fff; text-align: center; }
 nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; font-size: 13px; }
-.mt-wrap { max-height: 70vh; overflow: auto; }
-#mt-table th { position: sticky; top: 0; z-index: 1; }
-#mt-table th.sortable { cursor: pointer; }
-#mt-table td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.jt-wrap { max-height: 70vh; overflow: auto; }
+.jt-wrap th { position: sticky; top: 0; z-index: 1; }
+.jt-wrap th.sortable { cursor: pointer; }
+.jt-wrap td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.jt form select { margin-left: 4px; }
+.live { display: flex; gap: 8px; align-items: center; margin: 4px 0 12px; }
 table.std td { overflow-wrap: break-word; }
 .chain { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-bottom: 10px; }
 .chain .tbl { display: flex; flex-direction: column; gap: 2px; min-width: 150px; max-width: 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; color: var(--ink); background: var(--panel); }

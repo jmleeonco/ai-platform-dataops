@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% from "_dblive.html" import live_bar, live_open %}
 {% block title %}{{ table }} 행 · DB{% endblock %}
 {% block body %}
+{{ live_bar(live) }}
+{{ live_open(live) }}
 <p class="small"><a href="/db">← DB</a> · <a href="/db/{{ table }}">{{ table }}</a></p>
 <h1>{{ table }} <span class="mono small muted">{% for k, v in key.items() %}{{ k }}={{ v }} {% endfor %}</span></h1>
 <p class="muted small">{{ desc }}</p>
@@ -18,4 +21,6 @@
 </table></div>
 </section>
 {% endif %}
+</div>
+<script src="/static/dblive.js"></script>
 {% endblock %}

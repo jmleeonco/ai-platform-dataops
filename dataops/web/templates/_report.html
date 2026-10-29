@@ -13,27 +13,33 @@
 {% if sec.kv and loop.first %}<th>{{ v }}</th>{% else %}<td class="{{ 'num' if v is number and not sec.kv }}">{{ cell(v) }}</td>{% endif %}{% endfor %}</tr>
 {% else %}<tr><td colspan="{{ sec.columns|length }}" class="muted">없음</td></tr>{% endfor %}
 </table></div>
-{% if sec.samples %}{% for t, rows in sec.samples.items() %}
-<details><summary>{{ t }} — 처음 {{ rows|length }}행</summary><div class="table-wrap"><table class="std">
-<tr>{% for c in rows[0].keys() %}<th>{{ c }}</th>{% endfor %}</tr>
-{% for r in rows %}<tr>{% for v in r.values() %}<td class="mono small">{{ cell(v) }}</td>{% endfor %}</tr>{% endfor %}
-</table></div></details>{% endfor %}{% endif %}
 </section>
 {%- endmacro %}
-{% macro series_section(sec, run) -%}
-<section id="s6" class="std">
-<h2><span class="sno">6</span> {{ sec.title }}</h2>
-<div id="mt" data-run="{{ run.id }}" data-src="/runs/{{ run.id }}/series.json">
-  <form class="inline" id="mt-controls">
-    <input type="search" id="mt-q" placeholder="검색">
-    <select id="mt-split"><option value="">분할 전체</option>{% for k in ['train', 'validation', 'test', 'other', 'none'] %}<option>{{ k }}</option>{% endfor %}</select>
-    <select id="mt-kind"><option value="">종류 전체</option><option>영상</option><option>라벨</option><option>영상(DICOM)</option></select>
-    <select id="mt-inc"><option value="">포함·제외</option><option value="in">포함</option><option value="out">제외</option><option value="pilot">파일럿</option></select>
-    <a class="button" href="/runs/{{ run.id }}/series.csv">CSV</a>
-  </form>
-  <p class="muted small" id="mt-info"></p>
-  <div class="table-wrap mt-wrap"><table id="mt-table" class="std"></table></div>
-  <p class="pager" id="mt-pager"></p>
+{% macro json_table(id, src, csv, table=None, refresh=None, run=None) -%}
+<div class="jt" id="{{ id }}" data-src="{{ src }}"{% if table %} data-table="{{ table }}"{% endif %}{% if refresh %} data-refresh="{{ refresh }}"{% endif %}{% if run %} data-run="{{ run.id }}"{% endif %} data-csv="{{ csv }}">
+  <p class="muted small jt-info">불러오는 중…</p>
 </div>
+{%- endmacro %}
+{% macro json_section(sec, run) -%}
+<section id="s{{ sec.no }}" class="std">
+<h2><span class="sno">{{ sec.no }}</span> {{ sec.title }}</h2>
+{% if sec.no == 6 %}<p class="muted small">Local SCP가 받는 DICOM 파일의 시리즈 값입니다(Central에도 같은 파일이 갑니다). 변환된 시리즈는 실제 파일에서 읽은 값과 plan 예정 값을 비교하고, 아직 변환 전인 시리즈는 plan 기준 예정 값입니다. 슬라이스마다 다른 값과 모든 시리즈에 같은 값은 표 9·10에 있습니다.</p>
+{% else %}<p class="muted small">원본에서 뽑은 값 전체입니다. 각 값이 어느 DICOM 태그(표 6)와 DB 컬럼(표 7)으로 가는지는 표 9에 있습니다.</p>{% endif %}
+{{ json_table("jt-" ~ sec.src, "/runs/" ~ run.id ~ "/" ~ sec.src ~ ".json", "/runs/" ~ run.id ~ "/" ~ sec.src ~ ".csv", run=run) }}
+</section>
+{%- endmacro %}
+{% macro db_section(sec, run) -%}
+<section id="s7" class="std">
+<h2><span class="sno">7</span> {{ sec.title }}</h2>
+<p class="muted small">관리 DB의 테이블마다, 등록하면 들어갈 행을 DB 컬럼 이름 그대로 보여 줍니다. "DB 상태"는 지금 DB와 비교한 결과이며 15초마다 다시 확인합니다: 신규(추가될 행), 같음, 변경(갱신될 컬럼), 충돌(등록 거부). <span class="badge" id="c7-checked">DB 확인 중…</span></p>
+<div class="table-wrap"><table class="std">
+<tr>{% for c in sec.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in sec.rows %}<tr><td><a href="#t7-{{ r[0] }}">{{ r[0] }}</a></td><td>{{ r[1] }}</td><td class="num">{{ '{:,}'.format(r[2]) }}</td>
+{% for st in ['신규', '같음', '변경', '충돌'] %}<td class="num" id="c7-{{ r[0] }}-{{ st }}">-</td>{% endfor %}<td class="small">{{ r[7] or '' }}</td></tr>{% endfor %}
+</table></div>
+{% for r in sec.rows %}
+<h3 id="t7-{{ r[0] }}" class="mono">{{ r[0] }} <span class="muted small">{{ r[1] }} · {{ '{:,}'.format(r[2]) }}행{% if r[7] %} · {{ r[7] }}{% endif %} · <a href="/db/{{ r[0] }}">DB에서 보기</a></span></h3>
+{{ json_table("jt7-" ~ r[0], "/runs/" ~ run.id ~ "/records.json", "/runs/" ~ run.id ~ "/records/" ~ r[0] ~ ".csv", table=r[0], refresh=15) }}
+{% endfor %}
 </section>
 {%- endmacro %}

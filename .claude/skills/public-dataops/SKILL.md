@@ -11,7 +11,9 @@ Analysing a folder for the owner:
 1. Start it like the browser does: `python -m dataops analyze DIR` (queued for the worker) or
    `--wait` to run it in this shell. DIR must be under DATAOPS_INPUT_ROOTS.
 2. Report with the standard report, never free-form: http://10.101.1.183:8096/runs/<run>/report (tables
-   1–9, identical for every dataset; `report.json` for the values) and `/reports` to compare datasets.
+   1–10, identical for every dataset; `report.json` for the values) and `/reports` to compare datasets.
+   What goes out is table 6 (DICOM values per series for the local SCP) and table 7 (every DB table's
+   rows, with their state in the live DB).
    Quote table rows (e.g. table 4 확인 사항) rather than rewording them. Ask the owner only about real
    ambiguities (table 4 질문/미해결).
 3. Pilot (`python -m dataops pilot RUN` or the button) sends ONLY the two pilot subjects to the local

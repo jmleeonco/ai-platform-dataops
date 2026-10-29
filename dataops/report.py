@@ -1,35 +1,44 @@
 """The standard dataset report: the same numbered tables with the same columns for every dataset, so reports
 of different datasets can be read side by side and compared (`dataset_index`). Built only from the run's
 files (plan, scan, inventory, manifests, journals, registration) and `metadata.build`; agent text appears
-only as cell values, never as free-form report prose.
+only as cell values, never as free-form report prose. Tables 6 and 7 are what actually leaves this machine:
+the DICOM values per series as the local SCP receives them, and the rows of every management-DB table.
 
  1 데이터셋        2 분할 구성       3 폴더 판정       4 확인 사항       5 전송·등록
- 6 시리즈 메타데이터 7 필드 정의      8 DICOM 헤더      9 DB 등록 예정
+ 6 Local SCP 메타데이터 (DICOM)      7 DB 등록 예정    8 원본 메타데이터  9 열 정의   10 DICOM 헤더
 """
 from __future__ import annotations
 
+import json
 from collections import Counter
 from pathlib import Path
 
+from pydicom.datadict import tag_for_keyword
+
+from . import db as dbmod
 from . import metadata
 from .local_send import journals
 from .prepare import MANIFESTS
+from .records import AUTO_COLUMNS, COLUMN_DESC, TABLE_DESC, TABLES, build_records, instance_rows, transfer_rows
 from .runs import Run, list_runs
+from .util import now_iso
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SPLITS = [("train", "학습"), ("validation", "검증"), ("test", "테스트"), ("other", "기타"), ("none", "구분 없음")]
-TITLES = {1: "데이터셋", 2: "분할 구성", 3: "폴더 판정", 4: "확인 사항", 5: "전송·등록", 6: "시리즈 메타데이터",
-          7: "필드 정의", 8: "DICOM 헤더 (파일럿 실제 파일)", 9: "DB 등록 예정"}
+TITLES = {1: "데이터셋", 2: "분할 구성", 3: "폴더 판정", 4: "확인 사항", 5: "전송·등록",
+          6: "Local SCP 메타데이터 (DICOM)", 7: "DB 등록 예정", 8: "원본 메타데이터", 9: "열 정의",
+          10: "DICOM 헤더 (파일럿 실제 파일)"}
 COLUMNS = {
     1: ["항목", "값"],
     2: ["분할", "대상자", "CT", "MR", "라벨", "인스턴스", "포함"],
     3: ["경로", "판정", "역할", "분할", "파일 수", "크기(GB)", "근거"],
     4: ["#", "구분", "내용", "출처"],
     5: ["단계", "대상", "대상자", "시리즈", "인스턴스", "결과", "일시"],
-    7: ["#", "필드", "설명", "DICOM 태그", "DB 컬럼", "DICOM 검증", "DB 검증"],
-    8: ["태그", "이름", "VR", "값", "출처", "설명"],
-    9: ["테이블", "행 수", "컬럼"],
+    7: ["테이블", "설명", "예정 행", "신규", "같음", "변경", "충돌", "비고"],
+    9: ["#", "표", "열", "태그 / 위치", "설명", "출처", "검증"],
+    10: ["태그", "이름", "VR", "값", "출처", "설명"],
 }
+DB_STATES = ["신규", "같음", "변경", "충돌"]
 INDEX_COLUMNS = ["데이터셋", "상태", "대상자", "CT", "MR", "라벨", "인스턴스", "원본(GB)", "라이선스", "상업적 이용",
                  "확인 사항", "파일럿", "승인", "Central", "DB", "분석일", "run"]
 ROLE = {"image": "영상", "label": "라벨", "ignore": "무시"}
@@ -152,10 +161,14 @@ def _s4(run: Run, plan: dict, scan: dict, md: dict) -> dict:
         items.append(("오류", f"원본 {len(md['unreadable'])}개 파일을 읽을 수 없음 (예: {md['unreadable'][0]})", "원본 헤더"))
     if md.get("unknown_tags"):
         items.append(("오류", f"출처가 정의되지 않은 DICOM 태그: {', '.join(md['unknown_tags'])}", "DICOM 헤더"))
+    for t in md.get("dicom", {}).get("tags", []):
+        if t["check"].startswith("불일치"):
+            ex = t["bad"][0]
+            items.append(("오류", f"DICOM {t['key']} {t['check']} (예: {ex['series']} 예정 {ex['expected']!r}, "
+                                 f"실제 {ex['dicom']!r})", "표 6 검증"))
     for f in md.get("fields", []):
-        for k in ("dicom_check", "db_check"):
-            if (f.get(k) or "").startswith("불일치"):
-                items.append(("오류", f"{f['label']}: {'DICOM' if k == 'dicom_check' else 'DB'} {f[k]}", "필드 검증"))
+        if (f.get("db_check") or "").startswith("불일치"):
+            items.append(("오류", f"{f['label']}: DB {f['db_check']}", "표 8 검증"))
     if scan.get("errors"):
         items.append(("경고", f"스캔 중 읽지 못한 경로 {len(scan['errors'])}개 (예: {scan['errors'][0]['rel']})", "스캔"))
     items += [("질문", q, "에이전트") for q in a.get("questions", [])]
@@ -201,24 +214,93 @@ def _s5(run: Run, plan: dict, counts: dict, settings) -> dict:
     return _section(5, rows)
 
 
-# ---------------------------------------------------------------------- 7 / 8 / 9
-def _s7(md: dict) -> dict:
-    return _section(7, [[f["no"], f["label"], f["desc"], f["dicom"] or "-", f["db"] or "-",
-                         f["dicom_check"] or "-", f["db_check"] or "-"] for f in md["fields"]])
+# ---------------------------------------------------------------------- 6 / 7 / 8 / 9 / 10
+def dicom_columns() -> list[dict]:
+    return ([{"key": k, "label": label, "desc": ""} for k, label in metadata.DICOM_LEAD] +
+            [{"key": t.key, "label": t.key, "desc": f"{t.tag} {t.desc}".strip()} for t in metadata.TAGS] +
+            [{"key": "check", "label": "실제 파일 확인", "desc": "변환된 파일의 값과 plan 예정 값 비교"}])
 
 
-def _s8(md: dict) -> list[dict]:
-    return [_section(8, [[t["tag"], t["keyword"], t["vr"], t["value"], t["source"], t["why"]] for t in h["tags"]],
+def source_columns(md: dict) -> list[dict]:
+    return [{"key": f["key"], "label": f"{f['no']} {f['label']}", "desc": f["desc"]} for f in md["fields"]]
+
+
+def _s7(records: dict, notes: dict) -> dict:
+    rows = [[t, TABLE_DESC.get(t), len(records[t]), None, None, None, None, notes.get(t)] for t in TABLES]
+    return _section(7, rows, tables=[{"name": t, "columns": len(COLUMN_DESC[t]) + 2} for t in TABLES])
+
+
+def _tag_number(keyword: str) -> str:
+    tag = tag_for_keyword(keyword)
+    return f"({tag >> 16:04X},{tag & 0xFFFF:04X})" if tag is not None else ""
+
+
+def _s9(md: dict) -> dict:
+    rows = []
+    for t in md["dicom"]["tags"]:
+        rows.append(["6 DICOM", t["key"], t["tag"], t["desc"], t["source"], t["check"]])
+    for kw, (kind, why) in metadata.TAG_SOURCE.items():
+        if kw not in metadata.TAG_KEYS:
+            rows.append(["6 DICOM (모든 시리즈 같음·슬라이스별)", kw, _tag_number(kw), why, kind, "표 10"])
+    for table in TABLES:
+        for col, desc in COLUMN_DESC[table].items():
+            rows.append(["7 DB", f"{table}.{col}", "", desc,
+                         "변환·전송 결과" if table in ("instances", "transfer_results") else "plan", "-"])
+        for col in AUTO_COLUMNS[table]:
+            rows.append(["7 DB", f"{table}.{col}", "", "DB가 채우는 시각", "DB 자동", "-"])
+    for f in md["fields"]:
+        rows.append(["8 원본", f["label"], "", f["desc"], f"DICOM: {f['dicom'] or '없음'} · DB: {f['db'] or '없음'}",
+                     f["db_check"] or "-"])
+    return _section(9, [[i, *r] for i, r in enumerate(rows, start=1)])
+
+
+def _s10(md: dict) -> list[dict]:
+    return [_section(10, [[t["tag"], t["keyword"], t["vr"], t["value"], t["source"], t["why"]] for t in h["tags"]],
                      subtitle=f"{h['modality']} · {h['series']}") for h in md["headers"]]
 
 
-def _s9(md: dict, counts: dict) -> dict:
-    rows = []
-    for t, rs in md["records"].items():
-        n = len(rs) if rs or t not in ("instances", "transfer_results") else (
-            counts["instances"] if t == "instances" else None)
-        rows.append([t, n, ", ".join(rs[0].keys()) if rs else ("전체 변환 뒤 생성" if t == "instances" else "전송 뒤 생성")])
-    return _section(9, rows, samples={t: rs[:20] for t, rs in md["records"].items() if rs})
+def db_preview(run: Run, conn=None, db_error: str | None = None) -> dict:
+    """Table 7 rows: every row registration would write, per table with the DB's own column names, and what
+    registration would do with each row in the live DB (신규 / 같음 / 변경 / 충돌). Before the full conversion
+    the pilot's files stand in for instances and transfer_results (same deterministic SOP UIDs)."""
+    records = build_records(run, preview=True)
+    notes = {}
+    planned = sum(r["instance_count"] or 0 for r in records["series"])
+    if not records["instances"]:
+        pilot = run.load(MANIFESTS["pilot"])
+        if pilot:
+            records["instances"] = instance_rows(run, pilot)
+            records["transfer_results"] = transfer_rows(run, {i["sop_uid"] for i in pilot["instances"]})
+            notes["instances"] = f"파일럿 파일만 — 전체 {planned:,}행은 전체 변환 뒤 확정"
+            notes["transfer_results"] = "파일럿 전송만 — Central 전송 뒤 추가"
+        else:
+            notes["instances"] = f"전체 변환 뒤 {planned:,}행 생성"
+            notes["transfer_results"] = "전송 뒤 생성"
+    tables = {}
+    for t in TABLES:
+        rows = records[t]
+        status = None
+        if conn is not None:
+            with conn.cursor() as cur:
+                status = dbmod.row_status(cur, t, rows)
+        out, counts = [], Counter()
+        for i, r in enumerate(rows):
+            row = {c: _cellify(r.get(c)) for c in COLUMN_DESC[t]}
+            st, cols = status[i] if status else ("DB 연결 안 됨", [])
+            row["_db"], row["_diff"] = st, ", ".join(cols) or None
+            counts[st] += 1
+            out.append(row)
+        tables[t] = {"name": t, "desc": TABLE_DESC.get(t), "note": notes.get(t), "counts": dict(counts),
+                     "columns": [{"key": c, "label": c, "desc": d} for c, d in COLUMN_DESC[t].items()] +
+                                [{"key": "_db", "label": "DB 상태", "desc": "등록하면: 신규 추가 / 같음 / 변경 / 충돌(거부)"},
+                                 {"key": "_diff", "label": "차이 컬럼", "desc": "DB 값과 다른 컬럼"}],
+                     "rows": out, "filters": ["_db"]}
+    return {"checked_at": now_iso(), "db": db_error or ("ok" if conn is not None else "DB 설정 없음"),
+            "tables": tables}
+
+
+def _cellify(v):
+    return json.dumps(v, ensure_ascii=False, sort_keys=True) if isinstance(v, (dict, list)) else v
 
 
 # ---------------------------------------------------------------------- build
@@ -230,12 +312,20 @@ def build(run: Run, settings, refresh: bool = False) -> dict:
     scan, inv = run.load("scan.json", {}) or {}, run.load("inventory.json", {}) or {}
     split_rows, totals = _counts(plan)
     counts = {**totals, "series": sum(1 for s in plan["series"] if not s.get("excluded"))}
+    preview = db_preview(run)
     sections = [_s1(run, plan, scan, counts), _s2(split_rows, totals), _s3(plan, inv), _s4(run, plan, scan, md),
-                _s5(run, plan, counts, settings), _section(6, [], columns=[f["label"] for f in md["fields"]]),
-                _s7(md), *(_s8(md) or [_section(8, [], subtitle="파일럿 변환 전")]), _s9(md, counts)]
+                _s5(run, plan, counts, settings),
+                _section(6, [], columns=[c["label"] for c in dicom_columns()], src="dicom"),
+                _s7({t: v["rows"] for t, v in preview["tables"].items()},
+                    {t: v["note"] for t, v in preview["tables"].items()}),
+                _section(8, [], columns=[c["label"] for c in source_columns(md)], src="series"),
+                _s9(md), *(_s10(md) or [_section(10, [], subtitle="파일럿 변환 전")])]
     return {"ready": True, "schema_version": SCHEMA_VERSION, "run_id": run.id, "sections": sections,
-            "series": {"fields": md["fields"], "rows": md["rows"]}, "counts": counts,
-            "dataset_name": (plan.get("dataset") or {}).get("name")}
+            "dicom": {"columns": dicom_columns(), "rows": md["dicom"]["rows"],
+                      "filters": ["split", "kind", "pilot", "origin", "check"]},
+            "series": {"columns": source_columns(md), "rows": md["rows"],
+                       "filters": ["split", "kind", "included", "pilot"]},
+            "counts": counts, "dataset_name": (plan.get("dataset") or {}).get("name")}
 
 
 def issue_counts(run: Run, plan: dict, scan: dict) -> Counter:

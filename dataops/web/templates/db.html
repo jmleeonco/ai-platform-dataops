@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% from "_dblive.html" import live_bar, live_open %}
 {% block title %}DB{% endblock %}
 {% block body %}
+{{ live_bar(live) }}
+{{ live_open(live) }}
 <h1>관리 DB</h1>
 {% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
 {% if info %}{% set sch = info.schema %}
@@ -40,4 +43,6 @@ migration {{ info.migrations.applied|join(', ') }}{% if info.migrations.pending 
 </table></div></details>
 {% endfor %}
 {% endif %}
+</div>
+<script src="/static/dblive.js"></script>
 {% endblock %}

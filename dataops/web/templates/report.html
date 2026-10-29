@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% from "_report.html" import std_section, series_section %}
+{% from "_report.html" import std_section, json_section, db_section %}
 {% block title %}보고서 · {{ report.dataset_name or run.id }}{% endblock %}
 {% block body %}
 <p class="small"><a href="/runs/{{ run.id }}">← 작업 화면</a> · <a href="/reports">데이터셋 비교</a> ·
-<a href="/runs/{{ run.id }}/report.json">JSON</a> · <a href="/runs/{{ run.id }}/series.csv">시리즈 CSV</a></p>
+<a href="/runs/{{ run.id }}/report.json">JSON</a> · <a href="/runs/{{ run.id }}/dicom.csv">DICOM CSV</a> · <a href="/runs/{{ run.id }}/series.csv">원본 CSV</a></p>
 <h1>{{ report.dataset_name or run.id }}</h1>
 {% if not report.ready %}<section><p class="muted">분석 결과가 아직 없습니다.</p></section>
 {% else %}
 <nav class="toc">{% for no, t in titles.items() %}<a href="#s{{ no }}">{{ no }} {{ t }}</a>{% endfor %}</nav>
-{% for sec in report.sections %}{% if sec.no == 6 %}{{ series_section(sec, run) }}{% else %}{{ std_section(sec) }}{% endif %}{% endfor %}
+{% for sec in report.sections %}{% if sec.src %}{{ json_section(sec, run) }}{% elif sec.no == 7 %}{{ db_section(sec, run) }}{% else %}{{ std_section(sec) }}{% endif %}{% endfor %}
 {% endif %}
-<script src="/static/metatable.js"></script>
+<script src="/static/jtable.js"></script>
 {% endblock %}
