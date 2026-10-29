@@ -13,7 +13,9 @@ Analysing a folder for the owner:
 2. Report with the standard report, never free-form: http://10.101.1.183:8096/runs/<run>/report (tables
    1–10, identical for every dataset; `report.json` for the values) and `/reports` to compare datasets.
    What goes out is table 6 (DICOM values per series for the local SCP) and table 7 (every DB table's
-   rows, with their state in the live DB).
+   rows, with their state in the live DB). The owner works on the run page
+   (http://10.101.1.183:8096/runs/<run>): Local SCP send, final approval → Central, and the tabs
+   추출 테이블 / DB 테이블 / DICOM 메타데이터.
    Quote table rows (e.g. table 4 확인 사항) rather than rewording them. Ask the owner only about real
    ambiguities (table 4 질문/미해결).
 3. Pilot (`python -m dataops pilot RUN` or the button) sends ONLY the two pilot subjects to the local

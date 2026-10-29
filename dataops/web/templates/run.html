@@ -1,82 +1,31 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status, csrf_field, counts %}
-{% from "_report.html" import std_section %}
+{% from "_macros.html" import status, csrf_field %}
+{% from "_report.html" import std_section, json_table %}
 {% block title %}{{ plan.dataset.name if plan and plan.dataset else 'run' }} · {{ run.id }}{% endblock %}
 {% block body %}
 <h1>{{ plan.dataset.name if plan and plan.dataset else '분석 중인 폴더' }} {{ status(meta.status) }}</h1>
-<p class="muted mono">run {{ run.id }} · {{ meta.input_root }}</p>
-
-<ol class="stepper">
-  {% for label in ['분석', '보고서 검토', '파일럿 2케이스 → Local SCP', '최종 승인', 'Central 전송 · DB 등록'] %}
-  <li class="{{ 'done' if loop.index0 < stage else ('now' if loop.index0 == stage else '') }}">{{ label }}</li>
-  {% endfor %}
-</ol>
+<p class="muted mono small">{{ meta.input_root }} · run {{ run.id }}</p>
 
 <div id="live" data-run="{{ run.id }}" data-status="{{ meta.status }}" data-active="{{ '1' if active else '' }}"></div>
-{% if job %}
-<section class="{{ 'job-active' if active else '' }}">
-<h2>작업 <a class="mono small" href="/jobs/{{ job.id }}">{{ job.kind }}</a> {{ status(job.status) }}</h2>
+{% if job and (active or job.status == 'failed') %}
+<section class="job-active">
+<h2>{{ job.kind }} {{ status(job.status) }}</h2>
 {% if job.error %}<p class="err">{{ job.error }}</p>{% endif %}
 <pre id="joblog">{% for l in job_log %}{{ l }}
 {% endfor %}</pre>
-{% if active %}<p class="muted">진행 중에는 이 페이지가 자동으로 새로 고쳐집니다.</p>{% endif %}
 </section>
 {% endif %}
-
 {% if meta.status == 'ANALYSIS_FAILED' %}
-<section><p class="err">분석에 실패했습니다. 작업 로그를 확인한 뒤 다시 분석할 수 있습니다.</p>
+<section><p class="err">분석에 실패했습니다.</p>
 <form method="post" action="/runs/{{ run.id }}/reanalyze">{{ csrf_field(csrf) }}<button>다시 분석</button></form></section>
 {% endif %}
 
-{% if report and report.ready %}
-<p class="small"><a class="button primary" href="/runs/{{ run.id }}/report">표준 보고서 1–9 전체</a>
-<a href="/runs/{{ run.id }}/report#s6">6 시리즈 메타데이터</a> · <a href="/runs/{{ run.id }}/report#s7">7 필드 정의</a> ·
-<a href="/runs/{{ run.id }}/report#s8">8 DICOM 헤더</a> · <a href="/runs/{{ run.id }}/report#s9">9 DB 등록 예정</a></p>
-{% for sec in report.sections if sec.no <= 5 %}{{ std_section(sec) }}{% endfor %}
-{% endif %}
-
-{% if plan and plan.dataset %}
-<section id="dataset">
-<h2>데이터셋 정보 {% if not editable %}<span class="muted small">(읽기 전용: {{ meta.status }})</span>{% endif %}</h2>
-<form method="post" action="/runs/{{ run.id }}/dataset" class="grid-form">
-  {{ csrf_field(csrf) }}
-  <label>이름<input name="name" value="{{ plan.dataset.name or '' }}" maxlength="256" required {{ 'disabled' if not editable }}></label>
-  <label>라이선스<input name="license" value="{{ plan.dataset.license or '' }}" maxlength="200" {{ 'disabled' if not editable }}></label>
-  <label>상업적 이용<select name="commercial_use" {{ 'disabled' if not editable }}>{% for v in ['Y','N','U'] %}<option {{ 'selected' if plan.dataset.commercial_use == v }}>{{ v }}</option>{% endfor %}</select></label>
-  <label>PatientID 접두어<input name="patient_id_prefix" value="{{ plan.dataset.patient_id_prefix or '' }}" maxlength="32" pattern="[A-Za-z0-9_\-]{1,32}" {{ 'disabled' if not editable }}></label>
-  <label class="span2">출처 URL<input name="source_url" value="{{ plan.dataset.source_url or '' }}" maxlength="500" {{ 'disabled' if not editable }}></label>
-  <label class="span2">설명<input name="description" value="{{ plan.dataset.description or '' }}" maxlength="2000" {{ 'disabled' if not editable }}></label>
-  {% if editable %}<div><button type="submit">저장</button></div>{% endif %}
-</form>
-<p class="muted small">dataset UUID <span class="mono">{{ meta.dataset_uuid }}</span> (같은 폴더는 같은 UUID) · plan revision {{ meta.revision }} <span class="mono">{{ (meta.plan_sha256 or '')[:12] }}</span>.
-접두어를 바꾸면 PatientID·UID가 다시 계산됩니다.</p>
-</section>
-
-{% if plan.adapter == 'agent-spec' %}
-<section id="scope">
-<h2>포함 범위</h2>
-{% set splits = summary.keys()|list %}
-<form method="post" action="/runs/{{ run.id }}/splits" class="inline">
-  {{ csrf_field(csrf) }}
-  {% for sp_name in splits %}<label><input type="checkbox" name="split_{{ sp_name }}" {{ 'checked' if summary[sp_name].subjects_in }} {{ 'disabled' if not editable }}> {{ split_names.get(sp_name, sp_name) }}</label>{% endfor %}
-  {% if editable %}<button type="submit">분할 저장</button>{% endif %}
-</form>
-{% set n_rt = plan.series|selectattr('kind', 'equalto', 'rtstruct')|list %}
-{% if n_rt %}
-<form method="post" action="/runs/{{ run.id }}/labels" class="inline">
-  {{ csrf_field(csrf) }}
-  <label><input type="checkbox" name="labels" {{ 'checked' if n_rt|rejectattr('excluded')|list }} {{ 'disabled' if not editable }}> 라벨을 RTSTRUCT로 함께 보냄 ({{ n_rt|length }}개)</label>
-  {% if editable %}<button type="submit">저장</button>{% endif %}
-</form>
-{% endif %}
-</section>
-{% endif %}
-{% endif %}
-
-{% if plan_errors or plan.unresolved %}
+{% if plan_errors or (plan and plan.unresolved) or blocking %}
 <section id="unresolved">
-<h2>해결할 항목</h2>
-{% if plan_errors %}<div class="err"><b>plan 오류 (파일럿·준비 차단)</b><ul>{% for e in plan_errors[:30] %}<li>{{ e }}</li>{% endfor %}</ul>{% if plan_errors|length > 30 %}<p>… 외 {{ plan_errors|length - 30 }}건</p>{% endif %}</div>{% endif %}
+<h2>전송 전에 해결할 항목</h2>
+{% for e in blocking %}<p class="err">{{ e }}</p>{% endfor %}
+{% for e in plan_errors[:20] %}<p class="err">{{ e }}</p>{% endfor %}
+{% if plan_errors|length > 20 %}<p class="muted">… 외 {{ plan_errors|length - 20 }}건</p>{% endif %}
 {% for u in plan.unresolved %}
 <div class="notice"><code>{{ u.code }}</code> {{ u.message }}
 {% if u.code == 'modality_ambiguous' and editable %}{% for k in u.series_keys %}
@@ -87,135 +36,130 @@
 </section>
 {% endif %}
 
-{% if plan and plan.pilot is defined %}
+{% if plan and plan.series %}
+<div class="cols">
 <section id="pilot">
-<h2>파일럿: 2케이스 → Local SCP <span class="mono small">{{ settings.local_scp.key }}</span></h2>
-<form method="post" action="/runs/{{ run.id }}/pilot-subjects" class="inline">
-  {{ csrf_field(csrf) }}
-  <datalist id="subjects">{% for sj in subjects %}<option value="{{ sj }}">{% endfor %}</datalist>
-  <label>대상자 1 <input name="pilot1" list="subjects" value="{{ plan.pilot.subjects[0] if plan.pilot.subjects|length > 0 }}" {{ 'disabled' if not editable }}></label>
-  <label>대상자 2 <input name="pilot2" list="subjects" value="{{ plan.pilot.subjects[1] if plan.pilot.subjects|length > 1 }}" {{ 'disabled' if not editable }}></label>
-  {% if editable %}<button type="submit">대상자 저장</button>{% endif %}
-</form>
-{% if pilot_stale %}<p class="notice">plan이 파일럿 이후 바뀌었습니다. 승인하려면 파일럿을 다시 보내세요.</p>{% endif %}
-<div class="table-wrap"><table>
-<tr><th>대상자</th><th>종류</th><th>Modality</th><th>원본</th><th class="num">장</th><th>검사</th><th>Local 전송</th></tr>
-{% for r in pilot_series_rows %}{% set s = r.s %}{% set rep = r.report or {} %}
-<tr><td>{{ s.patient_id }}<div class="muted mono small">{{ s.subject_key }}</div></td>
-<td>{% if r.report %}<a href="/runs/{{ run.id }}/series/{{ s.series_uid if s.kind != 'rtstruct' else (plan.series|selectattr('series_key', 'equalto', s.reference)|first).series_uid }}">{{ 'RTSTRUCT' if s.kind == 'rtstruct' else '영상 보기' }}</a>{% else %}{{ 'RTSTRUCT' if s.kind == 'rtstruct' else '영상' }}{% endif %}</td>
-<td>{{ s.modality }}</td><td class="mono small">{{ s.sources[0] }}</td>
-<td class="num">{{ r.counts.instances if r.counts else s.instance_count }}</td>
-<td class="small">{% if s.kind == 'rtstruct' and rep %}ROI {{ rep.rois|length }} · 윤곽 {{ rep.contours }} · 왕복 Dice ≥ {{ rep.min_dice_roundtrip }} {% if not rep.dice_ok %}<span class="b-bad">낮음</span>{% endif %}{% if rep.unnamed_values %}<div class="b-warn">이름 없는 값 {{ rep.unnamed_values|join(', ') }}</div>{% endif %}
-{% elif rep %}{{ rep.plane }} {{ rep.shape_xyz|join('×') }} · {{ rep.spacing_mm|join('/') }} mm{% if rep.modality_check and rep.modality_check != 'ok' %}<div class="b-warn">{{ rep.modality_check }}</div>{% endif %}{% else %}<span class="muted">준비 전</span>{% endif %}</td>
-<td>{{ counts(r.counts) }}</td></tr>
-{% else %}<tr><td colspan="7" class="muted">파일럿 대상자가 없습니다.</td></tr>{% endfor %}
-</table></div>
+<h2>1. Local SCP 전송 <span class="mono small muted">{{ settings.local_scp.key }}</span></h2>
 {% set can_pilot = meta.status in ['PLANNED', 'PILOT_READY', 'PILOT_SENT', 'PILOT_PARTIAL', 'PILOT_FAILED'] and not active %}
 <form method="post" action="/runs/{{ run.id }}/pilot" class="inline">
   {{ csrf_field(csrf) }}
-  <button type="submit" class="primary" {{ 'disabled' if not can_pilot }}>{{ '파일럿 다시 보내기' if pilot else '파일럿 변환 + Local SCP 전송' }}</button>
-  <span class="muted small">두 대상자만 DICOM/RTSTRUCT로 고정해 {{ settings.local_scp.key }} 로 보냅니다. OncoStudio에서 영상·윤곽을 확인하세요. 같은 입력이면 같은 UID라 다시 보내도 중복되지 않습니다.</span>
+  <datalist id="subjects">{% for sj in subjects %}<option value="{{ sj }}">{% endfor %}</datalist>
+  {% set chosen = (plan.pilot or {}).subjects or [] %}
+  <input name="pilot1" list="subjects" placeholder="대상자 1" value="{{ chosen[0] if chosen|length > 0 }}" {{ 'disabled' if not editable }}>
+  <input name="pilot2" list="subjects" placeholder="대상자 2" value="{{ chosen[1] if chosen|length > 1 }}" {{ 'disabled' if not editable }}>
+  <button type="submit" class="primary" {{ 'disabled' if not can_pilot }}>{{ '다시 보내기' if pilot else '보내기' }}</button>
 </form>
-</section>
-
-<section id="approve">
-<h2>최종 승인</h2>
-{% if meta.approval %}
-<dl class="kv"><dt>승인자</dt><dd>{{ meta.approval.approved_by }} · {{ meta.approval.approved_at }}</dd>
-<dt>승인한 plan</dt><dd class="mono">rev {{ meta.approval.plan_revision }} · {{ meta.approval.plan_sha256[:16] }}</dd>
-<dt>근거 파일럿</dt><dd class="mono">{{ meta.approval.pilot_subjects|join(', ') }} → {{ meta.approval.pilot_target }}</dd>
-{% if meta.approval.note %}<dt>메모</dt><dd>{{ meta.approval.note }}</dd>{% endif %}</dl>
-{% elif meta.status == 'PILOT_SENT' and not pilot_stale %}
-<p>파일럿 {{ plan.pilot.subjects|join(', ') }} 가 모두 수신되었습니다. OncoStudio에서 확인했다면 승인하세요.
-승인 후에는 plan을 바꿀 수 없고, 전체 변환과 Central 전송이 이 plan으로만 진행됩니다.</p>
-<form method="post" action="/runs/{{ run.id }}/approve" class="grid-form">
-  {{ csrf_field(csrf) }}
-  <label>승인자<input name="approver" maxlength="64" required></label>
-  <label class="span2">확인: 데이터셋 이름 입력 <span class="mono small">{{ plan.dataset.name }}</span><input name="confirm" required autocomplete="off"></label>
-  <label class="span2">메모<input name="note" maxlength="1000"></label>
-  <div><button type="submit" class="primary" {{ 'disabled' if active }}>승인</button></div>
-</form>
-{% else %}
-<p class="muted">파일럿이 모두 수신(PILOT_SENT)된 뒤 승인할 수 있습니다.</p>
-{% endif %}
+{% for j in journals if j.target.kind != 'central' %}
+<p class="small"><span class="mono">{{ '파일럿' if j.scope == 'pilot' else '전체' }} → {{ j.target_key }}</span>
+{% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}
+<span class="muted">{{ j.sessions[-1].finished_at if j.sessions else '' }}</span></p>
+{% else %}<p class="muted small">아직 보내지 않았습니다. 대상자를 고르고 보내면 OncoStudio에서 확인할 수 있습니다.</p>{% endfor %}
+{% if pilot_stale %}<p class="notice small">파일럿 이후 plan이 바뀌었습니다. 승인하려면 다시 보내세요.</p>{% endif %}
 </section>
 
 <section id="central">
-<h2>Central 전송 · DB 등록</h2>
-<p>대상: {% if central[0] %}<b class="mono">{{ central[1] }}</b>{% else %}<span class="b-warn">{{ central[1] }}</span>{% endif %}</p>
-{% if meta.approval and central[0] and meta.status in ['APPROVED', 'PREPARED', 'CENTRAL_PARTIAL', 'CENTRAL_FAILED', 'LOCAL_SENT', 'LOCAL_PARTIAL', 'LOCAL_FAILED'] %}
+<h2>2. 최종 승인 → Central SCP {% if central[0] %}<span class="mono small muted">{{ central[1] }}</span>{% endif %}</h2>
+{% if not central[0] %}<p class="notice small">Central 대상 미설정: {{ central[1] }}</p>{% endif %}
+{% if meta.approval %}
+<p class="small">승인 <b>{{ meta.approval.approved_by }}</b> · {{ meta.approval.approved_at }}</p>
+{% if central[0] and meta.status in ['APPROVED', 'PREPARED', 'CENTRAL_PARTIAL', 'CENTRAL_FAILED', 'LOCAL_SENT', 'LOCAL_PARTIAL', 'LOCAL_FAILED'] %}
 <form method="post" action="/runs/{{ run.id }}/publish" class="inline">{{ csrf_field(csrf) }}
-<button type="submit" class="primary" {{ 'disabled' if active }}>{{ 'Central 전송 이어서' if meta.status.startswith('CENTRAL_') else '전체 변환 + Central 전송 + DB 등록' }}</button></form>
-{% elif meta.approval and not central[0] %}
-<p class="muted">승인은 기록되었습니다. Central 대상이 설정되면(<code>~/.config/ai-platform-dataops/env</code>의 DATAOPS_CENTRAL_*) 여기서 시작할 수 있습니다.</p>
+<button type="submit" class="primary" {{ 'disabled' if active }}>{{ 'Central 전송 이어서' if meta.status.startswith('CENTRAL_') else 'Central 전송' }}</button></form>
+{% endif %}
+{% elif meta.status == 'PILOT_SENT' and not pilot_stale %}
+<form method="post" action="/runs/{{ run.id }}/approve" class="inline">
+  {{ csrf_field(csrf) }}
+  <input name="approver" maxlength="64" required placeholder="승인자">
+  <input name="confirm" required autocomplete="off" placeholder="확인: {{ plan.dataset.name }}" title="데이터셋 이름을 그대로 입력">
+  <button type="submit" class="primary" {{ 'disabled' if active }}>최종 승인{{ ' · Central 전송' if central[0] }}</button>
+</form>
+<p class="muted small">OncoStudio에서 확인한 뒤 누르세요. 확인 칸에 데이터셋 이름을 그대로 입력합니다.</p>
+{% else %}
+<p class="muted small">Local SCP 전송이 모두 수신된 뒤 승인할 수 있습니다.</p>
 {% endif %}
 {% for j in journals if j.target.kind == 'central' %}
-<p class="mono">{{ j.target_key }} · 승인 {{ j.target.approved_by }}: {% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}</p>
-<div class="table-wrap"><table><tr><th>시작</th><th>종료</th><th class="num">이번 전송</th><th>결과</th></tr>
-{% for s in j.sessions %}<tr><td>{{ s.started_at }}</td><td>{{ s.finished_at }}</td><td class="num">{{ s.sent }}</td><td>{% for k, v in s.result.items() %}{{ status(k) }} {{ v }} {% endfor %}</td></tr>{% endfor %}
-</table></div>
+<p class="small"><span class="mono">{{ j.target_key }}</span> {% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}</p>
 {% endfor %}
+<p class="small">DB 등록: {% if registration %}<span class="b-ok">등록됨</span> <span class="muted">{{ registration.last.at }}</span>{% else %}<span class="muted">미등록 (Central 전송 후 자동)</span>{% endif %}</p>
 </section>
-{% endif %}
-
-<div class="grid">
-  <div class="stat"><span>plan revision</span><b>{{ meta.revision }}</b><span class="mono">{{ (meta.plan_sha256 or '')[:16] }}</span></div>
-  <div class="stat"><span>파일럿 manifest</span><b>{{ pilot.instances|length if pilot else '-' }}</b><span class="mono">{{ (meta.pilot_manifest_sha256 or '준비 전')[:16] }}</span></div>
-  <div class="stat"><span>전체 manifest</span><b>{{ manifest.instances|length if manifest else '-' }}</b><span class="mono">{{ (meta.manifest_sha256 or '준비 전')[:16] }}</span></div>
-  <div class="stat"><span>DB 등록</span>{% if registration %}<b class="b-ok">등록됨</b><span>{{ registration.last.at }}</span>{% else %}<b class="b-warn">미등록</b><span>Central 전송 후 자동 등록</span>{% endif %}</div>
 </div>
 
-<section>
-<h2>전송 기록</h2>
-{% for j in journals %}
-<h3 class="mono">{{ '파일럿' if j.scope == 'pilot' else '전체' }} → {{ j.target_key }}</h3>
-<div class="table-wrap"><table><tr><th>시작</th><th>종료</th><th class="num">이번 전송</th><th>결과</th></tr>
-{% for s in j.sessions %}<tr><td>{{ s.started_at }}</td><td>{{ s.finished_at }}</td><td class="num">{{ s.sent }}</td><td>{% for k, v in s.result.items() %}{{ status(k) }} {{ v }} {% endfor %}</td></tr>{% endfor %}
-</table></div>
-{% set failed = j.instances.items()|selectattr('1.status', 'in', ['failed', 'sending'])|list %}
-{% if failed %}<details><summary>실패/미확인 {{ failed|length }}건</summary><table><tr><th>SOP UID</th><th>상태</th><th>시도</th><th>내용</th></tr>
-{% for sop, r in failed[:200] %}<tr><td class="mono">{{ sop }}</td><td>{{ status(r.status) }}</td><td>{{ r.attempts }}</td><td>{{ r.detail }}</td></tr>{% endfor %}</table></details>{% endif %}
-{% else %}
-<p class="muted">아직 전송하지 않았습니다.</p>
-{% endfor %}
-<p class="muted small">C-STORE 성공은 수신 측이 받았다는 응답입니다. 수신본을 별도로 조회해 검증한 것은 아닙니다.</p>
+<nav class="tabs">
+  <a href="#source" data-tab="source">추출 테이블</a>
+  <a href="#db" data-tab="db">DB 테이블</a>
+  <a href="#dicom" data-tab="dicom">DICOM 메타데이터</a>
+</nav>
+
+<section class="tab" id="tab-source">
+<p class="muted small">원본에서 뽑은 값 전체. 시리즈마다 1행입니다.</p>
+{{ json_table("jt-series", "/runs/" ~ run.id ~ "/series.json", "/runs/" ~ run.id ~ "/series.csv", run=run) }}
 </section>
 
-{% if records %}
-<section>
-<h2>DB 레코드 — 등록 예정 값과 DB 상태</h2>
-{% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
-<div class="table-wrap"><table>
-<tr><th>테이블</th><th class="num">예정 행</th>{% if compare %}<th class="num">DB에 없음</th><th class="num">동일</th><th class="num">다름</th><th>차이 예</th>{% endif %}</tr>
-{% for t in tables %}<tr><td><a href="#t-{{ t }}">{{ t }}</a></td><td class="num">{{ records[t]|length }}</td>
-{% if compare %}{% set c = compare[t] %}<td class="num">{{ c.missing }}</td><td class="num">{{ c.same }}</td><td class="num {{ 'b-warn' if c.different }}">{{ c.different }}</td>
-<td>{% for d in c.diff_examples %}<div class="mono">{{ d.key|jsonfmt(80) }} → {{ d.columns|join(', ') }}</div>{% endfor %}</td>{% endif %}</tr>{% endfor %}
+<section class="tab" id="tab-db">
+<p class="muted small">등록하면 관리 DB에 들어갈 행을 DB 컬럼 이름 그대로 보여 주고, 지금 DB와 비교합니다(15초마다).
+<span class="badge" id="c7-checked">DB 확인 중…</span></p>
+{% if db_sec %}
+<div class="table-wrap"><table class="std">
+<tr><th>테이블</th><th>설명</th><th class="num">행</th>{% for st in ['신규', '같음', '변경', '충돌'] %}<th class="num">{{ st }}</th>{% endfor %}</tr>
+{% for r in db_sec.rows %}<tr><td><a href="#db-{{ r[0] }}" data-sub="{{ r[0] }}" class="mono">{{ r[0] }}</a></td><td class="small">{{ r[1] }}{% if r[7] %} <span class="muted">· {{ r[7] }}</span>{% endif %}</td>
+<td class="num">{{ '{:,}'.format(r[2]) }}</td>{% for st in ['신규', '같음', '변경', '충돌'] %}<td class="num" id="c7-{{ r[0] }}-{{ st }}">-</td>{% endfor %}</tr>{% endfor %}
 </table></div>
-{% for t in tables %}
-<details id="t-{{ t }}"><summary>{{ t }} ({{ records[t]|length }})</summary>
-<div class="table-wrap"><table>
-{% set rows = records[t][:100] %}
-{% if rows %}<tr>{% for c in rows[0].keys() %}<th>{{ c }}</th>{% endfor %}</tr>
-{% for r in rows %}<tr>{% for c, v in r.items() %}<td class="mono">{{ v|jsonfmt(160) if v is mapping or (v is iterable and v is not string) else (v if v is not none else 'NULL') }}</td>{% endfor %}</tr>{% endfor %}{% endif %}
-</table></div>{% if records[t]|length > 100 %}<p class="muted">처음 100행만 표시</p>{% endif %}
-</details>
+{% for r in db_sec.rows %}
+<div class="sub" id="sub-{{ r[0] }}">
+<h3 class="mono">{{ r[0] }} <a class="small" href="/db/{{ r[0] }}">DB에서 보기</a></h3>
+{{ json_table("jt7-" ~ r[0], "/runs/" ~ run.id ~ "/records.json", "/runs/" ~ run.id ~ "/records/" ~ r[0] ~ ".csv", table=r[0], refresh=15) }}
+</div>
 {% endfor %}
-</section>
 {% endif %}
-
-<section>
-<h2>제외·미지원 파일 ({{ plan.skipped|length if plan.skipped else 0 }})</h2>
-<div class="table-wrap"><table><tr><th>파일</th><th>분류</th><th>이유</th></tr>
-{% for s in skipped %}<tr><td class="mono">{{ s.rel }}</td><td>{{ s.kind }}</td><td>{{ s.reason }}</td></tr>{% else %}<tr><td colspan="3" class="muted">없음</td></tr>{% endfor %}
-</table></div>
-{% if skipped_pages > 1 %}<p class="pager">{% for i in range(1, skipped_pages + 1) %}{% if i == skipped_page %}<span>{{ i }}</span>{% else %}<a href="?skipped_page={{ i }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
 </section>
 
+<section class="tab" id="tab-dicom">
+<p class="muted small">Local SCP와 Central이 받는 DICOM 값. 시리즈마다 1행입니다. 보낸 시리즈는 실제 파일에서 읽은 값을, 아직 변환 전인 시리즈는 예정 값을 보여 줍니다.</p>
+{{ json_table("jt-dicom", "/runs/" ~ run.id ~ "/dicom.json", "/runs/" ~ run.id ~ "/dicom.csv", run=run) }}
+{% for sec in header_secs %}
+<details><summary>보낸 파일의 전체 DICOM 헤더 {{ sec.subtitle or '' }}</summary>{{ std_section(sec) }}</details>
+{% endfor %}
+</section>
+
+<details class="more"><summary>설정 · 기록</summary>
+<section id="dataset">
+<h2>데이터셋 정보</h2>
+<form method="post" action="/runs/{{ run.id }}/dataset" class="grid-form">
+  {{ csrf_field(csrf) }}
+  <label>이름<input name="name" value="{{ plan.dataset.name or '' }}" maxlength="256" required {{ 'disabled' if not editable }}></label>
+  <label>라이선스<input name="license" value="{{ plan.dataset.license or '' }}" maxlength="200" {{ 'disabled' if not editable }}></label>
+  <label>상업적 이용<select name="commercial_use" {{ 'disabled' if not editable }}>{% for v in ['Y','N','U'] %}<option {{ 'selected' if plan.dataset.commercial_use == v }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>PatientID 접두어<input name="patient_id_prefix" value="{{ plan.dataset.patient_id_prefix or '' }}" maxlength="32" pattern="[A-Za-z0-9_\-]{1,32}" {{ 'disabled' if not editable }}></label>
+  <label class="span2">출처 URL<input name="source_url" value="{{ plan.dataset.source_url or '' }}" maxlength="500" {{ 'disabled' if not editable }}></label>
+  <label class="span2">설명<input name="description" value="{{ plan.dataset.description or '' }}" maxlength="2000" {{ 'disabled' if not editable }}></label>
+  {% if editable %}<div><button type="submit">저장</button></div>{% endif %}
+</form>
+{% if plan.adapter == 'agent-spec' %}
+<form method="post" action="/runs/{{ run.id }}/splits" class="inline">
+  {{ csrf_field(csrf) }} 포함할 분할:
+  {% for sp_name, sp in summary.items() %}<label><input type="checkbox" name="split_{{ sp_name }}" {{ 'checked' if sp.subjects_in }} {{ 'disabled' if not editable }}> {{ split_names.get(sp_name, sp_name) }}</label>{% endfor %}
+  {% if editable %}<button type="submit">저장</button>{% endif %}
+</form>
+{% set n_rt = plan.series|selectattr('kind', 'equalto', 'rtstruct')|list %}
+{% if n_rt %}
+<form method="post" action="/runs/{{ run.id }}/labels" class="inline">
+  {{ csrf_field(csrf) }}
+  <label><input type="checkbox" name="labels" {{ 'checked' if n_rt|rejectattr('excluded')|list }} {{ 'disabled' if not editable }}> 라벨을 RTSTRUCT로 함께 보냄 ({{ n_rt|length }}개)</label>
+  {% if editable %}<button type="submit">저장</button>{% endif %}
+</form>
+{% endif %}
+{% endif %}
+<p class="small"><a href="/runs/{{ run.id }}/report">전체 보고서 (표 1–10)</a></p>
+</section>
 <section>
 <h2>이력</h2>
 <table><tr><th>시각</th><th>상태</th><th>내용</th></tr>
 {% for e in meta.events|reverse %}<tr><td>{{ e.at }}</td><td>{{ status(e.status) }}</td><td>{{ e.event }}</td></tr>{% endfor %}
 </table>
 </section>
+</details>
+{% endif %}
 <script src="/static/live.js"></script>
+<script src="/static/tabs.js"></script>
+<script src="/static/jtable.js"></script>
 {% endblock %}

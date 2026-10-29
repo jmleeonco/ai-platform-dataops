@@ -27,12 +27,11 @@ from ..config import Settings
 from ..jobs import active_job, job_log, list_jobs
 from ..local_send import journals
 from ..metadata import build as build_metadata
-from ..metadata import series_delivery
 from ..report import INDEX_COLUMNS, TITLES, dataset_index, db_preview, dicom_columns, source_columns
 from ..report import build as build_report
-from ..prepare import MANIFESTS, pilot_series
+from ..prepare import MANIFESTS
 from ..publish import central_ready
-from ..records import TABLES, build_records
+from ..records import TABLES
 from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
 from ..util import RUN_ID_RE, valid_uid
@@ -127,47 +126,28 @@ def create_app(settings: Settings) -> FastAPI:
 
     # ------------------------------------------------------------------ run
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
-    def run_page(request: Request, run_id: str, skipped_page: int = Query(1, ge=1), sp: int = Query(1, ge=1),
-                 q: str = ""):
+    def run_page(request: Request, run_id: str):
+        """Two actions (Local SCP, approval → Central) and three tables: extracted values, DB rows, DICOM values."""
         run = get_run(run_id)
-        meta, inv, plan = run.meta, run.load("inventory.json", {}), run.load("plan.json", {}) or {}
-        manifest, pilot = run.load("manifest.json"), run.load("manifest-pilot.json")
-        jlist = journals(run)
-        per_series = series_delivery(run)
-        records, compare, db_error = None, None, None
-        if manifest:
-            records = build_records(run)
-            conn, db_error = db_conn()
-            if conn:
-                try:
-                    compare = _compare(conn, records)
-                except Exception as e:  # noqa: BLE001 - show, don't crash the page
-                    db_error = f"DB 비교 실패: {e}"
-                finally:
-                    conn.close()
-        skipped = plan.get("skipped", [])
-        series = plan.get("series", [])
-        if q:
-            series = [x for x in series if q.lower() in (x.get("subject_key") or "").lower()
-                      or q.lower() in x["series_key"].lower()]
-        jobs = list_jobs(settings, run.id, limit=10)
+        meta, plan = run.meta, run.load("plan.json", {}) or {}
+        pilot = run.load("manifest-pilot.json")
+        jobs = list_jobs(settings, run.id, limit=1)
         job = jobs[0] if jobs else None
+        active = active_job(settings, run.id)
         editable = (meta["status"] in EDITABLE and meta["status"] not in ("ANALYZING", "ANALYSIS_FAILED")
-                    and not active_job(settings, run.id))
-        pilot_stale = bool(pilot and pilot.get("plan_sha256") != meta.get("plan_sha256"))
-        return page(request, "run.html", run=run, meta=meta, inv=inv, plan=plan, manifest=manifest, pilot=pilot,
-                    pilot_stale=pilot_stale, journals=jlist, per_series=per_series, records=records, compare=compare,
-                    db_error=db_error, plan_errors=run.load("plan_errors.json", []),
-                    registration=run.load("registration.json"), tables=TABLES,
-                    skipped=skipped[(skipped_page - 1) * PAGE: skipped_page * PAGE], skipped_page=skipped_page,
-                    skipped_pages=max(1, -(-len(skipped) // PAGE)), series=series[(sp - 1) * PAGE: sp * PAGE],
-                    sp=sp, series_pages=max(1, -(-len(series) // PAGE)), q=q, summary=_summary(plan),
+                    and not active)
+        report = build_report(run, settings) if plan.get("series") else None
+        secs = {s["no"]: s for s in (report or {}).get("sections", []) if s["no"] != 10}
+        return page(request, "run.html", run=run, meta=meta, plan=plan, pilot=pilot,
+                    pilot_stale=bool(pilot and pilot.get("plan_sha256") != meta.get("plan_sha256")),
+                    journals=journals(run), plan_errors=run.load("plan_errors.json", []),
+                    blocking=[r[2] for r in (secs.get(4) or {}).get("rows", []) if r[1] == "오류"],
+                    registration=run.load("registration.json"), summary=_summary(plan),
                     subjects=sorted({x["subject_key"] for x in plan.get("series", []) if not x.get("excluded")}),
-                    job=job, job_log=job_log(settings, job["id"], 15) if job else [], jobs=jobs,
-                    active=active_job(settings, run.id), editable=editable, central=central_ready(settings.central),
-                    agent=run.load("agent_proposal.json"), split_names=SPLIT_NAMES,
-                    pilot_series_rows=_pilot_rows(plan, pilot, per_series), stage=_stage(meta),
-                    report=build_report(run, settings) if plan.get("series") else None)
+                    job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
+                    editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
+                    db_sec=secs.get(7),
+                    header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]])
 
     @app.get("/runs/{run_id}/report", response_class=HTMLResponse)
     def report_page(request: Request, run_id: str, refresh: bool = False):
@@ -442,21 +422,6 @@ def _counts(journal: dict) -> dict:
     return out
 
 
-def _compare(conn, records: dict) -> dict:
-    """Per table: how many proposed rows are missing / identical / different in the DB."""
-    out = {}
-    with conn.cursor() as cur:
-        for table in TABLES:
-            rows = records[table]
-            c = {"missing": 0, "same": 0, "different": 0, "diff_examples": []}
-            for row, (state, cols) in zip(rows, dbmod.row_status(cur, table, rows)):
-                c[{"신규": "missing", "같음": "same"}.get(state, "different")] += 1
-                if cols and len(c["diff_examples"]) < 5:
-                    c["diff_examples"].append({"key": [row[k] for k in dbmod.KEYS[table]], "columns": cols})
-            out[table] = c
-    return out
-
-
 def _frozen(run: Run) -> dict:
     out = {}
     for name in MANIFESTS.values():
@@ -495,32 +460,6 @@ def _summary(plan: dict) -> dict:
                       **{k: v for k, v in c.items() if ":subjects:" not in k}}
     order = ["train", "validation", "test", "other", "none"]
     return dict(sorted(out.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 99))
-
-
-def _pilot_rows(plan: dict, pilot: dict | None, per_series: dict) -> list[dict]:
-    if not plan.get("series"):
-        return []
-    reports = {x["series_uid"]: x.get("conversion_report") for x in (pilot or {}).get("series", [])}
-    rows = []
-    for s in pilot_series(plan):
-        rows.append({"s": s, "report": reports.get(s["series_uid"]),
-                     "counts": per_series.get(s["series_uid"], {}).get("pilot")})
-    return rows
-
-
-def _stage(meta: dict) -> int:
-    st = meta.get("status") or ""
-    if st in ("ANALYZING", "ANALYSIS_FAILED", None, ""):
-        return 0
-    if st in ("PLANNED", "NEEDS_INPUT"):
-        return 1
-    if st.startswith("PILOT_"):
-        return 2
-    if st == "APPROVED" or (st == "PREPARED" and meta.get("approval")):
-        return 3
-    if st.startswith("CENTRAL_"):
-        return 4
-    return 1
 
 
 def _slice_order(run: Run, instances: list[dict]) -> list[dict]:

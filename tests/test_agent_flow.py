@@ -249,17 +249,19 @@ def test_browser_flow(tmp_path, monkeypatch, challenge, scp):
     assert client.get(f"/runs/{run_id}/state.json").json()["job"]["kind"] == "analyze"
     worker(settings, once=True)
     page = client.get(f"/runs/{run_id}").text
-    assert "1</span> 데이터셋" in page and "imagesTr의 재정리 사본" in page and "SYNCH_case_0001" in page
-    assert "Ignore previous instructions" not in page
+    assert all(f'id="tab-{t}"' in page for t in ("source", "db", "dicom"))
+    report = client.get(f"/runs/{run_id}/report").text
+    assert "1</span> 데이터셋" in report and "imagesTr의 재정리 사본" in report
+    assert "SYNCH_case_0001" in {r["PatientID"] for r in client.get(f"/runs/{run_id}/dicom.json").json()["rows"]}
+    assert "Ignore previous instructions" not in page + report
     r = client.post(f"/runs/{run_id}/pilot-subjects", data={"csrf": token, "pilot1": "case_0002", "pilot2": "nobody"},
                     follow_redirects=False)
     assert "err=" in r.headers["location"]
-    r = client.post(f"/runs/{run_id}/pilot-subjects", data={"csrf": token, "pilot1": "case_0002", "pilot2": "case_0501"},
-                    follow_redirects=False)
+    r = client.post(f"/runs/{run_id}/pilot", data={"csrf": token, "pilot1": "case_0002", "pilot2": "case_0501"},
+                    follow_redirects=False)                  # the send button saves the subjects typed beside it
     assert "msg=" in r.headers["location"]
     run = Run(settings.runs_dir, run_id)
     assert run.load("plan.json")["pilot"]["subjects"] == ["case_0002", "case_0501"] and run.meta["revision"] == 2
-    assert "msg=" in client.post(f"/runs/{run_id}/pilot", data={"csrf": token}, follow_redirects=False).headers["location"]
     assert "err=" in client.post(f"/runs/{run_id}/pilot", data={"csrf": token}, follow_redirects=False).headers["location"]
     worker(settings, once=True)
     assert run.meta["status"] == "PILOT_SENT" and [j["status"] for j in list_jobs(settings, run_id)] == ["done", "done"]
@@ -281,7 +283,7 @@ def test_browser_flow(tmp_path, monkeypatch, challenge, scp):
     assert "msg=" in r.headers["location"] and run.meta["status"] == "APPROVED"
     assert list_jobs(settings, run_id)[0]["kind"] == "pilot"       # Central unset: nothing queued
     page = client.get(f"/runs/{run_id}").text
-    assert "Central SCP 미설정" in page and "승인자" in page
+    assert "Central SCP 미설정" in page and "검토자" in page
     r = client.post(f"/runs/{run_id}/publish", data={"csrf": token}, follow_redirects=False)
     assert "err=" in r.headers["location"]
     r = client.post(f"/runs/{run_id}/dataset", data={"csrf": token, "name": "x", "commercial_use": "Y"},

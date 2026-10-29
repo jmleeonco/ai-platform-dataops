@@ -96,3 +96,10 @@ table.std td { overflow-wrap: break-word; }
 table.dbt td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
 table.dbt th a { color: var(--ink); text-decoration: none; }
 details.cols { margin: 6px 0; }
+nav.tabs { display: flex; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--line); }
+nav.tabs a { padding: 8px 16px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; text-decoration: none; color: var(--muted); font-weight: 600; }
+nav.tabs a.on { background: var(--panel); border-color: var(--line); color: var(--accent); margin-bottom: -1px; }
+section.tab { margin-top: 0; border-top-left-radius: 0; }
+#tab-db a[data-sub].on { font-weight: 700; text-decoration: none; }
+details.more { margin-top: 24px; }
+.jt-wrap table.std th { white-space: nowrap; }

@@ -69,8 +69,11 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 3. **Report**: every dataset gets the same standard report (`dataops/report.py`, schema_version 2) —
    the same numbered tables with the same columns, whatever the dataset; agent text only appears as
    cell values. Tables 6 and 7 are what leaves this machine: the DICOM values the local SCP receives, and
-   the rows of every management-DB table. `/runs/<run>/report` (all 10), `/runs/<run>` (1–5 above the
-   forms), `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
+   the rows of every management-DB table. The run page `/runs/<run>` keeps only what the owner uses: the
+   Local SCP send (subjects + button), the final approval → Central, and three tabs — 추출 테이블 (8),
+   DB 테이블 (7, one DB table at a time) and DICOM 메타데이터 (6, plus the pilot files' full headers from
+   10); 오류 rows of table 4 and plan errors appear above them; dataset fields, splits, labels and history
+   are folded under "설정 · 기록". `/runs/<run>/report` has all 10, `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
    the live DB state), `series.json` / `series.csv` (8), and `/reports` (+ `.csv`): one row per dataset
    (latest run of each folder) with fixed columns for comparison.
 
@@ -101,7 +104,8 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    (`/runs/<run>/report?refresh=1` re-reads changed or missing files; prepare never uses this cache).
    Editable until approval (forms on `/runs/<run>`): dataset fields (name, licence, commercial use, URL,
    PatientID prefix), included splits, labels on/off, modality of unresolved images, the two pilot
-   subjects. Every edit is re-validated and bumps the plan revision.
+   subjects (typed beside the send button; saved before sending). Every edit is re-validated and bumps
+   the plan revision.
 4. **Pilot**: freezes only the pilot subjects (`manifest-pilot.json`: CT/MR DICOM + label RTSTRUCT) and
    sends them to the local SCP. Check them in OncoStudio on 107. Viewer: `/runs/<run>/series/<uid>`
    with the RTSTRUCT contours.

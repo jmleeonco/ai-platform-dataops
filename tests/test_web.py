@@ -31,7 +31,10 @@ def test_pages_render_without_db_and_escape(settings, prepared):
     r = client.get(f"/runs/{prepared.id}")
     assert r.status_code == 200
     assert XSS not in r.text and "&lt;script&gt;" in r.text
-    assert "accepted" in r.text and "DB 설정 없음" in r.text
+    assert "accepted" in r.text                            # the local SCP transfer
+    for tab in ("tab-source", "tab-db", "tab-dicom", 'action="/runs/%s/pilot"' % prepared.id):
+        assert tab in r.text
+    assert client.get(f"/runs/{prepared.id}/records.json").json()["db"] == "DB 설정 없음"
     for page in ("/datasets", "/db", "/backups", "/healthz"):
         assert client.get(page).status_code == 200
     r = client.get(f"/runs/{prepared.id}/report")          # legacy plan: DICOM pass-through + NIfTI
@@ -92,7 +95,9 @@ def test_registered_run_compares_equal(settings, prepared, test_db):
         dbmod.register_run(conn, prepared)
     client = TestClient(create_app(settings))
     r = client.get(f"/runs/{prepared.id}")
-    assert "DB에 없음" in r.text and "등록됨" in r.text
+    assert "등록됨" in r.text
+    tables = client.get(f"/runs/{prepared.id}/records.json").json()["tables"]
+    assert all(set(t["counts"]) <= {"같음"} for t in tables.values())
     r = client.get("/datasets")
     assert DATASET["dataset_uuid"] in r.text
     r = client.get(f"/datasets/{DATASET['dataset_uuid']}?modality=CT")

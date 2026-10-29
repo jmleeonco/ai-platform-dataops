@@ -172,30 +172,39 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
             return back(run.id, err=str(e), anchor="unresolved")
         return result(run, errors, "modality를 저장했습니다", "unresolved")
 
+    def set_pilot_subjects(run: Run, form: dict) -> list[str]:
+        editable(run)
+        plan = run.load("plan.json")
+        active = {s["subject_key"] for s in plan["series"] if not s.get("excluded")}
+        chosen = [form.get("pilot1", ""), form.get("pilot2", "")]
+        chosen = [c for i, c in enumerate(chosen) if c and c not in chosen[:i]]
+        bad = [c for c in chosen if c not in active]
+        if bad or not chosen:
+            raise RunError(f"포함된 대상자가 아닙니다: {', '.join(bad) or '(비어 있음)'}")
+        plan["pilot"] = {"subjects": chosen}
+        return save_plan(run, plan, f"파일럿 대상자: {', '.join(chosen)} (웹)")
+
     @app.post("/runs/{run_id}/pilot-subjects")
     async def edit_pilot_subjects(request: Request, run_id: str):
         run = get_run(run_id)
         form = await checked_form(request)
         try:
-            editable(run)
-            plan = run.load("plan.json")
-            active = {s["subject_key"] for s in plan["series"] if not s.get("excluded")}
-            chosen = [form.get("pilot1", ""), form.get("pilot2", "")]
-            chosen = [c for i, c in enumerate(chosen) if c and c not in chosen[:i]]
-            bad = [c for c in chosen if c not in active]
-            if bad or not chosen:
-                raise RunError(f"포함된 대상자가 아닙니다: {', '.join(bad) or '(비어 있음)'}")
-            plan["pilot"] = {"subjects": chosen}
-            errors = save_plan(run, plan, f"파일럿 대상자: {', '.join(chosen)} (웹)")
+            errors = set_pilot_subjects(run, form)
         except RunError as e:
             return back(run.id, err=str(e), anchor="pilot")
         return result(run, errors, "파일럿 대상자를 저장했습니다", "pilot")
 
     @app.post("/runs/{run_id}/pilot")
     async def start_pilot(request: Request, run_id: str):
+        """Send the pilot subjects to the local SCP; subjects typed in the same form are saved first."""
         run = get_run(run_id)
         form = await checked_form(request)
         try:
+            chosen = [c for c in (form.get("pilot1"), form.get("pilot2")) if c]
+            if chosen and chosen != ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects"):
+                errors = set_pilot_subjects(run, form)
+                if errors:
+                    raise RunError(f"plan 오류 {len(errors)}건: {errors[0]}")
             meta = run.meta
             if meta["status"] not in ("PLANNED", "PILOT_READY", "PILOT_SENT", "PILOT_PARTIAL", "PILOT_FAILED"):
                 raise RunError(f"{meta['status']} 상태에서는 파일럿을 보낼 수 없습니다 (plan 오류를 먼저 해결)")
@@ -204,7 +213,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
             submit(settings, "pilot", run.id, {"target": settings.local_scp.key}, form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e), anchor="pilot")
-        return back(run.id, msg=f"파일럿 전송을 시작했습니다 → {settings.local_scp.key}", anchor="pilot")
+        return back(run.id, msg=f"Local SCP 전송을 시작했습니다 → {settings.local_scp.key}", anchor="pilot")
 
     @app.post("/runs/{run_id}/approve")
     async def do_approve(request: Request, run_id: str):

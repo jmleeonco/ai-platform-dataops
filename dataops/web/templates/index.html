@@ -8,16 +8,8 @@
   <div class="stat"><span>관리 DB</span>
     {% if db_info %}<b class="b-ok">연결됨</b><span>{{ settings.db.host }}:{{ settings.db.port }}/{{ settings.db.name }} · schema {{ db_info.migrations.current }}</span>
     {% else %}<b class="b-bad">연결 안 됨</b><span>{{ db_error }}</span>{% endif %}</div>
-  {% if db_info %}
-  <div class="stat"><span>데이터셋</span><b>{{ db_info.counts.datasets }}</b></div>
-  <div class="stat"><span>대상자 / 검사</span><b>{{ db_info.counts.subjects }} / {{ db_info.counts.studies }}</b></div>
-  <div class="stat"><span>시리즈 / 인스턴스</span><b>{{ db_info.counts.series }} / {{ db_info.counts.instances }}</b></div>
-  {% endif %}
-  <div class="stat"><span>Local SCP (파일럿)</span><b class="mono small">{{ settings.local_scp.called_ae }}@{{ settings.local_scp.host }}:{{ settings.local_scp.port }}</b><span>승인 전 2케이스 확인용</span></div>
+  <div class="stat"><span>Local SCP (파일럿)</span><b class="mono small">{{ settings.local_scp.called_ae }}@{{ settings.local_scp.host }}:{{ settings.local_scp.port }}</b><span>승인 전 확인용</span></div>
   <div class="stat"><span>Central SCP (승인 후)</span>{% if central[0] %}<b class="mono small b-ok">{{ central[1] }}</b><span>활성</span>{% else %}<b class="small b-warn">미설정</b><span>{{ central[1] }}</span>{% endif %}</div>
-  <div class="stat"><span>최근 백업</span>
-    {% if backups %}<b class="{{ 'b-ok' if backups[0].ok else 'b-bad' }}">{{ backups[0].date }}</b><span>{{ 'ok' if backups[0].ok else (backups[0].error or '실패') }}</span>
-    {% else %}<b class="b-warn">없음</b><span>{{ settings.backup_root }}/{{ settings.backup_system }}</span>{% endif %}</div>
 </div>
 
 {% if db_info and (db_info.migrations.pending or db_info.migrations.changed) %}
@@ -27,7 +19,7 @@
 <section>
 <h2>실행(run) 목록</h2>
 <p><a class="button primary" href="/new">새 데이터셋 분석</a></p>
-<p class="muted">폴더 지정 → 에이전트 분석·보고서 → 파일럿 2케이스 Local SCP → 최종 승인 → Central 전송 · DB 등록. CLI(<code>python -m dataops …</code>)로도 같은 단계를 실행할 수 있습니다.</p>
+<p class="muted">폴더를 지정하면 표가 만들어집니다 → 몇 명을 Local SCP로 보내 확인 → 최종 승인하면 Central로 전송·DB 등록.</p>
 <div class="table-wrap"><table>
 <tr><th>run</th><th>데이터셋</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th>전송</th><th>DB 등록</th><th>입력 폴더</th></tr>
 {% for r in runs %}

@@ -71,7 +71,8 @@ def test_report_has_the_same_shape_for_every_dataset(tmp_path, monkeypatch, chal
                 f"/runs/{legacy_run.id}/report"):
         r = client.get(url)
         assert r.status_code == 200, url
-    assert "1</span> 데이터셋" in client.get(f"/runs/{agent_run.id}").text
+    assert "1</span> 데이터셋" in client.get(f"/runs/{agent_run.id}/report").text
+    assert 'data-src="/runs/%s/dicom.json"' % agent_run.id in client.get(f"/runs/{agent_run.id}").text
     assert 'data-table="series"' in client.get(f"/runs/{agent_run.id}/report").text
     assert client.get(f"/runs/{agent_run.id}/metadata", follow_redirects=False).status_code == 301
     assert client.get(f"/runs/{agent_run.id}/report.json").json()["schema_version"] == report.SCHEMA_VERSION
