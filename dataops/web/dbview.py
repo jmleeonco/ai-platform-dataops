@@ -139,8 +139,17 @@ def register_db_views(app, settings, page, db_conn, to_csv):
     @app.get("/legacy", response_class=HTMLResponse)
     def legacy_page(request: Request):
         snap = legacy_db.load(settings.runtime_dir)
-        return page(request, "legacy.html", snap=snap, v=legacy_db.view(snap), known=legacy_db.KNOWN,
-                    configured=legacy_db.configured(settings.legacy_db), cfg=settings.legacy_db)
+        new_types, new_db, conn, err = {}, None, *db_conn()
+        if conn is not None:
+            try:
+                sch = schema(conn)
+                new_types = {f"{t}.{c['c']}": c["ct"] for t, meta in sch.items() for c in meta["column_info"]}
+                new_db = {"migrations": dbmod.migration_status(conn), "counts": dbmod.table_counts(conn)}
+            finally:
+                conn.close()
+        return page(request, "legacy.html", snap=snap, v=legacy_db.view(snap, new_types), known=legacy_db.KNOWN,
+                    configured=legacy_db.configured(settings.legacy_db), cfg=settings.legacy_db,
+                    new_db=new_db, new_db_error=err)
 
     @app.post("/legacy/refresh")
     async def legacy_refresh(request: Request):

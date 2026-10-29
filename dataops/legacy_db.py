@@ -8,6 +8,7 @@ in the existing one (docs/DATABASE.md "Export/import to oncolabdb") and is check
 from __future__ import annotations
 
 import json
+import re
 
 import pymysql
 import pymysql.cursors
@@ -45,7 +46,7 @@ MAPPING = [
     ("studies.study_uid", "oncolabdb.lab_dataset_items.study_instance_uid", "내보내기", "필수"),
     ("subjects.patient_id", "oncolabdb.lab_dataset_items.patient_id", "내보내기", "필수, 64자 이하"),
     ("(Central 수신 확인 뒤 'pacs')", "oncolabdb.lab_dataset_items.source_type", "내보내기", "기본값 local"),
-    ("datasets.license", "oncolabdb.lab_datasets.license", "내보내기", "새 DB는 200자까지 받음 — 길이 확인"),
+    ("datasets.license", "oncolabdb.lab_datasets.license", "내보내기", ""),
     ("datasets.source_url", "oncolabdb.lab_datasets.source_url", "내보내기", ""),
     ("datasets.commercial_use", "oncolabdb.lab_datasets.commercial_use", "값 변환 후 내보내기",
      "새 DB는 Y/N/U, 기존은 'not_available' 같은 단어 — 값 대응 확인 필요"),
@@ -72,6 +73,7 @@ MAPPING = [
     ("transfer_results.verification_json", "scpdb.dicom_instances.InstancePath", "Central 수신 확인 때 읽어 옴",
      "Central의 실제 저장 위치"),
 ]
+EXPORT_TABLES = {("oncolabdb", "lab_datasets"), ("oncolabdb", "lab_dataset_items")}   # the export writes these
 KNOWN = [   # observed 2026-10-27 (docs/CONTEXT.md, docs/DATABASE.md) — shown until a snapshot exists
     "MariaDB 10.5.8. scpdb 7테이블, oncolabdb 26테이블, 테이블+인덱스 약 9.45 GB.",
     "scpdb는 직접 수정하지 않음 (운영 원칙). LAB 부가 정보는 oncolabdb에 저장.",
@@ -129,11 +131,75 @@ def load(runtime_dir) -> dict | None:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
-def view(snap: dict | None) -> dict:
-    """Tables grouped by schema with their columns / indexes / FKs, and the mapping checked against them."""
+def _shape(column_type: str | None):
+    """("str", max chars) / ("num", None) / ("enum", values) / ("time", None) from an information_schema type."""
+    if not column_type:
+        return None
+    t = column_type.lower()
+    if t.startswith("enum("):
+        return "enum", re.findall(r"'([^']*)'", column_type)
+    m = re.match(r"(?:var)?char\((\d+)\)", t)
+    if m:
+        return "str", int(m.group(1))
+    for name, n in (("tinytext", 255), ("mediumtext", 16_777_215), ("longtext", 4_294_967_295), ("text", 65_535),
+                    ("json", 4_294_967_295)):
+        if t.startswith(name):
+            return "str", n
+    if re.match(r"(tiny|small|medium|big)?int|decimal|float|double", t):
+        return "num", None
+    if re.match(r"timestamp|datetime|date|time", t):
+        return "time", None
+    return "other", None
+
+
+# Values that are shorter than their new-DB column allows: the plan validation or DICOM itself limits them.
+VALUE_LIMITS = {"datasets.license": (128, "plan 검증에서 128자로 제한"),
+                "datasets.source_url": (512, "plan 검증에서 512자로 제한"),
+                "series.description": (64, "DICOM SeriesDescription(LO)이라 64자 이하"),
+                "studies.description": (64, "DICOM StudyDescription(LO)이라 64자 이하")}
+
+
+def compat(new_type: str | None, old_type: str | None, new: str = "", how: str = "") -> tuple[str, str]:
+    """Can a value of the new DB column be written into the existing column as is?"""
+    if "읽어 옴" in how:
+        return "맞음", "기존 DB에서 읽어 와 새 DB에 저장 (방향이 반대라 길이 문제 없음)"
+    if "external_mappings" in how:
+        return "ID 대응", "새 UUID ↔ 기존 숫자 id를 external_mappings에 저장해서 연결"
+    if new_type is None:
+        return "계산", "새 DB의 열이 아니라 등록된 값에서 만들어 넣음"
+    if old_type is None:
+        return "확인 전", ""
+    n, o = _shape(new_type), _shape(old_type.replace(" NOT NULL", ""))
+    limit, why = VALUE_LIMITS.get(new.split(" ")[0], (None, ""))
+    if limit and n[0] == "str" and o[0] == "str" and limit <= o[1] < n[1]:
+        return "맞음", why
+    if n[0] == "enum":
+        longest = max(len(v) for v in n[1])
+        return ("값 변환", f"새 값 {'/'.join(n[1])} → 기존 값 형식으로 바꿔야 함") if o[0] == "str" and longest <= o[1] \
+            else ("주의", "열거형 → 다른 타입")
+    if n[0] == "str" and o[0] == "str":
+        if n[1] <= o[1]:
+            return "맞음", ""
+        return "길이 주의", f"새 DB는 {n[1]:,}자까지, 기존은 {o[1]:,}자 — 긴 값은 잘리거나 거부됨"
+    if n[0] == "num" and o[0] == "num":
+        return "맞음", ""
+    if n[0] == "num" and o[0] == "str":
+        return "맞음", "숫자를 문자로 넣음"
+    return "주의", f"{new_type} → {old_type}"
+
+
+def view(snap: dict | None, new_types: dict | None = None) -> dict:
+    """Tables grouped by schema with their columns / indexes / FKs, the mapping checked against them, and how the
+    new DB's column types fit (`new_types`: {"table.column": COLUMN_TYPE} of the new DB)."""
+    new_types = new_types or {}
+
+    def new_type(new):
+        key = new.split(" ")[0]
+        return new_types.get(key) if re.fullmatch(r"\w+\.\w+", key) and " " not in new else None
     if not snap:
-        return {"tables": [], "mapping": [dict(zip(("new", "old", "how", "note"), m), state="확인 전", type=None)
-                                          for m in MAPPING]}
+        return {"tables": [], "required": [], "mapping": [
+            dict(zip(("new", "old", "how", "note"), m), state="확인 전", type=None, new_type=new_type(m[0]),
+                 fit="확인 전", fit_note="") for m in MAPPING]}
     tables = {}
     for t in snap["tables"]:
         tables[(t["s"], t["t"])] = {**t, "columns": [], "indexes": {}, "fks": []}
@@ -155,9 +221,17 @@ def view(snap: dict | None) -> dict:
         hit = cols.get((s, t, c.lower()))
         state = ("있음" if hit else ("테이블 없음" if (s, t) not in tables else "열 없음")) if s in snap["schemas"] \
             else "읽지 않은 schema"
-        mapping.append({"new": new, "old": old, "how": how, "note": note, "state": state,
-                        "type": f"{hit['type']}{'' if hit['nullable'] == 'YES' else ' NOT NULL'}" if hit else None})
+        old_type = f"{hit['type']}{'' if hit['nullable'] == 'YES' else ' NOT NULL'}" if hit else None
+        nt = new_type(new)
+        fit, fit_note = compat(nt, old_type, new, how) if hit else ("확인 전", "")
+        mapping.append({"new": new, "old": old, "how": how, "note": note, "state": state, "type": old_type,
+                        "new_type": nt, "fit": fit, "fit_note": fit_note})
     out = sorted(tables.values(), key=lambda x: (x["s"], x["t"]))
     for t in out:
         t["indexes"] = list(t["indexes"].values())
-    return {"tables": out, "mapping": mapping}
+    covered = {m["old"] for m in mapping}
+    required = [{"column": f"{c['s']}.{c['t']}.{c['c']}", "type": c["type"],
+                 "covered": f"{c['s']}.{c['t']}.{c['c']}" in covered}
+                for c in snap["columns"] if (c["s"], c["t"]) in EXPORT_TABLES and c["nullable"] == "NO"
+                and c["dflt"] is None and "auto_increment" not in (c["extra"] or "")]
+    return {"tables": out, "mapping": mapping, "required": required}

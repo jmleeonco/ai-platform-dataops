@@ -218,3 +218,12 @@ def test_legacy_page_without_and_with_a_snapshot(settings, test_db):
     assert r.status_code == 200 and f't-{test_db["name"]}-instances' in r.text and "읽지 않은 schema" in r.text
     with pytest.raises(legacy_db.LegacyError, match="연결 정보"):
         legacy_db.read_schema({"schemas": ("x",)})
+
+
+def test_legacy_fit_uses_value_limits():
+    from dataops.legacy_db import compat
+    assert compat("text", "varchar(128)", "datasets.license", "내보내기")[0] == "맞음"           # plan limits it
+    assert compat("text", "varchar(512)", "series.source_path", "의미 확인 필요")[0] == "길이 주의"
+    assert compat("char(36)", "int(11) NOT NULL", "datasets.dataset_uuid", "external_mappings로 연결")[0] == "ID 대응"
+    assert compat("enum('Y','N','U')", "varchar(32)", "datasets.commercial_use", "값 변환 후 내보내기") == (
+        "값 변환", "새 값 Y/N/U → 기존 값 형식으로 바꿔야 함")

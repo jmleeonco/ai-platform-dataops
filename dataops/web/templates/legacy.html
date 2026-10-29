@@ -26,15 +26,30 @@ DATAOPS_LEGACY_DB_SCHEMAS=scpdb,oncolabdb</pre>
 {% endif %}
 </section>
 
+{% set fits = v.mapping|map(attribute='fit')|list %}
+{% set req_ok = v.required|selectattr('covered')|list|length %}
+<section>
+<h2>새 DB 호환 점검 <span class="muted small">새 관리 DB를 나중에 기존 DB(oncolabdb)로 내보낼 수 있는가</span></h2>
+<div class="grid">
+  <div class="stat"><span>새 DB</span>{% if new_db %}<b class="b-ok small">{{ new_db.migrations.current }}</b><span>{{ settings.db.host }}:{{ settings.db.port }}/{{ settings.db.name }} · 데이터셋 {{ new_db.counts.datasets }} · 시리즈 {{ new_db.counts.series }}</span>
+    {% else %}<b class="b-bad">연결 안 됨</b><span>{{ new_db_error }}</span>{% endif %}</div>
+  <div class="stat"><span>기존 DB 필수 열 (기본값 없는 NOT NULL)</span>{% if snap %}<b class="{{ 'b-ok' if req_ok == v.required|length else 'b-bad' }}">{{ req_ok }} / {{ v.required|length }} 채움</b><span>{{ v.required|map(attribute='column')|map('replace', 'oncolabdb.', '')|join(', ') }}</span>{% else %}<b class="b-warn">확인 전</b><span>구조를 읽은 뒤</span>{% endif %}</div>
+  <div class="stat"><span>타입·길이</span><b>{{ fits|select('equalto', '맞음')|list|length }} 맞음</b><span>ID 대응 {{ fits|select('equalto', 'ID 대응')|list|length }} · 계산 {{ fits|select('equalto', '계산')|list|length }} · 값 변환 {{ fits|select('equalto', '값 변환')|list|length }} · 길이 주의 {{ fits|select('equalto', '길이 주의')|list|length }}</span></div>
+  <div class="stat"><span>내보내기 기능</span><b class="b-warn">아직 없음</b><span>점검 결과를 반영해 만들 예정</span></div>
+</div>
+</section>
+
 <section>
 <h2>새 DB → 기존 DB 대응</h2>
 <p class="muted small">새 관리 DB의 값이 나중에 기존 DB의 어느 열로 가는지입니다. "상태"는 마지막으로 읽은 구조에서 그 열이 있는지 확인한 결과입니다. 기존 DB로 내보내는 기능은 아직 없습니다 (docs/DATABASE.md).</p>
 <div class="table-wrap"><table class="std">
-<tr><th>새 DB</th><th>기존 DB</th><th>방법</th><th>상태</th><th>기존 타입</th><th>비고</th></tr>
-{% for m in v.mapping %}<tr><td class="mono small">{{ m.new }}</td><td class="mono small">{% if m.state == '있음' %}<a href="#t-{{ m.old.split('.')[0] }}-{{ m.old.split('.')[1] }}">{{ m.old }}</a>{% else %}{{ m.old }}{% endif %}</td>
-<td class="small">{{ m.how }}</td>
+<tr><th>새 DB</th><th>새 DB 타입</th><th>기존 DB</th><th>기존 타입</th><th>열</th><th>호환</th><th>방법</th><th>비고</th></tr>
+{% for m in v.mapping %}<tr><td class="mono small">{{ m.new }}</td><td class="mono small">{{ m.new_type or '' }}</td>
+<td class="mono small">{% if m.state == '있음' %}<a href="#t-{{ m.old.split('.')[0] }}-{{ m.old.split('.')[1] }}">{{ m.old }}</a>{% else %}{{ m.old }}{% endif %}</td>
+<td class="mono small">{{ m.type or '' }}</td>
 <td><span class="badge {{ 'b-ok' if m.state == '있음' else ('b-bad' if m.state in ('열 없음', '테이블 없음') else 'b-warn') }}">{{ m.state }}</span></td>
-<td class="mono small">{{ m.type or '' }}</td><td class="small">{{ m.note }}</td></tr>{% endfor %}
+<td><span class="badge {{ 'b-ok' if m.fit in ('맞음', 'ID 대응') else ('b-bad' if m.fit == '주의' else ('' if m.fit == '계산' else 'b-warn')) }}">{{ m.fit }}</span>{% if m.fit_note %}<div class="small muted">{{ m.fit_note }}</div>{% endif %}</td>
+<td class="small">{{ m.how }}</td><td class="small">{{ m.note }}</td></tr>{% endfor %}
 </table></div>
 </section>
 

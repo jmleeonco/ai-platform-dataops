@@ -35,6 +35,10 @@ def validate_dataset(dataset: dict) -> dict:
     name = dataset.get("name")
     if not isinstance(name, str) or not name.strip() or len(name) > 256:
         raise ValueError("dataset.name must be 1..256 characters")
+    for key, limit in (("license", 128), ("source_url", 512)):     # the lengths oncolabdb.lab_datasets takes
+        value = dataset.get(key)
+        if value is not None and (not isinstance(value, str) or len(value) > limit):
+            raise ValueError(f"dataset.{key} must be at most {limit} characters")
     if dataset.get("commercial_use", "U") not in ("Y", "N", "U"):
         raise ValueError("dataset.commercial_use must be Y, N or U")
     prefix = dataset.get("patient_id_prefix")

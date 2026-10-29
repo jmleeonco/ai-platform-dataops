@@ -36,7 +36,7 @@ PROPOSAL_SCHEMA = {
                 "name": {"type": "string", "maxLength": 256},
                 "description": {"type": "string", "maxLength": 2000},
                 "source_url": {"type": "string", "maxLength": 500},
-                "license": {"type": "string", "maxLength": 200},
+                "license": {"type": "string", "maxLength": 128},
                 "commercial_use": {"type": "string", "enum": ["Y", "N", "U"]},
                 "citation": {"type": "string", "maxLength": 2000},
                 "patient_id_prefix": {"type": "string", "maxLength": 32},
