@@ -194,22 +194,42 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
             return back(run.id, err=str(e), anchor="pilot")
         return result(run, errors, "파일럿 대상자를 저장했습니다", "pilot")
 
-    @app.post("/runs/{run_id}/pilot")
-    async def start_pilot(request: Request, run_id: str):
-        """Send the pilot subjects to the local SCP; subjects typed in the same form are saved first."""
+    def subjects_from_form(run: Run, form: dict) -> None:
+        """Subjects typed beside the sample/send buttons are saved first when they differ from the plan."""
+        chosen = [c for c in (form.get("pilot1"), form.get("pilot2")) if c]
+        if chosen and chosen != ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects"):
+            errors = set_pilot_subjects(run, form)
+            if errors:
+                raise RunError(f"plan 오류 {len(errors)}건: {errors[0]}")
+
+    def check_pilot_state(run: Run) -> None:
+        meta = run.meta
+        if meta["status"] not in ("PLANNED", "PILOT_READY", "PILOT_SENT", "PILOT_PARTIAL", "PILOT_FAILED"):
+            raise RunError(f"{meta['status']} 상태에서는 샘플을 만들거나 보낼 수 없습니다 (plan 오류를 먼저 해결)")
+        if sha256_json(run.load("plan.json")) != meta["plan_sha256"]:
+            raise RunError("plan.json이 검증 이후 바뀌었습니다")
+
+    @app.post("/runs/{run_id}/sample")
+    async def start_sample(request: Request, run_id: str):
+        """Convert only the sample subjects so their real and outgoing values can be compared; sends nothing."""
         run = get_run(run_id)
         form = await checked_form(request)
         try:
-            chosen = [c for c in (form.get("pilot1"), form.get("pilot2")) if c]
-            if chosen and chosen != ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects"):
-                errors = set_pilot_subjects(run, form)
-                if errors:
-                    raise RunError(f"plan 오류 {len(errors)}건: {errors[0]}")
-            meta = run.meta
-            if meta["status"] not in ("PLANNED", "PILOT_READY", "PILOT_SENT", "PILOT_PARTIAL", "PILOT_FAILED"):
-                raise RunError(f"{meta['status']} 상태에서는 파일럿을 보낼 수 없습니다 (plan 오류를 먼저 해결)")
-            if sha256_json(run.load("plan.json")) != meta["plan_sha256"]:
-                raise RunError("plan.json이 검증 이후 바뀌었습니다")
+            subjects_from_form(run, form)
+            check_pilot_state(run)
+            submit(settings, "sample", run.id, {}, form.get("by", ""))
+        except RunError as e:
+            return back(run.id, err=str(e), anchor="samples")
+        return back(run.id, msg="샘플을 추출합니다. 끝나면 이 화면에 원본 값과 입력될 값이 나옵니다.", anchor="samples")
+
+    @app.post("/runs/{run_id}/pilot")
+    async def start_pilot(request: Request, run_id: str):
+        """Send the sample subjects to the local SCP (extracting them first when needed)."""
+        run = get_run(run_id)
+        form = await checked_form(request)
+        try:
+            subjects_from_form(run, form)
+            check_pilot_state(run)
             submit(settings, "pilot", run.id, {"target": settings.local_scp.key}, form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e), anchor="pilot")

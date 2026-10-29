@@ -70,10 +70,16 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    the same numbered tables with the same columns, whatever the dataset; agent text only appears as
    cell values. Tables 6 and 7 are what leaves this machine: the DICOM values the local SCP receives, and
    the rows of every management-DB table. The run page `/runs/<run>` keeps only what the owner uses: the
-   Local SCP send (subjects + button), the final approval → Central, and three tabs — 추출 테이블 (8),
-   DB 테이블 (7, one DB table at a time) and DICOM 메타데이터 (6, plus the pilot files' full headers from
-   10); 오류 rows of table 4 and plan errors appear above them; dataset fields, splits, labels and history
-   are folded under "설정 · 기록". `/runs/<run>/report` has all 10, `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
+   sample send to the Local SCP, the final approval → Central, and the **sample values**: for each sample
+   series (the pilot subjects, extracted by the analysis job itself — job `sample` re-extracts after a
+   change), the real source value on the left and the value that really goes out on the right (every
+   top-level element of the first converted DICOM file, and the DB columns of the subject / study / series
+   / first instance), with what was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`.
+   Identifying DICOM attributes or DB columns that leave unchanged are flagged "식별 정보 그대로" (an
+   original DICOM export is still passed through unchanged; there is no de-identification step yet). The
+   whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
+   above; dataset fields, splits, labels and history are under "설정 · 기록". The folder overview
+   (`scan.py`) stops after 120 s and stats at most 200 files per directory (sizes beyond are estimated). `/runs/<run>/report` has all 10, `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
    the live DB state), `series.json` / `series.csv` (8), and `/reports` (+ `.csv`): one row per dataset
    (latest run of each folder) with fixed columns for comparison.
 

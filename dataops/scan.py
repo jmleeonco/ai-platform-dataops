@@ -7,6 +7,7 @@ and lists small text documents (README, dataset.json, CSV, licence). Nothing is 
 from __future__ import annotations
 
 import os
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -24,6 +25,8 @@ MAX_DIRS = 400
 EXAMPLES = 4
 SAMPLES_PER_DIR = 2
 DICOM_PROBES_PER_DIR = 3
+STAT_PER_DIR = 200        # beyond this, file sizes in a directory are estimated (a stat is slow on NFS)
+TIME_BUDGET_S = 120       # the overview stops here; the agent is told it is partial
 
 
 def file_kind(path: Path) -> str:
@@ -61,26 +64,34 @@ def nifti_header(path: Path) -> dict:
         return {"error": f"{type(e).__name__}: {e}"[:200]}
 
 
-def scan(root: Path) -> dict:
+def scan(root: Path, time_budget_s: float = TIME_BUDGET_S) -> dict:
     root = root.resolve()
+    deadline = time.monotonic() + time_budget_s
+    stopped = False
     if not root.is_dir():
         raise ValueError(f"입력 폴더가 없습니다: {root}")
     dirs: dict[str, dict] = {}
     skipped_dirs, docs, errors = [], [], []
     totals = Counter()
     for path, skipped in walk(root):
+        if time.monotonic() > deadline:
+            stopped = True
+            break
         if skipped is not None:
             skipped_dirs.append(skipped)
             continue
         rel = path.relative_to(root).as_posix()
         drel = path.parent.relative_to(root).as_posix() if path.parent != root else "."
         d = dirs.setdefault(drel, {"dir": drel, "files": 0, "bytes": 0, "kinds": Counter(), "examples": [],
-                                   "nifti_samples": [], "dicom_samples": [], "_dicom_probes": 0})
-        try:
-            size = path.stat().st_size
-        except OSError as e:
-            errors.append({"rel": rel, "error": str(e)[:200]})
-            continue
+                                   "nifti_samples": [], "dicom_samples": [], "_dicom_probes": 0, "_stat": 0})
+        size = 0
+        if d["_stat"] < STAT_PER_DIR:
+            try:
+                size = path.stat().st_size
+                d["_stat"] += 1
+            except OSError as e:
+                errors.append({"rel": rel, "error": str(e)[:200]})
+                continue
         kind = file_kind(path)
         if kind == "dicom?":
             d["_dicom_probes"] += 1
@@ -110,10 +121,17 @@ def scan(root: Path) -> dict:
     out_dirs = []
     for d in sorted(dirs.values(), key=lambda x: x["dir"]):
         d.pop("_dicom_probes")
+        measured = d.pop("_stat")
+        if 0 < measured < d["files"]:          # the rest of a large directory: average size of the measured
+            extra = round(d["bytes"] / measured * (d["files"] - measured))
+            d["bytes"] += extra
+            d["bytes_estimated"] = True
+            totals["bytes"] += extra
         d["kinds"] = dict(d["kinds"])
         out_dirs.append(d)
     return {"schema_version": 1, "input_root": str(root), "created_at": now_iso(), "totals": dict(totals),
             "dir_count": len(out_dirs), "dirs_truncated": len(out_dirs) > MAX_DIRS,
+            "stopped_after_s": time_budget_s if stopped else None,
             "dirs": out_dirs[:MAX_DIRS], "docs": docs[:200], "skipped_dirs": skipped_dirs, "errors": errors[:100]}
 
 

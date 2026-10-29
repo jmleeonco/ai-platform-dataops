@@ -12,6 +12,7 @@ from conftest import ROOT, LoopbackSCP
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from dataops.compare import sample_view
 from dataops.config import CentralScp, Settings
 from dataops.jobs import check_input_root, list_jobs, run_job, start_analysis, worker
 from dataops.local_send import journals, send_local
@@ -59,7 +60,9 @@ def test_analysis_builds_checked_plan(tmp_path, monkeypatch, challenge):
     settings = make_settings(tmp_path, monkeypatch)
     run = analyzed(settings, challenge)
     meta, plan = run.meta, run.load("plan.json")
-    assert meta["status"] == "PLANNED" and run.load("plan_errors.json") == []
+    assert meta["status"] == "PILOT_READY" and run.load("plan_errors.json") == []   # samples extracted
+    assert {x["subject_key"] for x in run.load("manifest-pilot.json")["series"]} == set(
+        run.load("plan.json")["pilot"]["subjects"])
     kinds = sorted((s["kind"], s["modality"], s["split"]) for s in plan["series"])
     assert kinds == [("nifti", "CT", "test"), ("nifti", "CT", "train"), ("nifti", "CT", "train"),
                      ("nifti", "MR", "train"), ("rtstruct", "RTSTRUCT", "train"), ("rtstruct", "RTSTRUCT", "train"),
@@ -319,3 +322,18 @@ def test_publish_job_registers_in_db(tmp_path, monkeypatch, challenge, scp, test
         assert counts["transfer_results"] == counts["instances"] + len(run.load("manifest-pilot.json")["instances"])
     finally:
         central.close()
+
+
+def test_sample_view_shows_real_and_outgoing_values(tmp_path, monkeypatch, challenge):
+    settings = make_settings(tmp_path, monkeypatch)
+    run = analyzed(settings, challenge)
+    view = sample_view(run)
+    assert view["extracted"] and len(view["cases"]) == 2
+    img = next(se for c in view["cases"] for se in c["series"] if se["kind"] == "nifti")
+    rows = {r["item"].split(" ")[0]: r for r in img["rows"]}
+    key = next(c["subject_key"] for c in view["cases"] if img in c["series"])
+    assert rows["PatientID"]["src"] == key and rows["PatientID"]["out"] == f"SYNCH_{key}"
+    assert rows["PatientID"]["action"] == "생성" and rows["SeriesInstanceUID"]["action"] == "새 UID 생성"
+    assert rows["subjects.source_subject_key"]["action"] == "원본 그대로"
+    assert rows["instances.source_relative_path"]["out"] == img["source"]
+    assert all(r["out"] for r in img["rows"] if r["group"] == "DICOM" and r["action"] == "새 UID 생성")

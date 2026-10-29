@@ -31,7 +31,7 @@ def test_report_has_the_same_shape_for_every_dataset(tmp_path, monkeypatch, chal
     agent_run = analyzed(settings, challenge)                 # agent proposal, NIfTI + labels
     legacy_run = make_run(settings, mixed, DATASET)          # older CLI plan: DICOM pass-through + NIfTI
     a, b = report.build(agent_run, settings), report.build(legacy_run, settings)
-    assert [s["no"] for s in a["sections"]] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert sorted({s["no"] for s in a["sections"]}) == list(range(1, 11))     # 10: one per frozen modality
     assert shape(a) == shape(b)
     assert [r[0] for r in a["sections"][0]["rows"]] == [r[0] for r in b["sections"][0]["rows"]]   # same fields
     assert [r[0] for r in a["sections"][1]["rows"]] == [r[0] for r in b["sections"][1]["rows"]]   # same splits
@@ -44,11 +44,13 @@ def test_report_has_the_same_shape_for_every_dataset(tmp_path, monkeypatch, chal
     assert agent_run.path(HEADERS_FILE).exists()             # extracted by the analysis job
     row = next(r for r in a["series"]["rows"] if r["subject_key"] == "case_0001" and r["_kind"] == "nifti")
     assert "descrip=Time=101010" in row["source_extra"] and "aux_file=Venous_Phase" in row["source_extra"]
-    assert row["pilot"] and row["local_status"] is None and row["db_status"] == "미등록"
+    assert row["pilot"] and row["local_status"] == "미전송" and row["db_status"] == "미등록"   # extracted, not sent
     assert "DICOM: 없음 · DB: 없음" in next(r for r in a["sections"][8]["rows"] if r[2] == "원본 기타 메타데이터")[5]
     md = build(agent_run)
     assert all(not (f["db_check"] or "").startswith("불일치") for f in md["fields"])
-    d = next(r for r in md["dicom"]["rows"] if r["_uid"] == row["_uid"])   # before conversion: plan values
+    d = next(r for r in md["dicom"]["rows"] if r["_uid"] == row["_uid"])   # sample: read from the converted file
+    assert d["origin"] == "실제 파일 (파일럿)" and d["check"] == "일치"
+    d = next(r for r in md["dicom"]["rows"] if not r["pilot"] and r["_kind"] == "nifti")   # the rest: plan values
     assert d["origin"].startswith("예정") and d["PatientID"] and d["SOPClassUID"] == "1.2.840.10008.5.1.4.1.1.2"
     assert d["Modality"] == "CT" and d["NumberOfInstances"] > 0 and d["check"] is None
     kinds = [r[1] for r in a["sections"][3]["rows"]]
@@ -87,7 +89,7 @@ def test_report_has_the_same_shape_for_every_dataset(tmp_path, monkeypatch, chal
     assert rec["db"] == "DB 설정 없음" and list(rec["tables"]) == TABLES
     for t in TABLES:
         assert [c["key"] for c in rec["tables"][t]["columns"]] == list(COLUMN_DESC[t]) + ["_db", "_diff"]
-    assert rec["tables"]["instances"]["note"].startswith("전체 변환 뒤")
+    assert rec["tables"]["instances"]["note"].startswith("파일럿 파일만")              # the extracted samples
     lines = list(csv.reader(io.StringIO(client.get(f"/runs/{agent_run.id}/records/subjects.csv").text.lstrip("\ufeff"))))
     assert lines[0] == list(COLUMN_DESC["subjects"]) + ["DB 상태", "차이 컬럼"]
     assert client.get(f"/runs/{agent_run.id}/records/mysql.csv").status_code == 404

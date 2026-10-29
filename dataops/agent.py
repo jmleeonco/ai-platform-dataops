@@ -130,6 +130,8 @@ def run_agent(settings: Settings, workdir: Path, scan_result: dict, log=print) -
     prompt = ("Dataset root (read-only): " + str(input_root) + "\n\nDirectory overview (full detail in scan.json):\n"
               + tree_text(scan_result, 60) + "\n\nDocuments found: "
               + ", ".join(d["rel"] for d in scan_result["docs"][:40])
+              + (f"\n\nThe overview stopped after {scan_result['stopped_after_s']} s (very large folder): it is "
+                 "partial. Use Glob on the folders it does not cover." if scan_result.get("stopped_after_s") else "")
               + "\n\nReturn the proposal for this dataset.")
     cmd = agent_command(settings, workdir, input_root)
     started = now_iso()

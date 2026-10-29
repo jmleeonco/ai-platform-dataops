@@ -39,7 +39,7 @@
 {% if plan and plan.series %}
 <div class="cols">
 <section id="pilot">
-<h2>1. Local SCP 전송 <span class="mono small muted">{{ settings.local_scp.key }}</span></h2>
+<h2>1. 샘플 → Local SCP <span class="mono small muted">{{ settings.local_scp.key }}</span></h2>
 {% set can_pilot = meta.status in ['PLANNED', 'PILOT_READY', 'PILOT_SENT', 'PILOT_PARTIAL', 'PILOT_FAILED'] and not active %}
 <form method="post" action="/runs/{{ run.id }}/pilot" class="inline">
   {{ csrf_field(csrf) }}
@@ -47,14 +47,15 @@
   {% set chosen = (plan.pilot or {}).subjects or [] %}
   <input name="pilot1" list="subjects" placeholder="대상자 1" value="{{ chosen[0] if chosen|length > 0 }}" {{ 'disabled' if not editable }}>
   <input name="pilot2" list="subjects" placeholder="대상자 2" value="{{ chosen[1] if chosen|length > 1 }}" {{ 'disabled' if not editable }}>
-  <button type="submit" class="primary" {{ 'disabled' if not can_pilot }}>{{ '다시 보내기' if pilot else '보내기' }}</button>
+  <button type="submit" formaction="/runs/{{ run.id }}/sample" {{ 'disabled' if not can_pilot }}>샘플 추출</button>
+  <button type="submit" class="primary" {{ 'disabled' if not can_pilot }}>{{ '다시 보내기' if journals|selectattr('scope', 'equalto', 'pilot')|list else 'Local SCP로 보내기' }}</button>
 </form>
 {% for j in journals if j.target.kind != 'central' %}
 <p class="small"><span class="mono">{{ '파일럿' if j.scope == 'pilot' else '전체' }} → {{ j.target_key }}</span>
 {% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}
 <span class="muted">{{ j.sessions[-1].finished_at if j.sessions else '' }}</span></p>
-{% else %}<p class="muted small">아직 보내지 않았습니다. 대상자를 고르고 보내면 OncoStudio에서 확인할 수 있습니다.</p>{% endfor %}
-{% if pilot_stale %}<p class="notice small">파일럿 이후 plan이 바뀌었습니다. 승인하려면 다시 보내세요.</p>{% endif %}
+{% else %}<p class="muted small">아직 보내지 않았습니다. 아래 샘플 값을 확인하고 보내면 OncoStudio에서 볼 수 있습니다.</p>{% endfor %}
+{% if pilot_stale %}<p class="notice small">샘플 이후 plan이 바뀌었습니다. 다시 추출하거나 보내세요.</p>{% endif %}
 </section>
 
 <section id="central">
@@ -84,6 +85,43 @@
 </section>
 </div>
 
+<section id="samples">
+<h2>샘플 값 <span class="muted small">왼쪽은 원본의 실제 값, 오른쪽은 비식별해서 실제로 입력될 값 (Local SCP·Central이 받는 DICOM 파일과 관리 DB)</span></h2>
+{% if not sample.ready or not sample.cases %}<p class="muted">샘플 대상자가 없습니다.</p>
+{% else %}
+{% if not sample.extracted %}<p class="notice">{{ '샘플 이후 plan이 바뀌었습니다.' if sample.stale else '아직 샘플을 추출하지 않았습니다.' }} "샘플 추출"을 누르면 대상자 {{ sample.cases|length }}명만 변환해서 오른쪽 값을 채웁니다.</p>{% endif %}
+<nav class="tabs cmp-tabs">
+{% for case in sample.cases %}{% for se in case.series %}{% set n = loop.index0 %}
+<a href="#cmp-{{ case.subject_key }}-{{ n }}" data-cmp="cmp-{{ case.subject_key }}-{{ n }}">{{ case.subject_key }} · {{ se.label }}{% if se.flags %} <span class="badge b-bad">식별 {{ se.flags }}</span>{% endif %}</a>
+{% endfor %}{% endfor %}
+</nav>
+<div class="cmp-wrap" id="cmp-wrap">
+<p class="small"><label><input type="checkbox" id="cmp-all"> 빈 값·고정값 행도 보기</label></p>
+{% for case in sample.cases %}{% for se in case.series %}{% set n = loop.index0 %}
+<div class="cmp" id="cmp-{{ case.subject_key }}-{{ n }}">
+<p class="muted small mono">원본 {{ se.source }}{% if not se.frozen %} · <span class="b-warn">오른쪽: 추출 전이라 DICOM 값 없음</span>{% endif %}</p>
+<div class="table-wrap"><table class="cmp-t">
+<tr class="side"><th colspan="2" class="src">원본 (실제 값)</th><th colspan="3" class="out">입력될 값 (비식별)</th></tr>
+<tr><th>원본 위치</th><th>값</th><th>값</th><th>들어가는 곳</th><th>처리</th></tr>
+{% for r in se.rows %}
+<tr class="{{ 'minor' if r.action in ('빈 값', '고정값') and not r.flag }} {{ 'flag' if r.flag }}">
+<td class="src small">{{ r['from'] }}</td><td class="src mono">{{ r.src if r.src is not none else '' }}</td>
+<td class="out mono{{ ' changed' if r.changed and r.out }}">{{ r.out if r.out is not none else '—' }}</td>
+<td class="mono small">{{ 'DB ' if r.group == 'DB' }}{{ r.item }}</td>
+<td class="small">{{ r.action }}{% if r.flag %} <span class="badge b-bad">{{ r.flag }}</span>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+</div>
+{% endfor %}{% endfor %}
+<details><summary>데이터셋 행 (datasets)</summary><div class="table-wrap"><table class="cmp-t">
+<tr><th>원본 위치</th><th>값</th><th>값</th><th>들어가는 곳</th><th>처리</th></tr>
+{% for r in sample.dataset %}<tr><td class="src small">{{ r['from'] }}</td><td class="src mono">{{ r.src or '' }}</td><td class="out mono">{{ r.out or '—' }}</td><td class="mono small">DB {{ r.item }}</td><td class="small">{{ r.action }}</td></tr>{% endfor %}
+</table></div></details>
+</div>
+{% endif %}
+</section>
+
+<details class="more" id="all-series"><summary>전체 목록 (원본 기준, 시리즈 {{ plan.series|rejectattr('excluded')|list|length }}개)</summary>
 <nav class="tabs">
   <a href="#source" data-tab="source">추출 테이블</a>
   <a href="#db" data-tab="db">DB 테이블</a>
@@ -120,6 +158,8 @@
 <details><summary>보낸 파일의 전체 DICOM 헤더 {{ sec.subtitle or '' }}</summary>{{ std_section(sec) }}</details>
 {% endfor %}
 </section>
+
+</details>
 
 <details class="more"><summary>설정 · 기록</summary>
 <section id="dataset">

@@ -20,7 +20,7 @@ from .config import Settings
 from .runs import Run, RunError
 from .util import now_iso, read_json, write_json
 
-KINDS = ("analyze", "pilot", "publish")
+KINDS = ("analyze", "sample", "pilot", "publish")
 ACTIVE = ("queued", "running")
 
 
@@ -147,7 +147,7 @@ def run_job(settings: Settings, job: dict) -> dict:
     write_json(path, job)
     try:
         run = Run(settings.runs_dir, job["run_id"])
-        job["result"] = {"analyze": _analyze, "pilot": _pilot, "publish": _publish}[job["kind"]](settings, run, job, log)
+        job["result"] = {"analyze": _analyze, "sample": _sample, "pilot": _pilot, "publish": _publish}[job["kind"]](settings, run, job, log)
         job.update(status="done")
         log("done")
     except Exception as e:  # noqa: BLE001 - every failure is recorded on the job and the run
@@ -175,7 +175,8 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     log(f"scan {root}")
     s = scan(root)
     run.save("scan.json", s)
-    log(f"scan: {s['totals']} in {s['dir_count']} directories")
+    log(f"scan: {s['totals']} in {s['dir_count']} directories"
+        + (f" (stopped after {s['stopped_after_s']} s: partial)" if s.get("stopped_after_s") else ""))
     out = run_agent(settings, settings.agent_workdir / run.id, s, log)
     run.save("agent_proposal.json", out)
     log("spec: checking the proposal and building the plan (NIfTI headers only)")
@@ -186,7 +187,19 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     log(f"plan: {len(plan['series'])} series, {len(errors)} errors, status {meta['status']}")
     from .metadata import nifti_headers
     log(f"metadata: {len(nifti_headers(run, plan, refresh=True))} NIfTI headers extracted")
-    return {"series": len(plan["series"]), "errors": len(errors), "status": meta["status"]}
+    if meta["status"] == "PLANNED" and (plan.get("pilot") or {}).get("subjects"):
+        try:                       # only the sample subjects are converted now; the rest after approval
+            _sample(settings, run, job, log)
+        except RunError as e:
+            log(f"samples not extracted: {e}")
+    return {"series": len(plan["series"]), "errors": len(errors), "status": run.meta["status"]}
+
+
+def _sample(settings: Settings, run: Run, job: dict, log) -> dict:
+    from .prepare import prepare
+    m = prepare(run, "pilot", log)
+    log(f"samples extracted: {len(m['instances'])} instances of {len(m['series'])} series")
+    return {"instances": len(m["instances"]), "series": len(m["series"])}
 
 
 def _pilot(settings: Settings, run: Run, job: dict, log) -> dict:

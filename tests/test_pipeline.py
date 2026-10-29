@@ -249,3 +249,12 @@ def test_records_projection_matches_manifest(settings, mixed, scp):
     assert sum(s["instance_count"] for s in rec["series"]) == len(m["instances"])
     assert rec["ingest_runs"][0]["manifest_sha256"] == m["manifest_sha256"]
     assert all(r["verification_json"] is None for r in rec["transfer_results"])  # accepted != verified
+
+
+def test_scan_is_bounded(mixed, monkeypatch):
+    from dataops import scan as scanmod
+    monkeypatch.setattr(scanmod, "STAT_PER_DIR", 1)
+    full = scanmod.scan(mixed)
+    assert full["stopped_after_s"] is None and full["totals"]["bytes"] > 0
+    assert any(d.get("bytes_estimated") for d in full["dirs"] if d["files"] > 1)
+    assert scanmod.scan(mixed, time_budget_s=0)["stopped_after_s"] == 0

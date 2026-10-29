@@ -172,3 +172,20 @@ def test_db_state_without_db(settings):
 def test_db_browser_without_db(settings):
     r = TestClient(create_app(settings)).get("/db/series")
     assert r.status_code == 200 and "DB 설정 없음" in r.text
+
+
+def test_sample_view_flags_identifiers_passed_through(settings, mixed):
+    """An original DICOM export is passed through unchanged: identifying values reach the files and the DB."""
+    from dataops.compare import sample_view
+    from dataops.plan import validate_plan
+    run = make_run(settings, mixed, DATASET)
+    plan = run.load("plan.json")
+    plan["pilot"] = {"subjects": [next(s["subject_key"] for s in plan["series"] if s["kind"] == "dicom")]}
+    plan, errors = validate_plan(plan, run.load("inventory.json"))
+    run.store_plan(plan, errors, "test")
+    prepare(run, "pilot")
+    se = sample_view(run)["cases"][0]["series"][0]
+    flagged = {r["item"].split(" ")[0] for r in se["rows"] if r["flag"]}
+    assert {"PatientName", "PatientID", "StudyDate", "subjects.source_subject_key", "studies.study_date"} <= flagged
+    page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
+    assert "식별 정보 그대로" in page and "원본 (실제 값)" in page and "입력될 값 (비식별)" in page

@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from .. import __version__
 from .. import db as dbmod
+from ..compare import sample_view
 from ..config import Settings
 from ..jobs import active_job, job_log, list_jobs
 from ..local_send import journals
@@ -146,7 +147,7 @@ def create_app(settings: Settings) -> FastAPI:
                     subjects=sorted({x["subject_key"] for x in plan.get("series", []) if not x.get("excluded")}),
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
                     editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
-                    db_sec=secs.get(7),
+                    db_sec=secs.get(7), sample=sample_view(run) if plan.get("series") else {"ready": False},
                     header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]])
 
     @app.get("/runs/{run_id}/report", response_class=HTMLResponse)

@@ -103,3 +103,15 @@ section.tab { margin-top: 0; border-top-left-radius: 0; }
 #tab-db a[data-sub].on { font-weight: 700; text-decoration: none; }
 details.more { margin-top: 24px; }
 .jt-wrap table.std th { white-space: nowrap; }
+table.cmp-t th, table.cmp-t td { border: 1px solid var(--line); }
+table.cmp-t td.mono { max-width: 420px; overflow-wrap: anywhere; }
+table.cmp-t .src { background: var(--code); }
+table.cmp-t tr.side th { text-align: center; color: var(--ink); font-size: 13px; }
+table.cmp-t tr.side th.src { background: var(--chip); }
+table.cmp-t tr.side th.out { background: var(--chip); border-left: 3px solid var(--accent); }
+table.cmp-t td.out { border-left: 3px solid var(--accent); }
+table.cmp-t td.changed { font-weight: 600; }
+table.cmp-t tr.flag td { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.cmp-wrap:not(.all) tr.minor { display: none; }
+nav.cmp-tabs { flex-wrap: wrap; margin-top: 4px; }
+nav.cmp-tabs a { font-weight: 500; font-size: 13px; }
