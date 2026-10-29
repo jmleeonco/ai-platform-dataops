@@ -184,8 +184,11 @@ def test_sample_view_flags_identifiers_passed_through(settings, mixed):
     plan, errors = validate_plan(plan, run.load("inventory.json"))
     run.store_plan(plan, errors, "test")
     prepare(run, "pilot")
-    se = sample_view(run)["cases"][0]["series"][0]
-    flagged = {r["item"].split(" ")[0] for r in se["rows"] if r["flag"]}
-    assert {"PatientName", "PatientID", "StudyDate", "subjects.source_subject_key", "studies.study_date"} <= flagged
+    case = sample_view(run)["cases"][0]
+    assert {r["item"].split(" ")[0] for r in case["dicom"][0]["rows"] if r["flag"]} >= {"PatientName", "PatientID",
+                                                                                         "StudyDate"}
+    assert {(t["table"], r["item"]) for t in case["db"] for r in t["rows"] if r["flag"]} >= {
+        ("subjects", "source_subject_key"), ("studies", "study_date")}
     page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
-    assert "식별 정보 그대로" in page and "원본 (실제 값)" in page and "입력될 값 (비식별)" in page
+    assert "식별 정보 그대로" in page and "원본 (실제 값)" in page
+    assert "DICOM 파일에 들어갈 값 (비식별)" in page and "DB에 들어갈 값 (비식별)" in page

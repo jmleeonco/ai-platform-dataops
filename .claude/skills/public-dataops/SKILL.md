@@ -18,7 +18,7 @@ Analysing a folder for the owner:
    추출 테이블 / DB 테이블 / DICOM 메타데이터.
    Quote table rows (e.g. table 4 확인 사항) rather than rewording them. Ask the owner only about real
    ambiguities (table 4 질문/미해결).
-3. Pilot (`python -m dataops pilot RUN` or the button) sends ONLY the two pilot subjects to the local
+3. Pilot (`python -m dataops pilot RUN` or the button) sends ONLY the sample (pilot) subjects, 3 by default, to the local
    SCP OS_LJM@10.101.1.107:4001 (`python -m dataops echo` checks it). Tell the owner to check them in
    OncoStudio on 107.
 4. Approval is the owner's act (browser form or `approve RUN --by NAME --confirm DATASET`). Never approve

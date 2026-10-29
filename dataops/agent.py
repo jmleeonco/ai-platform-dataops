@@ -96,7 +96,7 @@ Rules for the proposal:
   written by the dataset (or "unknown"), commercial_use Y/N/U derived from that license (CC-BY-NC/ND... => N,
   CC-BY/CC-BY-SA/CC0 => Y, unclear => U), citation, patient_id_prefix: short uppercase code for PatientIDs,
   [A-Z0-9_-]{2,16} (e.g. "AMOS").
-- pilot_subjects: exactly two subject keys for a trial send; prefer cases that have labels and, when the dataset has
+- pilot_subjects: exactly three subject keys used as samples (shown to the owner and sent on trial); prefer cases that have labels and, when the dataset has
   several modalities, one of each.
 - nifti_layout: "standard" unless the files are Onco NIfTI (LPS, arrays Z,Y,X) produced by nii2OncoNii.
 - findings: short Korean bullet facts the reviewer should know (counts per split/modality, test split without labels,

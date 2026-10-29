@@ -26,6 +26,7 @@ ADAPTER = "agent-spec"
 ADAPTER_VERSION = "1"
 MAX_REGEX = 200
 GEOMETRY_TOL_MM = 1e-3
+SAMPLES = 3                # sample subjects: extracted at analysis, shown, sent to the local SCP
 
 
 class SpecError(ValueError):
@@ -295,12 +296,12 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
 
     subjects = sorted({s["subject_key"] for s in series if s["kind"] == "nifti"})
     with_label = {s["subject_key"] for s in series if s["kind"] == "rtstruct"}
-    pilot = [x for x in spec["pilot_subjects"] if x in subjects][:2]
-    if len(pilot) < 2:
+    pilot = [x for x in spec["pilot_subjects"] if x in subjects][:SAMPLES]
+    if len(pilot) < SAMPLES:
         for mod in ("CT", "MR", None):
             for s in series:
                 if s["kind"] == "nifti" and s["subject_key"] not in pilot and s["subject_key"] in with_label \
-                        and (mod is None or s["modality"] == mod) and len(pilot) < 2:
+                        and (mod is None or s["modality"] == mod) and len(pilot) < SAMPLES:
                     pilot.append(s["subject_key"])
                     break
     ds = spec["dataset"]

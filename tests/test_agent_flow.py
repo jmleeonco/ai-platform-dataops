@@ -74,7 +74,7 @@ def test_analysis_builds_checked_plan(tmp_path, monkeypatch, challenge):
     left = {e["path"]: e for e in plan["analysis"]["left_out"]}
     assert left["challenge_copy"]["reason"] == "imagesTr의 재정리 사본" and left["challenge_copy"]["files"] == 3
     assert "archive.zip" in left and "readme.md" in left
-    assert plan["pilot"]["subjects"] == ["case_0001", "case_0501"]
+    assert plan["pilot"]["subjects"] == ["case_0001", "case_0501", "case_0002"]   # agent's two + one with labels
     assert run.load("scan.json")["totals"]["nifti"] == 10
     again = analyzed(settings, challenge)          # the same folder keeps its dataset identity and UIDs
     assert again.meta["dataset_uuid"] == meta["dataset_uuid"]
@@ -123,15 +123,16 @@ def test_label_on_another_grid_is_not_converted(tmp_path, monkeypatch, challenge
     assert any("격자" in s["reason"] for s in plan["skipped"] if s["rel"].endswith("labelsTr/case_0002.nii.gz"))
 
 
-def test_pilot_sends_two_cases_with_rtstruct(tmp_path, monkeypatch, challenge, scp):
+def test_pilot_sends_samples_with_rtstruct(tmp_path, monkeypatch, challenge, scp):
     run = piloted(make_settings(tmp_path, monkeypatch), challenge, scp)
     m = run.load("manifest-pilot.json")
-    assert {s["subject_key"] for s in m["series"]} == {"case_0001", "case_0501"} and run.load("manifest.json") is None
+    assert {s["subject_key"] for s in m["series"]} == {"case_0001", "case_0501", "case_0002"}
+    assert run.load("manifest.json") is None
     assert set(scp.received) == {i["sop_uid"] for i in m["instances"]}
     rts = [ds for ds in scp.received.values() if ds.SOPClassUID == RS_CLASS]
-    assert len(rts) == 2
+    assert len(rts) == 3
     for rs in rts:
-        assert {r.ROIName for r in rs.StructureSetROISequence} == {"liver", "spleen"}
+        assert {r.ROIName for r in rs.StructureSetROISequence} <= {"liver", "spleen"}
         image_sops = {uid for uid, ds in scp.received.items() if ds.SOPClassUID != RS_CLASS
                       and ds.SeriesInstanceUID == rs.ReferencedFrameOfReferenceSequence[0].RTReferencedStudySequence[0]
                       .RTReferencedSeriesSequence[0].SeriesInstanceUID}
@@ -145,7 +146,7 @@ def test_pilot_sends_two_cases_with_rtstruct(tmp_path, monkeypatch, challenge, s
         else:
             assert rep["modality_check"] == "ok"
     assert set(run.load("sources.json")) == {f"{d}/{c}.nii.gz" for d in ("imagesTr", "labelsTr")
-                                            for c in ("case_0001", "case_0501")}
+                                            for c in ("case_0001", "case_0501", "case_0002")}
 
 
 def test_approval_gates(tmp_path, monkeypatch, challenge):
@@ -328,12 +329,18 @@ def test_sample_view_shows_real_and_outgoing_values(tmp_path, monkeypatch, chall
     settings = make_settings(tmp_path, monkeypatch)
     run = analyzed(settings, challenge)
     view = sample_view(run)
-    assert view["extracted"] and len(view["cases"]) == 2
-    img = next(se for c in view["cases"] for se in c["series"] if se["kind"] == "nifti")
+    assert view["extracted"] and len(view["cases"]) == len(run.load("plan.json")["pilot"]["subjects"])
+    case = next(c for c in view["cases"] if any(se["kind"] == "nifti" for se in c["dicom"]))
+    img = next(se for se in case["dicom"] if se["kind"] == "nifti")
     rows = {r["item"].split(" ")[0]: r for r in img["rows"]}
-    key = next(c["subject_key"] for c in view["cases"] if img in c["series"])
+    key = case["subject_key"]
     assert rows["PatientID"]["src"] == key and rows["PatientID"]["out"] == f"SYNCH_{key}"
     assert rows["PatientID"]["action"] == "생성" and rows["SeriesInstanceUID"]["action"] == "새 UID 생성"
-    assert rows["subjects.source_subject_key"]["action"] == "원본 그대로"
-    assert rows["instances.source_relative_path"]["out"] == img["source"]
-    assert all(r["out"] for r in img["rows"] if r["group"] == "DICOM" and r["action"] == "새 UID 생성")
+    assert all(r["out"] for r in img["rows"] if r["action"] == "새 UID 생성")
+    db = {}                                                       # the DB part is separate; first row per column
+    for t in case["db"]:
+        for r in t["rows"]:
+            db.setdefault((t["table"], r["item"]), r)
+    assert [t["table"] for t in case["db"]][:3] == ["datasets", "subjects", "studies"]
+    assert db[("subjects", "source_subject_key")]["action"] == "원본 그대로"
+    assert db[("instances", "source_relative_path")]["out"] == img["source"]

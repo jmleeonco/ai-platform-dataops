@@ -113,5 +113,11 @@ table.cmp-t td.out { border-left: 3px solid var(--accent); }
 table.cmp-t td.changed { font-weight: 600; }
 table.cmp-t tr.flag td { background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .cmp-wrap:not(.all) tr.minor { display: none; }
-nav.cmp-tabs { flex-wrap: wrap; margin-top: 4px; }
-nav.cmp-tabs a { font-weight: 500; font-size: 13px; }
+
+nav.case-tabs a { font-weight: 500; font-size: 13px; }
+nav.case-tabs { flex-wrap: wrap; margin-top: 4px; }
+nav.ser-tabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+nav.ser-tabs a { padding: 3px 12px; border-radius: 14px; background: var(--chip); text-decoration: none; color: var(--muted); font-size: 13px; }
+nav.ser-tabs a.on { background: var(--accent); color: #fff; }
+.case h3 { margin-top: 18px; font-size: 16px; }
+table.cmp-t tr.tbl th { background: var(--chip); color: var(--ink); text-align: left; }

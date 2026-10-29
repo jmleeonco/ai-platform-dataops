@@ -39,19 +39,30 @@
   show(location.hash);
 })();
 
-// Sample view: one sample series at a time; the checkbox shows the empty / fixed-value rows too.
+// Sample view: one sample at a time (#case-N), inside it one DICOM series at a time; the checkbox shows the
+// empty / fixed-value rows too.
 (function () {
-  var links = document.querySelectorAll("a[data-cmp]");
-  if (!links.length) return;
-  function show(id) {
-    if (!document.getElementById(id)) id = links[0].dataset.cmp;
-    Array.prototype.forEach.call(document.querySelectorAll(".cmp"), function (d) { d.hidden = d.id !== id; });
-    Array.prototype.forEach.call(links, function (a) { a.classList.toggle("on", a.dataset.cmp === id); });
+  var cases = document.querySelectorAll("a[data-case]");
+  if (!cases.length) return;
+  function each(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
+  function showSer(id) {
+    var box = document.getElementById(id).closest(".case");
+    Array.prototype.forEach.call(box.querySelectorAll(".ser"), function (d) { d.hidden = d.id !== id; });
+    Array.prototype.forEach.call(box.querySelectorAll("a[data-ser]"), function (a) { a.classList.toggle("on", a.dataset.ser === id); });
   }
-  Array.prototype.forEach.call(links, function (a) {
-    a.addEventListener("click", function (e) { e.preventDefault(); history.replaceState(null, "", "#" + a.dataset.cmp); show(a.dataset.cmp); });
+  function showCase(id) {
+    if (!document.getElementById(id) || !document.getElementById(id).classList.contains("case")) id = cases[0].dataset.case;
+    each(".case", function (d) { d.hidden = d.id !== id; });
+    each("a[data-case]", function (a) { a.classList.toggle("on", a.dataset.case === id); });
+  }
+  each("a[data-case]", function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); history.replaceState(null, "", "#" + a.dataset.case); showCase(a.dataset.case); });
   });
+  each("a[data-ser]", function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); showSer(a.dataset.ser); });
+  });
+  each(".case", function (d) { var first = d.querySelector("a[data-ser]"); if (first) showSer(first.dataset.ser); });
   var all = document.getElementById("cmp-all"), wrap = document.getElementById("cmp-wrap");
   if (all && wrap) all.addEventListener("change", function () { wrap.classList.toggle("all", all.checked); });
-  show(location.hash.replace(/^#/, ""));
+  showCase(location.hash.replace(/^#/, ""));
 })();

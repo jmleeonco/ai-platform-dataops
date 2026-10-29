@@ -152,36 +152,38 @@ DB_KEEPS = {("subjects", "source_subject_key"), ("subjects", "patient_id"), ("st
             ("instances", "source_relative_path")}
 
 
-def _db_rows(c: dict, recs: dict, first_inst: dict | None) -> list[dict]:
+def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
+    """One DB row, column by column: the source value it comes from and the value registration writes."""
     s = c["s"]
     src_val = {"대상자 키": s["subject_key"], "원본 경로": c["rel"], "원본 파일 내용": "(파일 바이트)",
                "Modality 근거": s.get("modality_basis"), "데이터셋 이름": c["dataset_name"],
                "원본 StudyDate": str(c["src_ds"].get("StudyDate", "")) if c.get("src_ds") is not None else None}
-    pick = {"subjects": [r for r in recs["subjects"] if r["source_subject_key"] == s["subject_key"]],
-            "studies": [r for r in recs["studies"] if r["study_uid"] == s["study_uid"]],
-            "series": [r for r in recs["series"] if r["series_uid"] == s["series_uid"]],
-            "instances": [first_inst] if first_inst else []}
     rows = []
-    for table, found in pick.items():
-        for r in found[:1]:
-            for col, v in r.items():
-                label = DB_SOURCE.get((table, col))
-                sv = src_val.get(label) if label else None
-                if v in (None, ""):
-                    action = "빈 값"
-                elif col == "metadata_json":
-                    label, action = "원본 헤더 (기하·자료형)", "계산"
-                elif label is not None and _text(sv) == _text(v):
-                    action = "원본 그대로"
-                else:
-                    action = "생성"
-                rows.append(_row("DB", f"{table}.{col}", label or "—", sv, v, action,
-                                 (table, col) in DB_KEEPS and s["kind"] == "dicom"))
+    for col, v in rec.items():
+        label = DB_SOURCE.get((table, col))
+        sv = src_val.get(label) if label else None
+        if v in (None, ""):
+            action = "빈 값"
+        elif col == "metadata_json":
+            label, action = "원본 헤더 (기하·자료형)", "계산"
+        elif label is not None and _text(sv) == _text(v):
+            action = "원본 그대로"
+        else:
+            action = "생성"
+        rows.append(_row("DB", col, label or "—", sv, v, action, (table, col) in DB_KEEPS and s["kind"] == "dicom"))
     return rows
 
 
+def _dataset_rows(rec: dict, input_root: str) -> list[dict]:
+    return [_row("DB", k, "입력 폴더" if k == "dataset_uuid" else "에이전트 분석 (데이터셋 문서)",
+                 input_root if k == "dataset_uuid" else v, v, "새 UUID 생성" if k == "dataset_uuid" else "그대로")
+            for k, v in rec.items()]
+
+
 def sample_view(run: Run) -> dict:
-    """{"cases": [{"subject_key", "series": [{"uid", "kind", "label", "frozen", "rows"}]}], "dataset": rows}."""
+    """{"cases": [{"subject_key", "dicom": [series with rows], "db": [{"table", "label", "rows"}], "flags"}]}:
+    per sample subject, what the DICOM files carry (one entry per series) and what the DB gets (one entry per
+    row: dataset, subject, study, each series and its link, the first instance of each series)."""
     plan = run.load("plan.json") or {}
     if not plan.get("series"):
         return {"ready": False}
@@ -201,6 +203,10 @@ def sample_view(run: Run) -> dict:
     def nifti_header(rel):
         hit = (cached.get(rel) or {}).get("header")
         return hit if hit and "error" not in hit else read_nifti_header(root / rel)
+
+    def one(table, key, value):
+        return next((r for r in recs[table] if r[key] == value), None)
+    ds_rec = recs["datasets"][0] if recs["datasets"] else {}
     cases = {}
     for s in sorted(pilot_series(plan), key=lambda x: (x["subject_key"], x["kind"] == "rtstruct", x["series_key"])):
         rel = (s.get("sources") or [None])[0]
@@ -216,15 +222,29 @@ def sample_view(run: Run) -> dict:
                 out_ds = pydicom.dcmread(run.dir / inst["path"], stop_before_pixels=True)
             except Exception:  # noqa: BLE001 - shown as "not extracted"
                 out_ds = None
-        rows = _dicom_rows(c, out_ds) + _db_rows(c, recs, first_rows.get(s["series_uid"]) if inst else None)
-        cases.setdefault(s["subject_key"], []).append({
-            "uid": s["series_uid"], "kind": s["kind"], "modality": s.get("modality"),
-            "label": f"{KIND_LABEL.get(s['kind'], s['kind'])} {s.get('modality') or ''}".strip(), "source": rel,
-            "frozen": out_ds is not None, "rows": rows,
-            "flags": sum(1 for r in rows if r["flag"])})
-    ds_row = recs["datasets"][0] if recs["datasets"] else {}
-    dataset = [_row("DB", f"datasets.{k}", "에이전트 분석 (데이터셋 문서)" if k not in ("dataset_uuid",) else "입력 폴더",
-                    v if k != "dataset_uuid" else plan["input_root"], v,
-                    "그대로" if k != "dataset_uuid" else "새 UUID 생성") for k, v in ds_row.items()]
-    return {"ready": True, "stale": stale and bool(pilot), "extracted": bool(pilot) and not stale,
-            "cases": [{"subject_key": k, "series": v} for k, v in cases.items()], "dataset": dataset}
+        label = f"{KIND_LABEL.get(s['kind'], s['kind'])} {s.get('modality') or ''}".strip()
+        case = cases.setdefault(s["subject_key"], {"subject_key": s["subject_key"], "dicom": [], "db": []})
+        rows = _dicom_rows(c, out_ds)
+        case["dicom"].append({"uid": s["series_uid"], "kind": s["kind"], "label": label, "source": rel,
+                              "frozen": out_ds is not None, "rows": rows, "flags": sum(1 for r in rows if r["flag"])})
+        db = case["db"]
+        if not db:
+            db.append({"table": "datasets", "label": "데이터셋 (모든 샘플 공통)",
+                       "rows": _dataset_rows(ds_rec, plan["input_root"])})
+            for table, key, value in (("subjects", "source_subject_key", s["subject_key"]),
+                                      ("studies", "study_uid", s["study_uid"])):
+                rec = one(table, key, value)
+                if rec:
+                    db.append({"table": table, "label": "", "rows": _db_rows(table, rec, c)})
+        for table, key, rec in (("series", "series_uid", one("series", "series_uid", s["series_uid"])),
+                                ("dataset_series", "series_uid", one("dataset_series", "series_uid", s["series_uid"])),
+                                ("instances", "series_uid", first_rows.get(s["series_uid"]) if inst else None)):
+            if rec:
+                db.append({"table": table, "label": label + (" · 첫 파일 (파일마다 1행)" if table == "instances" else ""),
+                           "rows": _db_rows(table, rec, c)})
+    out = []
+    for case in cases.values():
+        case["flags"] = sum(se["flags"] for se in case["dicom"]) + sum(
+            1 for t in case["db"] for r in t["rows"] if r["flag"])
+        out.append(case)
+    return {"ready": True, "stale": stale and bool(pilot), "extracted": bool(pilot) and not stale, "cases": out}

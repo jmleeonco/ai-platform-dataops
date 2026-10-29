@@ -18,6 +18,7 @@ from ..jobs import active_job, check_input_root, start_analysis, submit
 from ..plan import PREFIX_RE, validate_plan
 from ..publish import approve, central_ready
 from ..runs import EDITABLE, Run, RunError
+from ..spec import SAMPLES
 from ..util import sha256_json
 
 CSRF_COOKIE = "dataops_csrf"
@@ -176,7 +177,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
         editable(run)
         plan = run.load("plan.json")
         active = {s["subject_key"] for s in plan["series"] if not s.get("excluded")}
-        chosen = [form.get("pilot1", ""), form.get("pilot2", "")]
+        chosen = [form.get(f"pilot{i}", "") for i in range(1, SAMPLES + 1)]
         chosen = [c for i, c in enumerate(chosen) if c and c not in chosen[:i]]
         bad = [c for c in chosen if c not in active]
         if bad or not chosen:
@@ -196,7 +197,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
 
     def subjects_from_form(run: Run, form: dict) -> None:
         """Subjects typed beside the sample/send buttons are saved first when they differ from the plan."""
-        chosen = [c for c in (form.get("pilot1"), form.get("pilot2")) if c]
+        chosen = [c for c in (form.get(f"pilot{i}") for i in range(1, SAMPLES + 1)) if c]
         if chosen and chosen != ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects"):
             errors = set_pilot_subjects(run, form)
             if errors:

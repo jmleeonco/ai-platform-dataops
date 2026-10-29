@@ -70,11 +70,13 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    the same numbered tables with the same columns, whatever the dataset; agent text only appears as
    cell values. Tables 6 and 7 are what leaves this machine: the DICOM values the local SCP receives, and
    the rows of every management-DB table. The run page `/runs/<run>` keeps only what the owner uses: the
-   sample send to the Local SCP, the final approval → Central, and the **sample values**: for each sample
-   series (the pilot subjects, extracted by the analysis job itself — job `sample` re-extracts after a
-   change), the real source value on the left and the value that really goes out on the right (every
-   top-level element of the first converted DICOM file, and the DB columns of the subject / study / series
-   / first instance), with what was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`.
+   sample send to the Local SCP, the final approval → Central, and the **sample values**, one sample at a
+   time (3 sample subjects = the pilot subjects, `spec.SAMPLES`, extracted by the analysis job itself; job
+   `sample` re-extracts after a change). For the chosen sample the page shows two separate tables, each with
+   the real source value on the left and the value that really goes out on the right: **DICOM 메타데이터**
+   (every top-level element of the first converted file of each series) and **DB** (the rows registration
+   writes: dataset, subject, study, each series and its link, the first instance of each series), with what
+   was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`.
    Identifying DICOM attributes or DB columns that leave unchanged are flagged "식별 정보 그대로" (an
    original DICOM export is still passed through unchanged; there is no de-identification step yet). The
    whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
