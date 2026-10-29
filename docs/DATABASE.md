@@ -1,6 +1,9 @@
 # New management DB and future integration
 
-Schema = `sql/migrations/0001_initial.sql` (the 2026-10-27 draft) + `0002_registration_fields.sql`,
+Schema = `sql/migrations/0001_initial.sql` (the 2026-10-27 draft) + `0002_registration_fields.sql` +
+`0003_source_paths.sql` (full source path: `series.source_path` = the converted file or the folder of a DICOM
+series, `instances.source_path` = the file; = `ingest_runs.input_root` + `source_relative_path`; descriptive,
+a keyed hash when pseudonymised),
 applied in order by `python -m dataops db-migrate` (table `schema_migrations` stores version and file
 sha256; an edited applied migration is refused — add a new file instead). No CREATE DATABASE/USE,
 credentials or cross-DB FK in migrations. The connector refuses the schema names scpdb/oncolabdb.

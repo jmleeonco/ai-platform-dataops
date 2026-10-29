@@ -344,6 +344,9 @@ def test_sample_view_shows_real_and_outgoing_values(tmp_path, monkeypatch, chall
     assert [t["table"] for t in case["db"]][:3] == ["datasets", "subjects", "studies"]
     assert db[("subjects", "source_subject_key")]["action"] == "원본 그대로"
     assert db[("instances", "source_relative_path")]["out"] == img["source"]
+    full = db[("instances", "source_path")]["out"]                     # the full path is in the DB too
+    assert full.startswith(str(challenge)) and full.endswith(img["source"])
+    assert db[("ingest_runs", "input_root")]["out"] == str(challenge)
 
 
 def test_one_sample_is_enough_to_approve(tmp_path, monkeypatch, challenge, scp):
@@ -384,6 +387,7 @@ def test_deid_switch_pseudonymises_what_leaves(tmp_path, monkeypatch, challenge)
             db.setdefault((t["table"], r["item"]), r)
     assert db[("subjects", "source_subject_key")]["out"] == pseudo
     assert db[("instances", "source_relative_path")]["out"].startswith("deid:")
+    assert db[("instances", "source_path")]["out"].startswith("deid:")
     md = build(run)
     assert all(not (f["db_check"] or "").startswith("불일치") for f in md["fields"])
     assert all(r["check"] in (None, "일치") for r in md["dicom"]["rows"])

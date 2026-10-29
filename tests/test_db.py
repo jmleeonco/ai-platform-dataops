@@ -22,7 +22,7 @@ def counts(conn):
 
 def test_migrations_apply_once_and_detect_edits(conn, monkeypatch):
     st = dbmod.migration_status(conn)
-    assert st["pending"] == [] and st["current"] == "0002_registration_fields"
+    assert st["pending"] == [] and st["current"] == "0003_source_paths"
     assert dbmod.migrate(conn) == []
     files = dbmod.migration_files()
     monkeypatch.setattr(dbmod, "migration_files", lambda: [(files[0][0], "0" * 64, files[0][2]), *files[1:]])

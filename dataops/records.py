@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import posixpath
+from pathlib import PurePosixPath
 from uuid import UUID, uuid5
 
 from . import deid
@@ -71,7 +73,8 @@ def build_records(run: Run, preview: bool = False) -> dict:
                                    "-").isdigit() else None,
                                "instance_count": counts.get(s["series_uid"], 0), "source_kind": s["kind"],
                                "modality_basis": s.get("modality_basis"), "needs_review": int(bool(s.get("needs_review"))),
-                               "first_run_uuid": meta["run_uuid"]})
+                               "first_run_uuid": meta["run_uuid"],
+                               "source_path": deid.path(plan, series_source_path(plan, s))})
         rows["dataset_series"].append({"dataset_uuid": duuid, "series_uid": s["series_uid"]})
     rows["ingest_runs"].append({"run_uuid": meta["run_uuid"], "run_label": run.id, "dataset_uuid": duuid,
                                 "revision": meta["revision"], "manifest_sha256": manifest["manifest_sha256"],
@@ -82,6 +85,22 @@ def build_records(run: Run, preview: bool = False) -> dict:
     return rows
 
 
+def absolute(plan: dict, rel: str | None) -> str | None:
+    """A source path as an absolute path on this host (input folder + relative path)."""
+    return None if rel is None else str(PurePosixPath(plan["input_root"]) / rel)
+
+
+def series_source_path(plan: dict, s: dict) -> str | None:
+    """The file a converted series comes from, or the folder holding a DICOM series' files."""
+    srcs = s.get("sources") or []
+    if not srcs:
+        return None
+    if s["kind"] != "dicom" or len(srcs) == 1:
+        return absolute(plan, srcs[0])
+    parent = posixpath.commonpath(srcs)
+    return absolute(plan, parent) if parent else plan["input_root"]
+
+
 def instance_rows(run: Run, manifest: dict, plan: dict | None = None) -> list[dict]:
     """instances rows for a frozen manifest (the full one at registration; the pilot one as a preview)."""
     plan = plan if plan is not None else (run.load("plan.json") or {})
@@ -89,7 +108,9 @@ def instance_rows(run: Run, manifest: dict, plan: dict | None = None) -> list[di
              "artifact_sha256": inst["sha256"], "artifact_relative_path": f"{run.id}/{inst['path']}",
              "prepared_run_uuid": run.meta["run_uuid"], "instance_number": inst["instance_number"],
              "size_bytes": inst["size"], "transfer_syntax_uid": inst["transfer_syntax"] or None,
-             "source_relative_path": deid.path(plan, inst["source"]["rel"]), "source_sha256": inst["source"]["sha256"]}
+             "source_relative_path": deid.path(plan, inst["source"]["rel"]),
+             "source_path": deid.path(plan, absolute(plan, inst["source"]["rel"])),
+             "source_sha256": inst["source"]["sha256"]}
             for inst in manifest["instances"]]
 
 
@@ -128,19 +149,20 @@ COLUMN_DESC = {
         "series_uid": "DICOM SeriesInstanceUID", "study_uid": "→ studies", "modality": "CT / MR / RTSTRUCT",
         "description": "SeriesDescription", "metadata_json": "원본에서 뽑은 값: 분할, 크기, 간격, 축 방향, 자료형, 라벨 대상",
         "series_number": "SeriesNumber", "instance_count": "DICOM 파일 수", "source_kind": "원본 형식 nifti / rtstruct / dicom",
-        "modality_basis": "modality를 정한 근거", "needs_review": "검토 필요 1/0", "first_run_uuid": "처음 등록한 실행"},
+        "modality_basis": "modality를 정한 근거", "needs_review": "검토 필요 1/0", "first_run_uuid": "처음 등록한 실행",
+        "source_path": "원본 전체 경로 (변환한 파일, DICOM이면 파일들이 있는 폴더)"},
     "dataset_series": {"dataset_uuid": "→ datasets", "series_uid": "→ series"},
     "ingest_runs": {
         "run_uuid": "실행 UUID", "run_label": "실행 ID (run 폴더 이름)", "dataset_uuid": "→ datasets",
         "revision": "plan revision", "manifest_sha256": "전체 변환 manifest 해시 (변환 뒤)", "status": "실행 상태",
         "plan_json": "plan 요약 (규칙·옵션·시리즈별 modality)", "approval_json": "최종 승인 기록",
-        "input_root": "원본 경로"},
+        "input_root": "입력 폴더 (절대 경로)"},
     "instances": {
         "sop_uid": "DICOM SOPInstanceUID", "series_uid": "→ series", "sop_class_uid": "SOPClassUID",
         "artifact_sha256": "변환된 DICOM 파일 해시", "artifact_relative_path": "run 폴더 기준 파일 경로",
         "prepared_run_uuid": "→ ingest_runs (처음 변환한 실행)", "instance_number": "InstanceNumber",
-        "size_bytes": "파일 크기", "transfer_syntax_uid": "TransferSyntaxUID", "source_relative_path": "원본 파일",
-        "source_sha256": "원본 파일 해시"},
+        "size_bytes": "파일 크기", "transfer_syntax_uid": "TransferSyntaxUID", "source_relative_path": "원본 파일 (입력 폴더 기준)",
+        "source_path": "원본 파일 전체 경로", "source_sha256": "원본 파일 해시"},
     "transfer_results": {
         "run_uuid": "→ ingest_runs", "target_key": "전송 대상 AE@host:port", "sop_uid": "→ instances",
         "target_snapshot": "전송 당시 대상 설정", "status": "accepted / warning / failed", "attempts": "시도 횟수",

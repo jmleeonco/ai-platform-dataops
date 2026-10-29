@@ -16,7 +16,7 @@ from . import deid
 from .inventory import read_dicom_header
 from .metadata import HEADERS_FILE, KIND_LABEL, TAG_SOURCE, read_nifti_header
 from .prepare import pilot_series
-from .records import build_records, instance_rows
+from .records import absolute, build_records, instance_rows, series_source_path
 from .runs import Run
 
 CUT = 300
@@ -147,10 +147,12 @@ DB_SOURCE = {
     ("instances", "source_relative_path"): "원본 경로", ("instances", "source_sha256"): "원본 파일 내용",
     ("series", "modality"): "Modality 근거", ("series", "modality_basis"): "Modality 근거",
     ("studies", "description"): "데이터셋 이름", ("studies", "study_date"): "원본 StudyDate",
+    ("series", "source_path"): "원본 전체 경로", ("instances", "source_path"): "원본 전체 경로",
+    ("ingest_runs", "input_root"): "입력 폴더", ("instances", "artifact_relative_path"): "변환된 파일 (이 서버)",
 }
 # DB columns that keep a source value as is: identifying when the source is an original DICOM export.
 DB_KEEPS = {("subjects", "source_subject_key"), ("subjects", "patient_id"), ("studies", "study_date"),
-            ("instances", "source_relative_path")}
+            ("instances", "source_relative_path"), ("instances", "source_path"), ("series", "source_path")}
 
 
 def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
@@ -158,6 +160,7 @@ def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
     s = c["s"]
     src_val = {"대상자 키": s["subject_key"], "원본 경로": c["rel"], "원본 파일 내용": "(파일 바이트)",
                "Modality 근거": s.get("modality_basis"), "데이터셋 이름": c["dataset_name"],
+               "원본 전체 경로": c["abs"], "입력 폴더": c["input_root"], "변환된 파일 (이 서버)": c.get("artifact"),
                "원본 StudyDate": str(c["src_ds"].get("StudyDate", "")) if c.get("src_ds") is not None else None}
     rows = []
     for col, v in rec.items():
@@ -212,12 +215,14 @@ def sample_view(run: Run) -> dict:
     for s in sorted(pilot_series(plan), key=lambda x: (x["subject_key"], x["kind"] == "rtstruct", x["series_key"])):
         rel = (s.get("sources") or [None])[0]
         image = by_key.get(s.get("reference")) if s["kind"] == "rtstruct" else None
-        c = {"s": s, "rel": rel, "dataset_name": plan["dataset"].get("name"),
+        c = {"s": s, "rel": rel, "dataset_name": plan["dataset"].get("name"), "input_root": plan["input_root"],
              "image_rel": ((image or {}).get("sources") or [None])[0],
              "hdr": nifti_header(rel) if s["kind"] == "nifti" and rel else None,
              "src_ds": read_dicom_header(root / rel) if s["kind"] == "dicom" and rel else None}
         inst = None if stale else first.get(s["series_uid"])
         out_ds = None
+        c["abs"] = absolute(plan, inst["source"]["rel"]) if inst else series_source_path(plan, s)
+        c["artifact"] = str(run.dir / inst["path"]) if inst else None
         if inst:
             try:
                 out_ds = pydicom.dcmread(run.dir / inst["path"], stop_before_pixels=True)
@@ -237,6 +242,10 @@ def sample_view(run: Run) -> dict:
                 rec = one(table, key, value)
                 if rec:
                     db.append({"table": table, "label": "", "rows": _db_rows(table, rec, c)})
+            if recs["ingest_runs"]:
+                c_run = {**c, "abs": series_source_path(plan, s)}
+                db.append({"table": "ingest_runs", "label": "이 등록 실행 (모든 샘플 공통)",
+                           "rows": _db_rows("ingest_runs", recs["ingest_runs"][0], c_run)})
         for table, key, rec in (("series", "series_uid", one("series", "series_uid", s["series_uid"])),
                                 ("dataset_series", "series_uid", one("dataset_series", "series_uid", s["series_uid"])),
                                 ("instances", "series_uid", first_rows.get(s["series_uid"]) if inst else None)):
