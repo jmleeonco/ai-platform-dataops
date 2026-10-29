@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from uuid import UUID, uuid5
 
+from . import deid
 from .runs import Run
 
 TABLES = ["datasets", "subjects", "studies", "series", "dataset_series", "ingest_runs", "instances",
@@ -19,9 +20,10 @@ def _plan_summary(plan: dict) -> dict:
     return {"schema_version": plan["schema_version"], "adapter": plan["adapter"],
             "adapter_version": plan["adapter_version"], "options": plan["options"],
             "subjects": len(plan["subjects"]), "studies": len(plan["studies"]),
-            "series": [{k: s.get(k) for k in ("series_key", "kind", "excluded", "series_uid", "modality",
-                                               "modality_basis", "needs_review", "conversion")}
-                       for s in plan["series"]],
+            "series": [{**{k: s.get(k) for k in ("kind", "excluded", "series_uid", "modality", "modality_basis",
+                                                  "needs_review", "conversion")},
+                        "series_key": deid.path(plan, s["series_key"])} for s in plan["series"]],
+            "deid": {k: v for k, v in (plan.get("deid") or {"enabled": False}).items() if k != "key"},
             "skipped": len(plan.get("skipped", [])), "unresolved": plan.get("unresolved", [])}
 
 
@@ -47,19 +49,24 @@ def build_records(run: Run, preview: bool = False) -> dict:
     rows["datasets"].append({k: ds.get(k) for k in ("dataset_uuid", "name", "source_url", "license",
                                                     "commercial_use", "description", "patient_id_prefix")})
     for key, pid in sorted(subj.items()):
-        rows["subjects"].append({"subject_uuid": subject_uuid(duuid, key), "dataset_uuid": duuid,
-                                 "source_subject_key": key, "patient_id": pid})
+        out_key = deid.subject(plan, key)
+        rows["subjects"].append({"subject_uuid": subject_uuid(duuid, out_key), "dataset_uuid": duuid,
+                                 "source_subject_key": out_key, "patient_id": pid})
     seen_studies = set()
     for s in active:
         if s["study_uid"] not in seen_studies:
             seen_studies.add(s["study_uid"])
             m = studies_meta.get(s["study_uid"], {})
             desc = m.get("StudyDescription") or (s["conversion"] or {}).get("study_description")
-            rows["studies"].append({"study_uid": s["study_uid"], "subject_uuid": subject_uuid(duuid, s["subject_key"]),
+            rows["studies"].append({"study_uid": s["study_uid"],
+                                    "subject_uuid": subject_uuid(duuid, deid.subject(plan, s["subject_key"])),
                                     "study_date": m.get("StudyDate"), "description": desc,
                                     "metadata_json": m or None})
+        meta_json = dict(s.get("metadata") or {}) or None
+        if meta_json and "label_of" in meta_json:
+            meta_json["label_of"] = deid.path(plan, meta_json["label_of"])
         rows["series"].append({"series_uid": s["series_uid"], "study_uid": s["study_uid"], "modality": s["modality"],
-                               "description": s.get("description"), "metadata_json": s.get("metadata") or None,
+                               "description": s.get("description"), "metadata_json": meta_json,
                                "series_number": int(s["series_number"]) if str(s.get("series_number") or "").lstrip(
                                    "-").isdigit() else None,
                                "instance_count": counts.get(s["series_uid"], 0), "source_kind": s["kind"],
@@ -70,18 +77,19 @@ def build_records(run: Run, preview: bool = False) -> dict:
                                 "revision": meta["revision"], "manifest_sha256": manifest["manifest_sha256"],
                                 "status": meta["status"], "plan_json": _plan_summary(plan),
                                 "approval_json": meta.get("approval"), "input_root": plan["input_root"]})
-    rows["instances"] = instance_rows(run, manifest)
+    rows["instances"] = instance_rows(run, manifest, plan)
     rows["transfer_results"] = transfer_rows(run, {i["sop_uid"] for i in manifest["instances"]})
     return rows
 
 
-def instance_rows(run: Run, manifest: dict) -> list[dict]:
+def instance_rows(run: Run, manifest: dict, plan: dict | None = None) -> list[dict]:
     """instances rows for a frozen manifest (the full one at registration; the pilot one as a preview)."""
+    plan = plan if plan is not None else (run.load("plan.json") or {})
     return [{"sop_uid": inst["sop_uid"], "series_uid": inst["series_uid"], "sop_class_uid": inst["sop_class_uid"],
              "artifact_sha256": inst["sha256"], "artifact_relative_path": f"{run.id}/{inst['path']}",
              "prepared_run_uuid": run.meta["run_uuid"], "instance_number": inst["instance_number"],
              "size_bytes": inst["size"], "transfer_syntax_uid": inst["transfer_syntax"] or None,
-             "source_relative_path": inst["source"]["rel"], "source_sha256": inst["source"]["sha256"]}
+             "source_relative_path": deid.path(plan, inst["source"]["rel"]), "source_sha256": inst["source"]["sha256"]}
             for inst in manifest["instances"]]
 
 

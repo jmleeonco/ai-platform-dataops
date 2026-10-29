@@ -77,8 +77,14 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    (every top-level element of the first converted file of each series) and **DB** (the rows registration
    writes: dataset, subject, study, each series and its link, the first instance of each series), with what
    was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`.
-   Identifying DICOM attributes or DB columns that leave unchanged are flagged "식별 정보 그대로" (an
-   original DICOM export is still passed through unchanged; there is no de-identification step yet). The
+   Identifying DICOM attributes or DB columns that leave unchanged are flagged "식별 정보 그대로".
+   **Pseudonymisation** (`dataops/deid.py`) is off by default — public data are de-identified already —
+   and switched per run by the button under the title (a plan field, so part of what is approved). On, the
+   subject key becomes a keyed pseudonym (HMAC under `~/.config/ai-platform-dataops/deid.key`, created on
+   first use, and the dataset UUID: same folder → same pseudonyms) in PatientID / PatientName /
+   SeriesDescription and in the DB, ImageComments leaves out the source path, and the DB stores a keyed
+   hash instead of source paths. Original DICOM passed through is not covered yet: with it on, such series
+   are a plan error. The
    whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
    above; dataset fields, splits, labels and history are under "설정 · 기록". The folder overview
    (`scan.py`) stops after 120 s and stats at most 200 files per directory (sizes beyond are estimated). `/runs/<run>/report` has all 10, `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
@@ -117,7 +123,8 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 4. **Pilot**: freezes only the pilot subjects (`manifest-pilot.json`: CT/MR DICOM + label RTSTRUCT) and
    sends them to the local SCP. Check them in OncoStudio on 107. Viewer: `/runs/<run>/series/<uid>`
    with the RTSTRUCT contours.
-5. **Approval**: needs status `PILOT_SENT` (every pilot instance accepted) for the current plan, the
+5. **Approval**: needs status `PILOT_SENT` (every file of at least one sample accepted — the run page sends
+   the one sample chosen in its dropdown; `approval.pilot_subjects` lists the received ones) for the current plan, the
    approver's name and the dataset name typed as confirmation. Stored in `run.json` `approval`
    (plan sha256, pilot manifest sha256, target) and later in `ingest_runs.approval_json`.
 6. **Central + DB** (job `publish`): full freeze (pilot artifacts reused after their sources are

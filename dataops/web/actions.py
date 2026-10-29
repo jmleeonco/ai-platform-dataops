@@ -13,6 +13,7 @@ from urllib.parse import quote, urlsplit
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from .. import deid
 from ..config import Settings
 from ..jobs import active_job, check_input_root, start_analysis, submit
 from ..plan import PREFIX_RE, validate_plan
@@ -231,10 +232,34 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
         try:
             subjects_from_form(run, form)
             check_pilot_state(run)
-            submit(settings, "pilot", run.id, {"target": settings.local_scp.key}, form.get("by", ""))
+            samples = ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects") or []
+            subject = form.get("subject") or None
+            if subject is not None and subject not in samples:
+                raise RunError(f"샘플이 아닙니다: {subject}")
+            submit(settings, "pilot", run.id, {"target": settings.local_scp.key, "subject": subject},
+                   form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e), anchor="pilot")
-        return back(run.id, msg=f"Local SCP 전송을 시작했습니다 → {settings.local_scp.key}", anchor="pilot")
+        return back(run.id, msg=f"{subject or '샘플'} → Local SCP 전송을 시작했습니다 ({settings.local_scp.key})",
+                    anchor="pilot")
+
+    @app.post("/runs/{run_id}/deid")
+    async def set_deid(request: Request, run_id: str):
+        """Pseudonymisation on/off (off by default: public data are de-identified already). The samples are
+        re-extracted so the page shows what would now leave."""
+        run = get_run(run_id)
+        form = await checked_form(request)
+        try:
+            editable(run)
+            plan = run.load("plan.json")
+            on = form.get("on") == "1"
+            (deid.enable if on else deid.disable)(plan)
+            errors = save_plan(run, plan, f"비식별 {'켬' if on else '끔'} (웹)")
+            if not errors and (plan.get("pilot") or {}).get("subjects"):
+                submit(settings, "sample", run.id, {}, form.get("by", ""))
+        except RunError as e:
+            return back(run.id, err=str(e))
+        return result(run, errors, f"비식별을 {'켰' if on else '껐'}습니다. 샘플을 다시 추출합니다.")
 
     @app.post("/runs/{run_id}/approve")
     async def do_approve(request: Request, run_id: str):

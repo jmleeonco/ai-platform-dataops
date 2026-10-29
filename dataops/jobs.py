@@ -207,7 +207,8 @@ def _pilot(settings: Settings, run: Run, job: dict, log) -> dict:
     from .prepare import prepare
     m = prepare(run, "pilot", log)
     log(f"pilot frozen: {len(m['instances'])} instances; sending to {settings.local_scp.key}")
-    r = send_local(run, settings.local_scp, scope="pilot")
+    subject = job["params"].get("subject")
+    r = send_local(run, settings.local_scp, scope="pilot", subjects=[subject] if subject else None)
     log(f"pilot send: {r['counts']} -> {r['status']}")
     return r
 

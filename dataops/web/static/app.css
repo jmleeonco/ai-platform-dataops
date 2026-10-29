@@ -121,3 +121,6 @@ nav.ser-tabs a { padding: 3px 12px; border-radius: 14px; background: var(--chip)
 nav.ser-tabs a.on { background: var(--accent); color: #fff; }
 .case h3 { margin-top: 18px; font-size: 16px; }
 table.cmp-t tr.tbl th { background: var(--chip); color: var(--ink); text-align: left; }
+form.deid-bar { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+#sample-pick { min-width: 260px; }
+.case-name { font-size: 15px; margin: 4px 0 0; }

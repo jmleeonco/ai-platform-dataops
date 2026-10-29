@@ -13,6 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 from uuid import UUID
 
+from . import deid
 from .legacy import n2d
 from .rtstruct import rtstruct_ids
 from .util import now_iso, sha256_file, valid_uid
@@ -226,10 +227,13 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
                 if not s.get("excluded"):
                     errors.append(f"{key}: dataset.patient_id_prefix 없음 — PatientID를 정할 수 없습니다")
                 continue
-            ids = nifti_ids(prefix, conv["group_label"], rel, conv.get("source_sha256") or conv["identity"],
-                            s["modality"], conv["layout"], int(s["series_number"]))
+            ids = nifti_ids(prefix, deid.subject(plan, conv["group_label"]), rel,
+                            conv.get("source_sha256") or conv["identity"], s["modality"], conv["layout"],
+                            int(s["series_number"]))
+            derived = (f"{deid.subject(plan, conv['group_label'])} s{int(s['series_number'])}"   # no file name
+                       if deid.enabled(plan) else ids.series_description)
             s.update(subject_key=conv["group_label"], patient_id=ids.patient_id, study_uid=ids.study_uid,
-                     series_uid=ids.series_uid, description=s.get("description") or ids.series_description)
+                     series_uid=ids.series_uid, description=s.get("description") or derived)
             conv["patient_name"] = ids.patient_name
             conv["study_description"] = n2d._clip(plan["dataset"]["name"]) if agent_spec else ids.study_description
             conv["frame_of_reference_uid"] = ids.frame_of_reference_uid
@@ -241,6 +245,8 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
         else:
             if s.get("excluded"):
                 continue
+            if deid.enabled(plan):
+                errors.append(f"{key}: 원본 DICOM은 아직 비식별할 수 없습니다 — 비식별을 끄거나 이 시리즈를 제외하세요")
             for rel in s["sources"]:
                 f = inv_files.get(rel)
                 if f is None or f["kind"] != "dicom" or f["dicom"]["series_uid"] != s["series_uid"]:

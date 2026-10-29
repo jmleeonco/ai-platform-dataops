@@ -5,6 +5,13 @@
 {% block body %}
 <h1>{{ plan.dataset.name if plan and plan.dataset else '분석 중인 폴더' }} {{ status(meta.status) }}</h1>
 <p class="muted mono small">{{ meta.input_root }} · run {{ run.id }}</p>
+{% if plan and plan.series %}{% set deid_on = (plan.deid or {}).enabled %}
+<form method="post" action="/runs/{{ run.id }}/deid" class="inline deid-bar">
+  {{ csrf_field(csrf) }}<input type="hidden" name="on" value="{{ '0' if deid_on else '1' }}">
+  <span>비식별 <b class="{{ 'b-ok' if deid_on else 'muted' }}">{{ '켜짐' if deid_on else '꺼짐' }}</b></span>
+  <button type="submit" {{ 'disabled' if not editable }}>{{ '비식별 끄기' if deid_on else '비식별 켜기' }}</button>
+  <span class="muted small">{{ '대상자 키를 가명으로, 원본 경로를 해시로 바꿔서 내보냅니다.' if deid_on else '공개 데이터는 끈 채로 둡니다. 내부 데이터일 때만 켜세요.' }}</span>
+</form>{% endif %}
 
 <div id="live" data-run="{{ run.id }}" data-status="{{ meta.status }}" data-active="{{ '1' if active else '' }}"></div>
 {% if job and (active or job.status == 'failed') %}
@@ -44,14 +51,16 @@
 {% set chosen = (plan.pilot or {}).subjects or [] %}
 <form method="post" action="/runs/{{ run.id }}/pilot" class="inline">
   {{ csrf_field(csrf) }}
-  <button type="submit" class="primary" {{ 'disabled' if not can_pilot or not chosen }}>샘플 {{ chosen|length }}명 {{ '다시 보내기' if journals|selectattr('scope', 'equalto', 'pilot')|list else 'Local SCP로 보내기' }}</button>
-  <span class="muted small">{{ chosen|join(', ') }}</span>
+  <select name="subject" id="sample-pick">
+  {% for case in sample.cases or [] %}<option value="{{ case.subject_key }}" data-case="case-{{ loop.index }}">샘플 {{ loop.index }} · {{ case.subject_key }}{{ ' · ' ~ case.sent if case.sent }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="primary" {{ 'disabled' if not can_pilot or not chosen }}>이 샘플 Local SCP로 보내기</button>
 </form>
 {% for j in journals if j.target.kind != 'central' %}
 <p class="small"><span class="mono">{{ '파일럿' if j.scope == 'pilot' else '전체' }} → {{ j.target_key }}</span>
 {% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}
 <span class="muted">{{ j.sessions[-1].finished_at if j.sessions else '' }}</span></p>
-{% else %}<p class="muted small">아직 보내지 않았습니다. 아래 샘플 값을 확인하고 보내면 OncoStudio에서 볼 수 있습니다.</p>{% endfor %}
+{% else %}<p class="muted small">아직 보내지 않았습니다. 고른 샘플의 값을 아래에서 확인하고 보내면 OncoStudio에서 볼 수 있습니다.</p>{% endfor %}
 {% if pilot_stale %}<p class="notice small">샘플 이후 plan이 바뀌었습니다. 다시 추출하거나 보내세요.</p>{% endif %}
 </section>
 
@@ -73,7 +82,7 @@
 </form>
 <p class="muted small">OncoStudio에서 확인한 뒤 누르세요. 확인 칸에 데이터셋 이름을 그대로 입력합니다.</p>
 {% else %}
-<p class="muted small">Local SCP 전송이 모두 수신된 뒤 승인할 수 있습니다.</p>
+<p class="muted small">샘플 하나가 Local SCP에 모두 수신된 뒤 승인할 수 있습니다.</p>
 {% endif %}
 {% for j in journals if j.target.kind == 'central' %}
 <p class="small"><span class="mono">{{ j.target_key }}</span> {% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}</p>
@@ -83,17 +92,15 @@
 </div>
 
 <section id="samples">
-<h2>샘플 <span class="muted small">왼쪽은 원본의 실제 값, 오른쪽은 비식별해서 실제로 입력될 값</span></h2>
+<h2>샘플 값 <span class="muted small">위에서 고른 샘플 · 왼쪽은 원본의 실제 값, 오른쪽은 실제로 들어갈 값{{ ' (비식별)' if sample.deid }}</span></h2>
 {% if not sample.ready or not sample.cases %}<p class="muted">샘플 대상자가 없습니다.</p>
 {% else %}
 {% if not sample.extracted %}<p class="notice">{{ '샘플 이후 plan이 바뀌었습니다.' if sample.stale else '아직 샘플을 추출하지 않았습니다.' }} 아래 "설정 · 기록"의 "샘플 추출"을 누르면 오른쪽 값이 채워집니다.</p>{% endif %}
-<nav class="tabs case-tabs">
-{% for case in sample.cases %}<a href="#case-{{ loop.index }}" data-case="case-{{ loop.index }}">샘플 {{ loop.index }} · {{ case.subject_key }}{% if case.flags %} <span class="badge b-bad">식별 {{ case.flags }}</span>{% endif %}</a>{% endfor %}
-</nav>
 <div class="cmp-wrap" id="cmp-wrap">
 <p class="small"><label><input type="checkbox" id="cmp-all"> 빈 값·고정값 행도 보기</label></p>
 {% for case in sample.cases %}{% set ci = loop.index %}
 <div class="case" id="case-{{ ci }}">
+<p class="case-name">샘플 {{ ci }} · <b class="mono">{{ case.subject_key }}</b>{% if case.flags %} <span class="badge b-bad">식별 정보 {{ case.flags }}건이 그대로 나감</span>{% endif %}</p>
 
 <h3>DICOM 메타데이터 <span class="muted small">Local SCP·Central이 받는 DICOM 파일 (시리즈 첫 장의 태그 전부)</span></h3>
 <nav class="ser-tabs">{% for se in case.dicom %}<a href="#" data-ser="ser-{{ ci }}-{{ loop.index }}">{{ se.label }}{% if se.flags %} <span class="badge b-bad">식별 {{ se.flags }}</span>{% endif %}</a>{% endfor %}</nav>
@@ -101,7 +108,7 @@
 <div class="ser" id="ser-{{ ci }}-{{ loop.index }}">
 <p class="muted small mono">원본 {{ se.source }}{% if not se.frozen %} · <span class="b-warn">추출 전이라 오른쪽 값 없음</span>{% endif %}</p>
 <div class="table-wrap"><table class="cmp-t">
-<tr class="side"><th colspan="2" class="src">원본 (실제 값)</th><th colspan="3" class="out">DICOM 파일에 들어갈 값 (비식별)</th></tr>
+<tr class="side"><th colspan="2" class="src">원본 (실제 값)</th><th colspan="3" class="out">DICOM 파일에 들어갈 값{{ ' (비식별)' if sample.deid }}</th></tr>
 <tr><th>원본 위치</th><th>값</th><th>값</th><th>태그</th><th>처리</th></tr>
 {% for r in se.rows %}
 <tr class="{{ 'minor' if r.action in ('빈 값', '고정값') and not r.flag }} {{ 'flag' if r.flag }}">
@@ -116,7 +123,7 @@
 
 <h3>DB <span class="muted small">관리 DB에 들어갈 행 (Central 전송 뒤 등록)</span></h3>
 <div class="table-wrap"><table class="cmp-t">
-<tr class="side"><th colspan="2" class="src">원본 (실제 값)</th><th colspan="3" class="out">DB에 들어갈 값 (비식별)</th></tr>
+<tr class="side"><th colspan="2" class="src">원본 (실제 값)</th><th colspan="3" class="out">DB에 들어갈 값{{ ' (비식별)' if sample.deid }}</th></tr>
 <tr><th>원본 위치</th><th>값</th><th>값</th><th>컬럼</th><th>처리</th></tr>
 {% for t in case.db %}
 <tr class="tbl"><th colspan="5"><span class="mono">{{ t.table }}</span> <span class="muted small">{{ t.label }}</span></th></tr>

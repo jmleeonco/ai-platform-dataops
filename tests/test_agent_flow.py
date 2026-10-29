@@ -344,3 +344,48 @@ def test_sample_view_shows_real_and_outgoing_values(tmp_path, monkeypatch, chall
     assert [t["table"] for t in case["db"]][:3] == ["datasets", "subjects", "studies"]
     assert db[("subjects", "source_subject_key")]["action"] == "원본 그대로"
     assert db[("instances", "source_relative_path")]["out"] == img["source"]
+
+
+def test_one_sample_is_enough_to_approve(tmp_path, monkeypatch, challenge, scp):
+    run = analyzed(make_settings(tmp_path, monkeypatch), challenge)
+    first = run.load("plan.json")["pilot"]["subjects"][0]
+    r = send_local(run, scp.target(), scope="pilot", subjects=[first])
+    assert r["status"] == "PILOT_SENT" and r["total"] == sum(
+        1 for i in run.load("manifest-pilot.json")["instances"]
+        if i["series_uid"] in {s["series_uid"] for s in run.load("manifest-pilot.json")["series"]
+                               if s["subject_key"] == first})
+    assert next(c for c in sample_view(run)["cases"] if c["subject_key"] == first)["sent"].startswith("수신")
+    approval = approve(run, "검토자", "SynChallenge")
+    assert approval["pilot_subjects"] == [first]
+
+
+def test_deid_switch_pseudonymises_what_leaves(tmp_path, monkeypatch, challenge):
+    from dataops import deid
+    from dataops.metadata import build
+    monkeypatch.setenv("DATAOPS_DEID_KEY_FILE", str(tmp_path / "deid.key"))
+    settings = make_settings(tmp_path, monkeypatch)
+    run = analyzed(settings, challenge)
+    assert not deid.enabled(run.load("plan.json"))                      # off by default
+    plan, errors = validate_plan(deid.enable(run.load("plan.json")), run.load("inventory.json"))
+    run.store_plan(plan, errors, "test")
+    prepare(run, "pilot")
+    view = sample_view(run)
+    assert view["deid"] and view["extracted"]
+    case = next(c for c in view["cases"] if any(se["kind"] == "nifti" for se in c["dicom"]))
+    img = next(se for se in case["dicom"] if se["kind"] == "nifti")
+    rows = {r["item"].split(" ")[0]: r for r in img["rows"]}
+    pseudo = deid.subject(plan, case["subject_key"])
+    assert pseudo != case["subject_key"] and rows["PatientID"]["out"] == f"SYNCH_{pseudo}"
+    assert case["subject_key"] not in rows["PatientName"]["out"] + rows["SeriesDescription"]["out"]
+    assert img["source"] not in rows["ImageComments"]["out"]
+    db = {}
+    for t in case["db"]:
+        for r in t["rows"]:
+            db.setdefault((t["table"], r["item"]), r)
+    assert db[("subjects", "source_subject_key")]["out"] == pseudo
+    assert db[("instances", "source_relative_path")]["out"].startswith("deid:")
+    md = build(run)
+    assert all(not (f["db_check"] or "").startswith("불일치") for f in md["fields"])
+    assert all(r["check"] in (None, "일치") for r in md["dicom"]["rows"])
+    again = deid.enable(run.load("plan.json"))                          # same folder, same pseudonyms
+    assert deid.subject(again, case["subject_key"]) == pseudo

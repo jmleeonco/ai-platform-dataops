@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pydicom
 
+from . import deid
 from .inventory import read_dicom_header
 from .metadata import HEADERS_FILE, KIND_LABEL, TAG_SOURCE, read_nifti_header
 from .prepare import pilot_series
@@ -231,7 +232,7 @@ def sample_view(run: Run) -> dict:
         if not db:
             db.append({"table": "datasets", "label": "데이터셋 (모든 샘플 공통)",
                        "rows": _dataset_rows(ds_rec, plan["input_root"])})
-            for table, key, value in (("subjects", "source_subject_key", s["subject_key"]),
+            for table, key, value in (("subjects", "source_subject_key", deid.subject(plan, s["subject_key"])),
                                       ("studies", "study_uid", s["study_uid"])):
                 rec = one(table, key, value)
                 if rec:
@@ -242,9 +243,22 @@ def sample_view(run: Run) -> dict:
             if rec:
                 db.append({"table": table, "label": label + (" · 첫 파일 (파일마다 1행)" if table == "instances" else ""),
                            "rows": _db_rows(table, rec, c)})
+    sent = {}
+    if pilot and not stale:
+        from .local_send import journals
+        uid_subject = {se["series_uid"]: se["subject_key"] for se in pilot["series"]}
+        for j in journals(run):
+            if j.get("scope") == "pilot" and j["manifest_sha256"] == pilot["manifest_sha256"]:
+                for i in pilot["instances"]:
+                    n = sent.setdefault(uid_subject[i["series_uid"]], [0, 0])
+                    n[1] += 1
+                    n[0] += j["instances"].get(i["sop_uid"], {}).get("status") in ("accepted", "warning")
     out = []
     for case in cases.values():
+        n = sent.get(case["subject_key"])
+        case["sent"] = f"수신 {n[0]}/{n[1]}" if n and n[0] else None
         case["flags"] = sum(se["flags"] for se in case["dicom"]) + sum(
             1 for t in case["db"] for r in t["rows"] if r["flag"])
         out.append(case)
-    return {"ready": True, "stale": stale and bool(pilot), "extracted": bool(pilot) and not stale, "cases": out}
+    return {"ready": True, "stale": stale and bool(pilot), "extracted": bool(pilot) and not stale, "cases": out,
+            "deid": deid.enabled(plan)}

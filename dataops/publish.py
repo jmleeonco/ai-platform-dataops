@@ -27,9 +27,25 @@ def central_ready(central: CentralScp) -> tuple[bool, str]:
     return True, central.key
 
 
-def approve(run: Run, approver: str, confirm: str, note: str = "") -> dict:
-    """Record the owner's approval of the current plan after a fully accepted pilot."""
+def received_samples(run: Run, pilot: dict) -> list[tuple[str, str]]:
+    """(target, subject) for every sample of the current pilot manifest whose files the local SCP all accepted."""
     from .local_send import journals
+    out = []
+    uid_subject = {se["series_uid"]: se["subject_key"] for se in pilot["series"]}
+    for j in journals(run):
+        if j.get("scope") != "pilot" or j["manifest_sha256"] != pilot["manifest_sha256"]:
+            continue
+        by_subject = {}
+        for i in pilot["instances"]:
+            ok = j["instances"].get(i["sop_uid"], {}).get("status") in ("accepted", "warning")
+            subj = uid_subject[i["series_uid"]]
+            by_subject[subj] = by_subject.get(subj, True) and ok
+        out += [(j["target_key"], subj) for subj, ok in sorted(by_subject.items()) if ok]
+    return out
+
+
+def approve(run: Run, approver: str, confirm: str, note: str = "") -> dict:
+    """Record the owner's approval of the current plan after at least one sample was fully received."""
     approver = (approver or "").strip()
     if not approver or len(approver) > 64:
         raise RunError("승인자 이름을 입력하세요 (1..64자)")
@@ -42,16 +58,14 @@ def approve(run: Run, approver: str, confirm: str, note: str = "") -> dict:
         pilot = run.load("manifest-pilot.json")
         if not pilot or pilot["plan_sha256"] != meta["plan_sha256"]:
             raise RunError("파일럿이 현재 plan으로 만들어지지 않았습니다 — 파일럿을 다시 보내세요")
-        sent = [j for j in journals(run) if j.get("scope") == "pilot" and j["manifest_sha256"] == pilot["manifest_sha256"]
-                and all(j["instances"].get(i["sop_uid"], {}).get("status") in ("accepted", "warning")
-                        for i in pilot["instances"])]
-        if not sent:
-            raise RunError("현재 파일럿의 모든 인스턴스가 로컬 SCP에 수신된 기록이 없습니다")
+        received = received_samples(run, pilot)
+        if not received:
+            raise RunError("현재 샘플 중 로컬 SCP에 모든 파일이 수신된 샘플이 없습니다")
         if sha256_json(plan) != meta["plan_sha256"]:
             raise RunError("plan.json이 검증 이후 수정되었습니다")
         approval = {"approved_by": approver, "approved_at": now_iso(), "plan_sha256": meta["plan_sha256"],
                     "plan_revision": meta["revision"], "pilot_manifest_sha256": pilot["manifest_sha256"],
-                    "pilot_target": sent[0]["target_key"], "pilot_subjects": plan["pilot"]["subjects"],
+                    "pilot_target": received[0][0], "pilot_subjects": [subj for _, subj in received],
                     "note": (note or "")[:1000]}
         run.set_status("APPROVED", f"승인: {approver}", approval=approval)
         return approval

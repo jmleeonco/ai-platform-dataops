@@ -38,15 +38,22 @@ def journal_name(target_key: str, scope: str = "full") -> str:
     return f"transfers/{'pilot_' if scope == 'pilot' else ''}{base}.json"
 
 
-def send_with_journal(run: Run, scope: str, target_key: str, target: dict, dest, dry_run: bool = False) -> dict:
+def send_with_journal(run: Run, scope: str, target_key: str, target: dict, dest, dry_run: bool = False,
+                      subjects: list[str] | None = None) -> dict:
     """C-STORE every not-yet-accepted instance of the scope's manifest to `dest`; journal each result.
-    Caller holds the run lock and has checked the state. Returns counts over the whole manifest."""
+    Caller holds the run lock and has checked the state. `subjects` limits the send (and the counts) to those
+    subjects' series, e.g. the one sample chosen for the trial. Returns counts over what was asked for."""
     manifest = run.load(manifest_name(scope))
     if manifest is None:
         raise RunError(f"{scope} manifest 없음 (준비 전)")
     problems = verify_artifacts(run, manifest)
     if problems:
         raise RunError("artifact 검증 실패 — 전송하지 않습니다:\n- " + "\n- ".join(problems[:20]))
+    if subjects:
+        uids = {s["series_uid"] for s in manifest["series"] if s["subject_key"] in subjects}
+        if not uids:
+            raise RunError(f"{', '.join(subjects)}: 추출된 샘플이 아닙니다")
+        manifest = {**manifest, "instances": [i for i in manifest["instances"] if i["series_uid"] in uids]}
     jname = journal_name(target_key, scope)
     journal = run.load(jname)
     if journal and journal["manifest_sha256"] != manifest["manifest_sha256"]:
@@ -89,7 +96,8 @@ def send_with_journal(run: Run, scope: str, target_key: str, target: dict, dest,
             "sent_now": len(items), "total": total, "manifest_sha256": manifest["manifest_sha256"]}
 
 
-def send_local(run: Run, scp: LocalScp, dry_run: bool = False, scope: str = "full") -> dict:
+def send_local(run: Run, scp: LocalScp, dry_run: bool = False, scope: str = "full",
+               subjects: list[str] | None = None) -> dict:
     dest = destination(scp)                     # refuses non-local hosts before anything else
     allowed, prefix = SEND_STATES[scope]
     with run.lock():
@@ -99,13 +107,13 @@ def send_local(run: Run, scp: LocalScp, dry_run: bool = False, scope: str = "ful
                            f"가능합니다 (현재 {status})")
         target = {"host": scp.host, "port": scp.port, "called_ae": scp.called_ae, "calling_ae": scp.calling_ae,
                   "kind": "local"}
-        r = send_with_journal(run, scope, scp.key, target, dest, dry_run)
+        r = send_with_journal(run, scope, scp.key, target, dest, dry_run, subjects)
         if dry_run:
             return r
         new = f"{prefix}_{r['outcome']}"
         if scope == "full" and status.startswith("CENTRAL_"):
             new = status                        # a later local copy does not hide the publication state
-        run.set_status(new, f"{scope} → {scp.key}: {r['counts']}")
+        run.set_status(new, f"{scope}{' ' + ', '.join(subjects) if subjects else ''} → {scp.key}: {r['counts']}")
         return {**r, "status": new}
 
 

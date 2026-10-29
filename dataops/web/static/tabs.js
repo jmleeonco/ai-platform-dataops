@@ -39,30 +39,32 @@
   show(location.hash);
 })();
 
-// Sample view: one sample at a time (#case-N), inside it one DICOM series at a time; the checkbox shows the
-// empty / fixed-value rows too.
+// Sample view: the dropdown above picks the one sample shown (and the one sent); inside it one DICOM series
+// at a time; the checkbox shows the empty / fixed-value rows too.
 (function () {
-  var cases = document.querySelectorAll("a[data-case]");
-  if (!cases.length) return;
-  function each(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
+  var pick = document.getElementById("sample-pick");
+  if (!pick || !document.querySelector(".case")) return;
+  function each(root, sel, fn) { Array.prototype.forEach.call(root.querySelectorAll(sel), fn); }
   function showSer(id) {
     var box = document.getElementById(id).closest(".case");
-    Array.prototype.forEach.call(box.querySelectorAll(".ser"), function (d) { d.hidden = d.id !== id; });
-    Array.prototype.forEach.call(box.querySelectorAll("a[data-ser]"), function (a) { a.classList.toggle("on", a.dataset.ser === id); });
+    each(box, ".ser", function (d) { d.hidden = d.id !== id; });
+    each(box, "a[data-ser]", function (a) { a.classList.toggle("on", a.dataset.ser === id); });
   }
-  function showCase(id) {
-    if (!document.getElementById(id) || !document.getElementById(id).classList.contains("case")) id = cases[0].dataset.case;
-    each(".case", function (d) { d.hidden = d.id !== id; });
-    each("a[data-case]", function (a) { a.classList.toggle("on", a.dataset.case === id); });
+  function showCase() {
+    var opt = pick.options[pick.selectedIndex], id = opt ? opt.dataset.case : null;
+    each(document, ".case", function (d) { d.hidden = d.id !== id; });
   }
-  each("a[data-case]", function (a) {
-    a.addEventListener("click", function (e) { e.preventDefault(); history.replaceState(null, "", "#" + a.dataset.case); showCase(a.dataset.case); });
-  });
-  each("a[data-ser]", function (a) {
+  each(document, "a[data-ser]", function (a) {
     a.addEventListener("click", function (e) { e.preventDefault(); showSer(a.dataset.ser); });
   });
-  each(".case", function (d) { var first = d.querySelector("a[data-ser]"); if (first) showSer(first.dataset.ser); });
+  each(document, ".case", function (d) { var first = d.querySelector("a[data-ser]"); if (first) showSer(first.dataset.ser); });
+  var want = location.hash.replace(/^#/, "");
+  Array.prototype.forEach.call(pick.options, function (o, i) { if (o.dataset.case === want) pick.selectedIndex = i; });
+  pick.addEventListener("change", function () {
+    history.replaceState(null, "", "#" + pick.options[pick.selectedIndex].dataset.case);
+    showCase();
+  });
   var all = document.getElementById("cmp-all"), wrap = document.getElementById("cmp-wrap");
   if (all && wrap) all.addEventListener("change", function () { wrap.classList.toggle("all", all.checked); });
-  showCase(location.hash.replace(/^#/, ""));
+  showCase();
 })();

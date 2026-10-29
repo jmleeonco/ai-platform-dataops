@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pydicom
 
+from . import deid
 from .inventory import read_dicom_header
 from .legacy import n2d
 from .plan import validate_plan
@@ -160,6 +161,15 @@ def _instance_row_raw(path: Path, run_dir: Path, sha: str, ds, source: dict) -> 
             "source": source}
 
 
+def image_comments(plan: dict, s: dict) -> str:
+    """ImageComments of a series converted from NIfTI (agent-spec plans); the source path is left out when
+    pseudonymisation is on."""
+    source = "(source path withheld: pseudonymised)" if deid.enabled(plan) else f"'{s['sources'][0]}'"
+    return (f"Converted without resampling from NIfTI {source} of the public dataset '{plan['dataset']['name']}'. "
+            f"PatientID and UIDs are derived identifiers, not source patient metadata. "
+            f"Modality {s['modality']}: {s['modality_basis']}.")
+
+
 def _convert_nifti(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, pins: dict):
     conv, rel = s["conversion"], s["sources"][0]
     src = root / rel
@@ -174,9 +184,7 @@ def _convert_nifti(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, p
         vol, reason = n2d.load_volume(src, conv["layout"])
         if vol is None:
             raise RunError(f"NIfTI를 읽을 수 없습니다: {rel} ({reason})")
-        comments = (f"Converted without resampling from NIfTI '{rel}' of the public dataset "
-                    f"'{plan['dataset']['name']}'. PatientID and UIDs are derived identifiers, not source patient "
-                    f"metadata. Modality {s['modality']}: {s['modality_basis']}.")
+        comments = image_comments(plan, s)
     else:
         item, vol = n2d.classify(src, root, conv["layout"])
         if item.kind != "image" or vol is None:

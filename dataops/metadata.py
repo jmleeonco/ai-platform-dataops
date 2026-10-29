@@ -16,9 +16,10 @@ import nibabel as nib
 import numpy as np
 import pydicom
 
+from . import deid
 from .legacy import n2d
 from .local_send import journals
-from .prepare import MANIFESTS, pilot_series
+from .prepare import MANIFESTS, image_comments, pilot_series
 from .records import build_records, subject_uuid
 from .rtstruct import RTSTRUCT_SOP_CLASS, RTSTRUCT_VERSION
 from .runs import Run
@@ -153,9 +154,7 @@ def _comments(c):
         return None
     rel = s["sources"][0]
     if c["adapter"] == "agent-spec":
-        text = (f"Converted without resampling from NIfTI '{rel}' of the public dataset '{c['dataset_name']}'. "
-                f"PatientID and UIDs are derived identifiers, not source patient metadata. "
-                f"Modality {s['modality']}: {s['modality_basis']}.")
+        text = image_comments(c["plan"], s)
     else:
         text = (f"Local review conversion of NIfTI '{rel}'. Patient/study values are local placeholders, not source "
                 f"metadata. Modality {s['modality']} from: {s['modality_basis']}.")
@@ -291,7 +290,8 @@ def _extra(ctx) -> str | None:
 FIELDS = [
     Field("subject_key", "대상자 키", "원본 파일명에서 뽑은 대상자 식별자", lambda c: c["s"]["subject_key"],
           dicom="PatientID, PatientName", db="subjects.source_subject_key",
-          db_val=lambda i, s: (i["subjects"].get(s["subject_key"]) or {}).get("source_subject_key")),
+          db_val=lambda i, s: (i["subjects"].get(deid.subject(i["plan"], s["subject_key"])) or {}).get(
+              "source_subject_key")),
     Field("split", "분할", "train / validation / test / other / none", lambda c: c["s"].get("split"),
           db="series.metadata_json.split", db_val=_ser_meta("split")),
     Field("kind", "종류", "영상 / 라벨 / 영상(DICOM)", lambda c: KIND_LABEL.get(c["s"]["kind"]),
@@ -446,16 +446,19 @@ def _contexts(plan: dict, headers: dict, delivery: dict, registered: bool) -> li
         status = {"local": _status(d.get("pilot"), "local"), "central": _status(d.get("full"), "central"),
                   "db": ("등록" if registered else "미등록") if not s.get("excluded") else None}
         out.append({"s": s, "image": image, "hdr": h.get("header"), "size": h.get("size"), "status": status,
-                    "conv": conv, "pilot": s["series_key"] in pilot, "adapter": plan.get("adapter"),
+                    "conv": conv, "pilot": s["series_key"] in pilot, "adapter": plan.get("adapter"), "plan": plan,
                     "dataset_name": plan["dataset"].get("name"), "study_meta": studies.get(s.get("study_uid"), {}),
                     "roi_names": [f"{k} {v}" for k, v in sorted(names.items(), key=lambda kv: int(kv[0]))]
                     if names else None,
-                    "subject_uuid": subject_uuid(duuid, s["subject_key"])})
+                    "subject_uuid": subject_uuid(duuid, deid.subject(plan, s["subject_key"]))})
     return out
 
 
-def _index(records: dict) -> dict:
-    return {"subjects": {r["source_subject_key"]: r for r in records["subjects"]},
+DEID_FIELDS = {"subject_key": deid.subject, "label_of": deid.path}   # how a field's value is stored when on
+
+
+def _index(records: dict, plan: dict) -> dict:
+    return {"plan": plan, "subjects": {r["source_subject_key"]: r for r in records["subjects"]},
             "studies": {r["study_uid"]: r for r in records["studies"]},
             "series": {r["series_uid"]: r for r in records["series"]}}
 
@@ -523,7 +526,7 @@ def build(run: Run, refresh: bool = False) -> dict:
     headers = nifti_headers(run, plan, refresh)
     ctxs = _contexts(plan, headers, series_delivery(run), bool(run.load("registration.json")))
     records = build_records(run, preview=True)
-    idx = _index(records)
+    idx = _index(records, plan)
     active = [c for c in ctxs if not c["s"].get("excluded")]
     real = real_tags(run, {c["s"]["series_uid"] for c in active})
 
@@ -537,7 +540,7 @@ def build(run: Run, refresh: bool = False) -> dict:
             if s.get("excluded") or s["kind"] not in f.kinds or not f.db_val:
                 continue
             got = f.db_val(idx, s)
-            if _same(v, got):
+            if _same(DEID_FIELDS[f.key](plan, v) if f.key in DEID_FIELDS else v, got):
                 checks[f.key]["ok"] += 1
             elif len(checks[f.key]["bad"]) < 5:
                 checks[f.key]["bad"].append({"series": s["series_key"], "expected": v, "db": got})

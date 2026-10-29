@@ -191,4 +191,13 @@ def test_sample_view_flags_identifiers_passed_through(settings, mixed):
         ("subjects", "source_subject_key"), ("studies", "study_date")}
     page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
     assert "식별 정보 그대로" in page and "원본 (실제 값)" in page
-    assert "DICOM 파일에 들어갈 값 (비식별)" in page and "DB에 들어갈 값 (비식별)" in page
+    assert "DICOM 파일에 들어갈 값" in page and "DB에 들어갈 값" in page and "비식별 켜기" in page   # off by default
+
+
+def test_deid_refuses_original_dicom(settings, mixed, tmp_path, monkeypatch):
+    from dataops import deid
+    from dataops.plan import validate_plan
+    monkeypatch.setenv("DATAOPS_DEID_KEY_FILE", str(tmp_path / "deid.key"))
+    run = make_run(settings, mixed, DATASET)
+    plan, errors = validate_plan(deid.enable(run.load("plan.json")), run.load("inventory.json"))
+    assert any("원본 DICOM은 아직 비식별할 수 없습니다" in e for e in errors)
