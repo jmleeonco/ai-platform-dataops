@@ -1,6 +1,7 @@
 """Management DB access: migrations and idempotent registration of a run's records.
 
-Only the configured NEW schema is touched. Production scpdb/oncolabdb are never connected to here.
+Only the configured NEW schema is touched. Production scpdb/oncolabdb are never connected to here (their shape
+is read by legacy_db, information_schema only).
 """
 from __future__ import annotations
 

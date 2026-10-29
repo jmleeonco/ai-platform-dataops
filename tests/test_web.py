@@ -201,3 +201,20 @@ def test_deid_refuses_original_dicom(settings, mixed, tmp_path, monkeypatch):
     run = make_run(settings, mixed, DATASET)
     plan, errors = validate_plan(deid.enable(run.load("plan.json")), run.load("inventory.json"))
     assert any("원본 DICOM은 아직 비식별할 수 없습니다" in e for e in errors)
+
+
+def test_legacy_page_without_and_with_a_snapshot(settings, test_db):
+    from dataops import legacy_db
+    client = TestClient(create_app(settings))
+    r = client.get("/legacy")
+    assert r.status_code == 200 and "설정 없음" in r.text and "lab_dataset_items" in r.text and "확인 전" in r.text
+    with dbmod.connection(test_db) as conn:                  # stands in for production: read its shape only
+        dbmod.migrate(conn)
+    cfg = {**test_db, "schemas": (test_db["name"],)}
+    snap = legacy_db.refresh(cfg, settings.runtime_dir)
+    assert snap["version"] and {t["t"] for t in snap["tables"]} >= {"datasets", "instances"}
+    assert any(c["t"] == "instances" and c["c"] == "source_path" for c in snap["columns"])
+    r = client.get("/legacy")
+    assert r.status_code == 200 and f't-{test_db["name"]}-instances' in r.text and "읽지 않은 schema" in r.text
+    with pytest.raises(legacy_db.LegacyError, match="연결 정보"):
+        legacy_db.read_schema({"schemas": ("x",)})

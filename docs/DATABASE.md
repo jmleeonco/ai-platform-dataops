@@ -66,5 +66,11 @@ required; source_type defaults local; `(dataset_id,series_instance_uid)` unique.
    resolve conflicts; do not overwrite another department's newer annotations.
 6. Re-run same export without duplicate datasets/items. Export auxiliary history separately.
 
+The page `/legacy` (`dataops/legacy_db.py`) shows the existing DB's shape and this mapping: with
+`DATAOPS_LEGACY_DB_*` set (a SELECT-only account) "구조 다시 읽기" reads information_schema (tables, columns,
+indexes, FKs) and VERSION() in a read-only session into `runtime/legacy_schema.json` — never a row of a
+production table — and marks each mapped column 있음 / 열 없음 / 테이블 없음. Without it the page shows the
+2026-10-27 observations above.
+
 This future adapter is NOT implemented. Direct writes to production scpdb are never part
 of export. Existing Central receiver registers incoming DICOM normally.

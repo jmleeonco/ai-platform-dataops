@@ -65,6 +65,7 @@ class CentralScp:
 class Settings:
     runtime_dir: Path
     db: dict = field(default_factory=dict)
+    legacy_db: dict = field(default_factory=dict)      # existing production DB, read for its shape only
     local_scp: LocalScp | None = None
     bind_host: str = "127.0.0.1"
     port: int = 8096
@@ -110,6 +111,10 @@ def load_settings(env: dict | None = None) -> Settings:
         runtime_dir=runtime,
         db={"host": get("DATAOPS_DB_HOST"), "port": int(get("DATAOPS_DB_PORT") or 3306),
             "name": get("DATAOPS_DB_NAME"), "user": get("DATAOPS_DB_USER"), "password": get("DATAOPS_DB_PASSWORD")},
+        legacy_db={"host": get("DATAOPS_LEGACY_DB_HOST"), "port": int(get("DATAOPS_LEGACY_DB_PORT") or 3306),
+                   "user": get("DATAOPS_LEGACY_DB_USER"), "password": get("DATAOPS_LEGACY_DB_PASSWORD"),
+                   "schemas": tuple(x for x in (get("DATAOPS_LEGACY_DB_SCHEMAS") or "scpdb,oncolabdb")
+                                    .replace(",", " ").split())},
         local_scp=scp,
         bind_host=get("DATAOPS_BIND_HOST") or "127.0.0.1",
         port=int(get("DATAOPS_PORT") or 8096),

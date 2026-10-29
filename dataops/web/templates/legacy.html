@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}기존 DB{% endblock %}
+{% block body %}
+<h1>기존 DB <span class="muted small">운영 MariaDB {{ cfg.schemas|join(', ') }} — 구조만 읽음</span></h1>
+
+<div class="grid">
+  <div class="stat"><span>연결</span>{% if configured %}<b class="mono small">{{ cfg.host }}:{{ cfg.port }}</b><span>읽기 전용 계정</span>
+    {% else %}<b class="b-warn">설정 없음</b><span>아래 설정 방법 참고</span>{% endif %}</div>
+  <div class="stat"><span>마지막으로 읽은 구조</span>{% if snap %}<b class="small">{{ snap.read_at }}</b><span>{{ snap.host }} · {{ snap.version }}</span>
+    {% else %}<b class="b-warn">없음</b><span>아직 읽지 않음</span>{% endif %}</div>
+  <div class="stat"><span>테이블</span><b>{{ v.tables|length if snap else '-' }}</b><span>{{ cfg.schemas|join(', ') }}</span></div>
+</div>
+
+<section>
+{% if configured %}
+<form method="post" action="/legacy/refresh" class="inline">{{ csrf_field(csrf) }}<button type="submit" class="primary">구조 다시 읽기</button>
+<span class="muted small">information_schema(테이블·열·인덱스·FK)와 VERSION()만 읽기 전용 세션에서 조회합니다. 운영 테이블의 행은 읽지도 쓰지도 않습니다.</span></form>
+{% else %}
+<p class="notice">기존 DB 연결 정보가 없습니다. 운영 DB의 <b>SELECT 전용</b> 계정을 <code>~/.config/ai-platform-dataops/env</code>에 넣고 웹앱을 재시작하면 여기서 구조를 읽을 수 있습니다.</p>
+<pre>DATAOPS_LEGACY_DB_HOST=10.101.1.4
+DATAOPS_LEGACY_DB_PORT=3306
+DATAOPS_LEGACY_DB_USER=…
+DATAOPS_LEGACY_DB_PASSWORD=…
+DATAOPS_LEGACY_DB_SCHEMAS=scpdb,oncolabdb</pre>
+{% endif %}
+</section>
+
+<section>
+<h2>새 DB → 기존 DB 대응</h2>
+<p class="muted small">새 관리 DB의 값이 나중에 기존 DB의 어느 열로 가는지입니다. "상태"는 마지막으로 읽은 구조에서 그 열이 있는지 확인한 결과입니다. 기존 DB로 내보내는 기능은 아직 없습니다 (docs/DATABASE.md).</p>
+<div class="table-wrap"><table class="std">
+<tr><th>새 DB</th><th>기존 DB</th><th>방법</th><th>상태</th><th>기존 타입</th><th>비고</th></tr>
+{% for m in v.mapping %}<tr><td class="mono small">{{ m.new }}</td><td class="mono small">{% if m.state == '있음' %}<a href="#t-{{ m.old.split('.')[0] }}-{{ m.old.split('.')[1] }}">{{ m.old }}</a>{% else %}{{ m.old }}{% endif %}</td>
+<td class="small">{{ m.how }}</td>
+<td><span class="badge {{ 'b-ok' if m.state == '있음' else ('b-bad' if m.state in ('열 없음', '테이블 없음') else 'b-warn') }}">{{ m.state }}</span></td>
+<td class="mono small">{{ m.type or '' }}</td><td class="small">{{ m.note }}</td></tr>{% endfor %}
+</table></div>
+</section>
+
+{% if not snap %}
+<section>
+<h2>지금까지 확인된 내용 <span class="muted small">2026-10-27 조사 (docs/CONTEXT.md, docs/DATABASE.md)</span></h2>
+<ul>{% for k in known %}<li>{{ k }}</li>{% endfor %}</ul>
+</section>
+{% else %}
+{% for schema, group in v.tables|groupby('s') %}
+<section>
+<h2 class="mono">{{ schema }} <span class="muted small">테이블 {{ group|length }}개</span></h2>
+<div class="table-wrap"><table class="std">
+<tr><th>테이블</th><th class="num">행 (추정)</th><th class="num">크기 (MB)</th><th class="num">열</th><th>엔진</th><th>설명</th></tr>
+{% for t in group %}<tr><td class="mono"><a href="#t-{{ t.s }}-{{ t.t }}">{{ t.t }}</a></td><td class="num">{{ '{:,}'.format(t.rows_est|int) if t.rows_est is not none else '-' }}</td>
+<td class="num">{{ '{:,.1f}'.format((t.bytes or 0)|float / 1e6) }}</td><td class="num">{{ t.columns|length }}</td><td class="small">{{ t.engine or '' }}</td><td class="small">{{ t.comment or '' }}</td></tr>{% endfor %}
+</table></div>
+{% for t in group %}
+<details id="t-{{ t.s }}-{{ t.t }}"><summary class="mono">{{ t.t }} <span class="muted small">열 {{ t.columns|length }} · 인덱스 {{ t.indexes|length }}{% if t.fks %} · FK {{ t.fks|length }}{% endif %}</span></summary>
+<div class="table-wrap"><table class="std">
+<tr><th class="num">#</th><th>열</th><th>타입</th><th>NULL</th><th>기본값</th><th>키</th><th>기타</th><th>설명</th></tr>
+{% for c in t.columns %}<tr><td class="num">{{ c.n }}</td><td class="mono">{{ c.c }}</td><td class="mono small">{{ c.type }}</td><td>{{ c.nullable }}</td>
+<td class="mono small">{{ c.dflt if c.dflt is not none else '' }}</td><td>{{ c.k or '' }}</td><td class="small">{{ c.extra or '' }}</td><td class="small">{{ c.comment or '' }}</td></tr>{% endfor %}
+</table></div>
+{% if t.indexes %}<p class="small"><b>인덱스</b> {% for i in t.indexes %}<span class="mono">{{ i.name }}({{ i.columns|join(', ') }}){{ ' unique' if i.unique }}</span>{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+{% if t.fks %}<p class="small"><b>FK</b> {% for f in t.fks %}<span class="mono">{{ f.c }} → {{ f.rs }}.{{ f.rt }}.{{ f.rc }}</span>{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+</details>
+{% endfor %}
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

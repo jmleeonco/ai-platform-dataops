@@ -6,12 +6,14 @@ always bound parameters."""
 from __future__ import annotations
 
 import json
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import db as dbmod
+from .. import legacy_db
+from .actions import checked_form
 from ..util import now_iso
 
 PAGE_SIZES = (25, 50, 100, 200)
@@ -133,6 +135,22 @@ def register_db_views(app, settings, page, db_conn, to_csv):
     def live(conn, tables, exact=True) -> dict:
         return {"tables": ",".join(tables), "exact": int(exact), "every": LIVE_SECONDS, "at": now_iso(),
                 "sig": live_sig(dbmod.change_marks(conn, tables, exact), tables)}
+
+    @app.get("/legacy", response_class=HTMLResponse)
+    def legacy_page(request: Request):
+        snap = legacy_db.load(settings.runtime_dir)
+        return page(request, "legacy.html", snap=snap, v=legacy_db.view(snap), known=legacy_db.KNOWN,
+                    configured=legacy_db.configured(settings.legacy_db), cfg=settings.legacy_db)
+
+    @app.post("/legacy/refresh")
+    async def legacy_refresh(request: Request):
+        await checked_form(request)
+        try:
+            snap = legacy_db.refresh(settings.legacy_db, settings.runtime_dir)
+        except legacy_db.LegacyError as e:
+            return RedirectResponse(f"/legacy?err={quote(str(e))}", status_code=303)
+        msg = f"{len(snap['tables'])}개 테이블 구조를 읽었습니다 ({snap['host']}, {snap['version']})"
+        return RedirectResponse(f"/legacy?msg={quote(msg)}", status_code=303)
 
     @app.get("/db/state.json")
     def db_state(t: str = "", exact: int = 0):
