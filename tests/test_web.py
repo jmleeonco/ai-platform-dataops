@@ -243,8 +243,13 @@ def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
     assert rows["PatientID"]["src"] == source_pid and rows["PatientID"]["out"] == dicom["patient_id"]
     assert rows["AccessionNumber"]["src"] == "ACC123" and not rows["AccessionNumber"]["out"]
     assert rows["StudyDate"]["src"] == rows["StudyDate"]["out"] == "20200101"
-    page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
+    client = TestClient(create_app(settings))
+    page = client.get(f"/runs/{run.id}").text
     assert source_pid in page and dicom["patient_id"] in page
+    # the series page shows the source identifiers as they are, next to the outgoing ones
+    page = client.get(f"/runs/{run.id}/series/{dicom['series_uid']}").text
+    assert source_pid in page and source_series in page and dicom["source_ids"]["study_uid"] in page
+    assert dicom["patient_id"] in page and dicom["series_uid"] in page
 
 
 def test_legacy_page_without_and_with_a_snapshot(settings, test_db):

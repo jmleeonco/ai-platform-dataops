@@ -48,10 +48,13 @@
 <section>
 <h2>식별자와 출처</h2>
 <dl class="kv">
-  <dt>PatientID</dt><dd>{{ s.patient_id }} <span class="muted">({{ 'DICOM 원본' if s.kind == 'dicom' else '접두어+그룹에서 생성' }})</span></dd>
-  <dt>대상자 key</dt><dd class="mono">{{ s.subject_key }}</dd>
-  <dt>Study UID</dt><dd class="mono">{{ s.study_uid }} <span class="muted">{{ study.origin if study }}</span></dd>
-  <dt>Series UID</dt><dd class="mono">{{ s.series_uid }}</dd>
+  {# for the owner: the source value as it is, then what leaves (pseudonymised when that is on) #}
+  {% set src = s.source_ids or {} %}
+  {% macro ids(source, out) %}{% if source and source != out %}<span class="mono">{{ source }}</span> <span class="muted">원본</span><br><span class="mono">{{ out }}</span> <span class="muted">보내는 값</span>{% else %}<span class="mono">{{ out }}</span>{% endif %}{% endmacro %}
+  <dt>PatientID</dt><dd>{{ ids(src.patient_id, s.patient_id) }}{% if s.kind != 'dicom' %} <span class="muted">(접두어+대상자 키에서 생성)</span>{% endif %}</dd>
+  <dt>대상자 key</dt><dd class="mono">{{ s.subject_key }} <span class="muted">원본</span></dd>
+  <dt>Study UID</dt><dd>{{ ids(src.study_uid, s.study_uid) }} <span class="muted">{{ study.origin if study and not src.study_uid }}</span></dd>
+  <dt>Series UID</dt><dd>{{ ids(src.series_uid, s.series_uid) }}</dd>
   <dt>Modality 근거</dt><dd>{{ s.modality_basis }} {% if s.needs_review %}<span class="badge b-warn">추정 — 검토 필요</span>{% endif %}</dd>
   <dt>원본 파일</dt><dd class="mono">{% for r in s.sources[:20] %}{{ r }}<br>{% endfor %}{% if s.sources|length > 20 %}… 외 {{ s.sources|length - 20 }}개{% endif %}</dd>
   {% if s.duplicates %}<dt>동일 중복 파일</dt><dd>{{ s.duplicates|length }}개 (같은 SOP UID·같은 바이트, 1개만 사용)</dd>{% endif %}
