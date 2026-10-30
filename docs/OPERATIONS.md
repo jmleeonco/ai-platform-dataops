@@ -61,6 +61,12 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    `/mnt2/data/Public_dataset`; backup/hidden folders refused). Job `analyze`:
    `scan` (directory overview + NIfTI headers, ~1 min for AMOS 62 GB) → analysis agent → `spec`
    check → plan. Nothing is converted or sent.
+   NFS inputs are read in parallel: each directory is listed once and stat'ed with 64 threads, header probes
+   run in `DATAOPS_PROCS` processes (default min(10, CPUs)) × 8 threads, and the freeze handles DICOM series
+   in `DATAOPS_FREEZE_PROCS` processes (`DATAOPS_IO_WORKERS`, 16, is the per-process thread pool). Measured
+   on CIRT (40k DICOM, 21 GB, 138 NFS): analysis 2 min 41 s end to end (scan 41 s, agent 83 s, plan 33 s);
+   pseudonymised freeze of all 349 series 135 s (295 files/s). One at a time, the plan step alone was
+   ~45 min and the freeze ~20 min.
 2. **Analysis agent**: `claude -p` with tools `Read,Glob,Grep,Skill` only, `--permission-mode dontAsk`, no MCP,
    `--setting-sources project` (the work folder's own `.claude/`, which holds only a fresh copy of the
    **dataset-intake skill**: naming rule, vocabulary, folder layout recipes, `codes.json`; the code's prefix
