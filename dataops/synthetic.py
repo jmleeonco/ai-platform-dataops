@@ -129,7 +129,7 @@ def make_challenge(root: Path) -> Path:
 CHALLENGE_PROPOSAL = {
     "summary_ko": "합성 챌린지: 학습 3건(CT 2, MR 1)과 라벨, 테스트 1건.",
     "dataset": {"name": "SynChallenge", "description": "합성 데이터", "source_url": "https://example.org",
-                "license": "CC-BY-SA 4.0", "commercial_use": "Y", "citation": "", "patient_id_prefix": "SYNCH"},
+                "license": "CC-BY-SA 4.0", "commercial_use": "Y", "citation": "", "patient_id_prefix": "SYNCH_ABD_MRCT_PUB"},
     "sources": [{"path": "imagesTr", "role": "image", "split": "train", "note": ""},
                 {"path": "labelsTr", "role": "label", "split": "train", "note": ""},
                 {"path": "imagesTs", "role": "image", "split": "test", "note": ""}],

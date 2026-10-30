@@ -78,10 +78,15 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    writes: dataset, subject, study, each series and its link, the first instance of each series), with what
    was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`.
    Identifying DICOM attributes or DB columns that leave unchanged are flagged "식별 정보 그대로".
+   **Naming** follows the company rule (Notion "04-1. Data prefix 규칙", "Track P"): the prefix is
+   `<source>_<region>[_<modality>][_<sub>]_<PUB|NC|IO>` (A-Z/0-9/_, 3–20 characters; the tier agrees with
+   commercial use: PUB = Y, NC = N, IO = internal only), and PatientID = PatientName = `<prefix>_<source ID>`
+   for NIfTI and original DICOM alike (only those two tags change in a DICOM copy). A prefix that breaks the
+   rule is a plan error, and a run whose commercial use is still U cannot be approved.
    **Pseudonymisation** (`dataops/deid.py`) is off by default — public data are de-identified already —
    and switched per run by the button under the title (a plan field, so part of what is approved). On, the
-   subject key becomes a keyed pseudonym (HMAC under `~/.config/ai-platform-dataops/deid.key`, created on
-   first use, and the dataset UUID: same folder → same pseudonyms) in PatientID / PatientName /
+   subject key becomes a pseudonym number (PatientID = `<prefix>_0001`, …; numbers are kept in the plan's
+   `deid.subjects`, given in keyed-hash order and never reused) in PatientID / PatientName /
    SeriesDescription and in the DB, ImageComments leaves out the source path, and the DB stores a keyed
    hash instead of source paths. Original DICOM exports are rewritten instead of copied: PatientID /
    PatientName become `<prefix>_<pseudonym>`, person names, birth date, accession, institution and the

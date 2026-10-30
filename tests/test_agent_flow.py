@@ -68,7 +68,7 @@ def test_analysis_builds_checked_plan(tmp_path, monkeypatch, challenge):
                      ("nifti", "MR", "train"), ("rtstruct", "RTSTRUCT", "train"), ("rtstruct", "RTSTRUCT", "train"),
                      ("rtstruct", "RTSTRUCT", "train")]
     mr = next(s for s in plan["series"] if s["subject_key"] == "case_0501" and s["kind"] == "nifti")
-    assert "id >= 500" in mr["modality_basis"] and mr["patient_id"] == "SYNCH_case_0501"
+    assert "id >= 500" in mr["modality_basis"] and mr["patient_id"] == "SYNCH_ABD_MRCT_PUB_case_0501"
     rt = next(s for s in plan["series"] if s["subject_key"] == "case_0501" and s["kind"] == "rtstruct")
     assert rt["study_uid"] == mr["study_uid"] and rt["patient_id"] == mr["patient_id"]
     left = {e["path"]: e for e in plan["analysis"]["left_out"]}
@@ -256,7 +256,7 @@ def test_browser_flow(tmp_path, monkeypatch, challenge, scp):
     assert all(f'id="tab-{t}"' in page for t in ("source", "db", "dicom"))
     report = client.get(f"/runs/{run_id}/report").text
     assert "1</span> 데이터셋" in report and "imagesTr의 재정리 사본" in report
-    assert "SYNCH_case_0001" in {r["PatientID"] for r in client.get(f"/runs/{run_id}/dicom.json").json()["rows"]}
+    assert "SYNCH_ABD_MRCT_PUB_case_0001" in {r["PatientID"] for r in client.get(f"/runs/{run_id}/dicom.json").json()["rows"]}
     assert "Ignore previous instructions" not in page + report
     r = client.post(f"/runs/{run_id}/pilot-subjects", data={"csrf": token, "pilot1": "case_0002", "pilot2": "nobody"},
                     follow_redirects=False)
@@ -334,7 +334,7 @@ def test_sample_view_shows_real_and_outgoing_values(tmp_path, monkeypatch, chall
     img = next(se for se in case["dicom"] if se["kind"] == "nifti")
     rows = {r["item"].split(" ")[0]: r for r in img["rows"]}
     key = case["subject_key"]
-    assert rows["PatientID"]["src"] == key and rows["PatientID"]["out"] == f"SYNCH_{key}"
+    assert rows["PatientID"]["src"] == key and rows["PatientID"]["out"] == f"SYNCH_ABD_MRCT_PUB_{key}"
     assert rows["PatientID"]["action"] == "생성" and rows["SeriesInstanceUID"]["action"] == "새 UID 생성"
     assert all(r["out"] for r in img["rows"] if r["action"] == "새 UID 생성")
     db = {}                                                       # the DB part is separate; first row per column
@@ -378,7 +378,7 @@ def test_deid_switch_pseudonymises_what_leaves(tmp_path, monkeypatch, challenge)
     img = next(se for se in case["dicom"] if se["kind"] == "nifti")
     rows = {r["item"].split(" ")[0]: r for r in img["rows"]}
     pseudo = deid.subject(plan, case["subject_key"])
-    assert pseudo != case["subject_key"] and rows["PatientID"]["out"] == f"SYNCH_{pseudo}"
+    assert pseudo != case["subject_key"] and rows["PatientID"]["out"] == f"SYNCH_ABD_MRCT_PUB_{pseudo}"
     assert case["subject_key"] not in rows["PatientName"]["out"] + rows["SeriesDescription"]["out"]
     assert img["source"] not in rows["ImageComments"]["out"]
     db = {}

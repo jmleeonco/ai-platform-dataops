@@ -18,6 +18,7 @@ from pydicom.datadict import tag_for_keyword
 from . import db as dbmod
 from . import metadata
 from .local_send import journals
+from .plan import prefix_problems
 from .prepare import MANIFESTS
 from .records import AUTO_COLUMNS, COLUMN_DESC, TABLE_DESC, TABLES, build_records, instance_rows, transfer_rows
 from .runs import Run, list_runs
@@ -75,6 +76,10 @@ def _s1(run: Run, plan: dict, scan: dict, counts: dict) -> dict:
         ["인용", a.get("citation")],
         ["설명", ds.get("description")],
         ["PatientID 접두어", ds.get("patient_id_prefix")],
+        ["접두어 규칙 (04-1 · Track P)", _join(prefix_problems(ds.get("patient_id_prefix"), ds.get("commercial_use")))
+         or ("맞음" if ds.get("patient_id_prefix") else None)],
+        ["PatientID = PatientName (예)", next((s["patient_id"] for s in plan.get("series", [])
+                                               if not s.get("excluded") and s.get("patient_id")), None)],
         ["대상자 수", counts["subjects"]],
         ["영상 시리즈 (CT / MR)", f"{counts['CT']} / {counts['MR']}"],
         ["라벨 시리즈 (RTSTRUCT)", counts["labels"]],

@@ -22,7 +22,32 @@ SCHEMA_VERSION = 1
 ADAPTER = "default"
 ADAPTER_VERSION = "1"
 NIFTI_MODALITIES = ("CT", "MR")
-PREFIX_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
+PREFIX_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")     # what is stored; the naming rule is prefix_problems
+# Company naming rule (Notion "04-1. Data prefix 규칙" and "Track P"): <source>_<region>[_<modality>][_<sub>]_<tier>,
+# A-Z / 0-9 / "_", 3..20 characters, starts with a letter, does not end with "_". The last token is the usability
+# tier, which has to agree with commercial_use. PatientID = PatientName = <prefix>_<source ID> (or _NNNN when
+# pseudonymised).
+PREFIX_RULE = re.compile(r"[A-Z][A-Z0-9_]{1,18}[A-Z0-9]")
+REGIONS = {"HNN", "THX", "ABD", "PEL", "FULL"}
+TIERS = {"PUB": {"Y"}, "NC": {"N"}, "IO": {"N", "Y"}}      # PUB = CC0/CC-BY, NC = non-commercial, IO = internal only
+
+
+def prefix_problems(prefix: str | None, commercial_use: str) -> list[str]:
+    """Why a PatientID prefix does not follow the company naming rule (empty when it does)."""
+    if not prefix:
+        return []
+    if not PREFIX_RULE.fullmatch(prefix):
+        return [f"접두어 {prefix!r}: 대문자·숫자·_ 만, 3~20자, 영문으로 시작, _로 끝나지 않음 (예: AMOS_ABD_MRCT_NC)"]
+    parts = prefix.split("_")
+    out = []
+    if len(parts) < 3 or parts[1] not in REGIONS:
+        out.append(f"접두어 {prefix!r}: 두 번째 칸은 부위 코드 {'/'.join(sorted(REGIONS))} (형식 <출처>_<부위>_…_<PUB|NC|IO>)")
+    tier = parts[-1]
+    if tier not in TIERS:
+        out.append(f"접두어 {prefix!r}: 마지막 칸은 사용 등급 PUB / NC / IO 중 하나")
+    elif commercial_use in ("Y", "N") and commercial_use not in TIERS[tier]:
+        out.append(f"접두어 {prefix!r}: 등급 {tier}는 상업적 이용 {commercial_use}와 맞지 않음 (PUB=Y, NC=N, IO=내부 전용)")
+    return out
 
 
 def validate_dataset(dataset: dict) -> dict:
@@ -198,6 +223,8 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
         errors.append(str(e))
         return plan, errors
     prefix = plan["dataset"]["patient_id_prefix"]
+    errors += prefix_problems(prefix, plan["dataset"]["commercial_use"])
+    deid.number(plan)
     inv_files = {f["rel"]: f for f in inv["files"]}
     subjects, studies = {}, {}
     all_by_key = {s["series_key"]: s for s in plan["series"]}
@@ -248,7 +275,7 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
                        if deid.enabled(plan) else ids.series_description)
             s.update(subject_key=conv["group_label"], patient_id=ids.patient_id, study_uid=ids.study_uid,
                      series_uid=ids.series_uid, description=s.get("description") or derived)
-            conv["patient_name"] = ids.patient_name
+            conv["patient_name"] = ids.patient_id          # PatientName = PatientID (naming rule)
             conv["study_description"] = n2d._clip(plan["dataset"]["name"]) if agent_spec else ids.study_description
             conv["frame_of_reference_uid"] = ids.frame_of_reference_uid
             if s.get("excluded"):
@@ -258,7 +285,11 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
                 errors.append(f"{key}: 입력 목록에 없는 NIfTI {rel}")
         else:
             src = s.setdefault("source_ids", {k: s[k] for k in ("patient_id", "study_uid", "series_uid")})
-            s.update(patient_id=deid.patient_id(plan, prefix, src["patient_id"]),
+            if not prefix:
+                if not s.get("excluded"):
+                    errors.append(f"{key}: dataset.patient_id_prefix 없음 — PatientID를 정할 수 없습니다")
+                continue
+            s.update(patient_id=f"{prefix}_{deid.subject(plan, src['patient_id'])}",
                      study_uid=deid.uid(plan, src["study_uid"]), series_uid=deid.uid(plan, src["series_uid"]))
             if s.get("excluded"):
                 continue

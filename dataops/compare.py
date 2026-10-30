@@ -113,7 +113,8 @@ def _nifti_sources(c: dict) -> dict:
 def _row(group, item, src_from, src, out, action, ident=False) -> dict:
     src, out = _text(src), _text(out)
     return {"group": group, "item": item, "from": src_from, "src": src, "out": out, "action": action,
-            "changed": src != out, "flag": "식별 정보 그대로" if ident and out and src == out else None}
+            "changed": src != out,      # a prefixed source ID (<prefix>_<PatientID>) still carries it
+            "flag": "식별 정보 그대로" if ident and out and src and (src == out or src in out) else None}
 
 
 def _dicom_rows(c: dict, out_ds) -> list[dict]:

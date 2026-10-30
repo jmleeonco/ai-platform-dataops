@@ -1,9 +1,10 @@
 """Optional pseudonymisation of what leaves this machine. Off by default: public datasets are already
-de-identified and keep their published case IDs. Switched on per run (a plan field, so it is part of the
-approved plan), it replaces the subject key in PatientID / PatientName / SeriesDescription and in the DB with
-a keyed pseudonym, drops the source path from ImageComments and stores a keyed hash instead of the source path
-in the DB. Pseudonyms are HMAC-SHA256 under a key derived from a local secret and the dataset UUID, so the
-same folder gets the same pseudonyms in every run and they cannot be reversed without the secret.
+de-identified and keep their published case IDs (PatientID = <prefix>_<case ID>). Switched on per run (a plan
+field, so it is part of the approved plan), it replaces the subject key in PatientID / PatientName /
+SeriesDescription and in the DB with a pseudonym number (PatientID = <prefix>_0001, the company naming rule),
+drops the source path from ImageComments and stores a keyed hash instead of the source path in the DB. Path
+hashes are HMAC-SHA256 under a key derived from a local secret and the dataset UUID, so the same folder gets
+the same values in every run and they cannot be reversed without the secret.
 
 Original DICOM exports are rewritten instead of copied (`dicom`): PatientID/PatientName become the pseudonym,
 every person name, the birth date and the identifiers listed in REMOVE are emptied, private tags are dropped
@@ -49,13 +50,17 @@ def _reset_descriptions(plan: dict) -> None:
 def enable(plan: dict) -> dict:
     duuid = plan["dataset"]["dataset_uuid"]
     key = hmac.new(_secret(), f"dataset:{duuid}".encode(), hashlib.sha256).hexdigest()
-    plan["deid"] = {"enabled": True, "profile": PROFILE, "key": key}
+    plan["deid"] = {"enabled": True, "profile": PROFILE, "key": key,
+                    "subjects": (plan.get("deid") or {}).get("subjects") or {}}
     _reset_descriptions(plan)
+    number(plan)
     return plan
 
 
 def disable(plan: dict) -> dict:
-    plan["deid"] = {"enabled": False}
+    """Numbers already given are kept, so switching back on gives the same pseudonyms."""
+    plan["deid"] = {"enabled": False, **({"subjects": plan["deid"]["subjects"]}
+                                         if (plan.get("deid") or {}).get("subjects") else {})}
     _reset_descriptions(plan)
     return plan
 
@@ -68,9 +73,27 @@ def _mac(plan: dict, text: str) -> str:
     return hmac.new(bytes.fromhex(plan["deid"]["key"]), text.encode(), hashlib.sha256).hexdigest()
 
 
+def number(plan: dict) -> None:
+    """Give every subject of the plan a pseudonym number (0001, 0002, ...), kept in plan["deid"]["subjects"].
+    Numbers already given never change; new subjects continue after the highest one, in keyed-hash order so the
+    numbering says nothing about the source IDs. The mapping stays in the run folder (it is the re-identification
+    key) and is left out of everything exported."""
+    if not enabled(plan):
+        return
+    numbers = plan["deid"].setdefault("subjects", {})
+    keys = {s["subject_key"] for s in plan.get("series", [])} - set(numbers)
+    for key in sorted(keys, key=lambda k: _mac(plan, "subject:" + k)):
+        numbers[key] = max(numbers.values(), default=0) + 1
+
+
 def subject(plan: dict, key: str) -> str:
-    """The subject key as it leaves this machine."""
-    return f"S{_mac(plan, 'subject:' + key)[:10].upper()}" if enabled(plan) else key
+    """The subject key as it leaves this machine: unchanged, or its number when pseudonymised."""
+    if not enabled(plan):
+        return key
+    n = (plan["deid"].get("subjects") or {}).get(key)
+    if n is None:
+        raise ValueError(f"가명 번호가 없는 대상자입니다 — plan을 다시 검증하세요 ({PROFILE})")
+    return f"{n:04d}"
 
 
 def path(plan: dict, rel: str | None) -> str | None:
@@ -85,14 +108,6 @@ def uid(plan: dict, value: str) -> str:
     if not enabled(plan) or not value or value.startswith(STANDARD_UID):
         return value
     return "2.25." + str(int(_mac(plan, "uid:" + value)[:30], 16))
-
-
-def patient_id(plan: dict, prefix: str | None, source_id: str) -> str:
-    """PatientID of an original DICOM series: unchanged when off, prefix + pseudonym when on."""
-    if not enabled(plan):
-        return source_id
-    pseudo = subject(plan, source_id)
-    return f"{prefix}_{pseudo}" if prefix else pseudo
 
 
 STANDARD_UID = "1.2.840.10008."          # SOP classes, transfer syntaxes, coding schemes: never replaced

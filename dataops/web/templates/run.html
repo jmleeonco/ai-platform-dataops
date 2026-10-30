@@ -199,7 +199,7 @@
   <label>이름<input name="name" value="{{ plan.dataset.name or '' }}" maxlength="256" required {{ 'disabled' if not editable }}></label>
   <label>라이선스<input name="license" value="{{ plan.dataset.license or '' }}" maxlength="128" {{ 'disabled' if not editable }}></label>
   <label>상업적 이용<select name="commercial_use" {{ 'disabled' if not editable }}>{% for v in ['Y','N','U'] %}<option {{ 'selected' if plan.dataset.commercial_use == v }}>{{ v }}</option>{% endfor %}</select></label>
-  <label>PatientID 접두어<input name="patient_id_prefix" value="{{ plan.dataset.patient_id_prefix or '' }}" maxlength="32" pattern="[A-Za-z0-9_\-]{1,32}" {{ 'disabled' if not editable }}></label>
+  <label>PatientID 접두어<input name="patient_id_prefix" value="{{ plan.dataset.patient_id_prefix or '' }}" maxlength="20" pattern="[A-Za-z][A-Za-z0-9_]{1,18}[A-Za-z0-9]" title="&lt;출처&gt;_&lt;부위&gt;[_&lt;modality&gt;][_&lt;하위&gt;]_&lt;PUB|NC|IO&gt; (예: AMOS_ABD_MRCT_NC)" {{ 'disabled' if not editable }}></label>
   <label class="span2">출처 URL<input name="source_url" value="{{ plan.dataset.source_url or '' }}" maxlength="500" {{ 'disabled' if not editable }}></label>
   <label class="span2">설명<input name="description" value="{{ plan.dataset.description or '' }}" maxlength="2000" {{ 'disabled' if not editable }}></label>
   {% if editable %}<div><button type="submit">저장</button></div>{% endif %}

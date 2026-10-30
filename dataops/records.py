@@ -25,7 +25,7 @@ def _plan_summary(plan: dict) -> dict:
             "series": [{**{k: s.get(k) for k in ("kind", "excluded", "series_uid", "modality", "modality_basis",
                                                   "needs_review", "conversion")},
                         "series_key": deid.path(plan, s["series_key"])} for s in plan["series"]],
-            "deid": {k: v for k, v in (plan.get("deid") or {"enabled": False}).items() if k != "key"},
+            "deid": {k: v for k, v in (plan.get("deid") or {"enabled": False}).items() if k not in ("key", "subjects")},
             "skipped": len(plan.get("skipped", [])), "unresolved": plan.get("unresolved", [])}
 
 

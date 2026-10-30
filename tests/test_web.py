@@ -1,5 +1,6 @@
 import io
 import json
+import re
 
 import pytest
 from conftest import DATASET
@@ -175,7 +176,7 @@ def test_db_browser_without_db(settings):
 
 
 def test_sample_view_flags_identifiers_passed_through(settings, mixed):
-    """An original DICOM export is passed through unchanged: identifying values reach the files and the DB."""
+    """An original DICOM export keeps its other identifiers: they reach the files and the DB."""
     from dataops.compare import sample_view
     from dataops.plan import validate_plan
     run = make_run(settings, mixed, DATASET)
@@ -185,8 +186,8 @@ def test_sample_view_flags_identifiers_passed_through(settings, mixed):
     run.store_plan(plan, errors, "test")
     prepare(run, "pilot")
     case = sample_view(run)["cases"][0]
-    assert {r["item"].split(" ")[0] for r in case["dicom"][0]["rows"] if r["flag"]} >= {"PatientName", "PatientID",
-                                                                                         "StudyDate"}
+    # the PatientID keeps the source ID behind the prefix; the PatientName is replaced by that PatientID
+    assert {r["item"].split(" ")[0] for r in case["dicom"][0]["rows"] if r["flag"]} >= {"PatientID", "StudyDate"}
     assert {(t["table"], r["item"]) for t in case["db"] for r in t["rows"] if r["flag"]} >= {
         ("subjects", "source_subject_key"), ("studies", "study_date")}
     page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
@@ -217,14 +218,15 @@ def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
     run = make_run(settings, mixed, DATASET)
     plan = deid.enable(run.load("plan.json"))
     dicom = next(s for s in plan["series"] if s["kind"] == "dicom")
-    source_series, source_pid = dicom["series_uid"], dicom["patient_id"]
+    source_series, source_pid = dicom["series_uid"], dicom["source_ids"]["patient_id"]
     plan["pilot"] = {"subjects": [dicom["subject_key"]]}
     plan, errors = validate_plan(plan, run.load("inventory.json"))
     assert not errors, errors
     run.store_plan(plan, errors, "test")
     m = prepare(run, "pilot")
     dicom = next(s for s in plan["series"] if s["kind"] == "dicom")
-    assert dicom["series_uid"] != source_series and dicom["patient_id"].startswith(DATASET["patient_id_prefix"] + "_S")
+    assert dicom["series_uid"] != source_series and re.fullmatch(rf"{DATASET['patient_id_prefix']}_\d{{4}}",
+                                                                  dicom["patient_id"])    # <prefix>_NNNN
     out = [pydicom.dcmread(run.dir / i["path"]) for i in m["instances"] if i["series_uid"] == dicom["series_uid"]]
     assert out and {str(d.SOPInstanceUID) for d in out}.isdisjoint(sops)
     out_sops = {str(d.SOPInstanceUID) for d in out}

@@ -134,7 +134,8 @@ def _instance_row(path: Path, run_dir: Path, sha: str, source: dict) -> dict:
 
 
 def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) -> list[dict]:
-    """Copy byte for byte, or with pseudonymisation on, write a pseudonymised copy (deid.dicom)."""
+    """Write a pseudonymised copy (deid.dicom), a copy with the prefixed PatientID/PatientName, or (when the
+    PatientID already is the outgoing one) a byte-for-byte copy."""
     rows = []
     src_uid = (s.get("source_ids") or {}).get("series_uid", s["series_uid"])
     for rel in s["sources"]:
@@ -147,6 +148,14 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) ->
             ds = deid.dicom(plan, pydicom.dcmread(src, force=True), s["patient_id"])
             if str(ds.SeriesInstanceUID) != s["series_uid"] or str(ds.StudyInstanceUID) != s["study_uid"]:
                 raise RunError(f"비식별 UID가 계획과 다릅니다: {rel}")
+            dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            ds.save_as(dst, enforce_file_format=True)
+            sha = sha256_file(dst)
+            ds = pydicom.dcmread(dst, stop_before_pixels=True)
+        elif str(ds.get("PatientID", "")) != s["patient_id"]:      # public: only the PatientID gets the prefix
+            ds = pydicom.dcmread(src, force=True)
+            ds.PatientID = ds.PatientName = s["patient_id"]
             dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
             dst.parent.mkdir(parents=True, exist_ok=True)
             ds.save_as(dst, enforce_file_format=True)

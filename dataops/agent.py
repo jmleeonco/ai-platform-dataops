@@ -39,7 +39,7 @@ PROPOSAL_SCHEMA = {
                 "license": {"type": "string", "maxLength": 128},
                 "commercial_use": {"type": "string", "enum": ["Y", "N", "U"]},
                 "citation": {"type": "string", "maxLength": 2000},
-                "patient_id_prefix": {"type": "string", "maxLength": 32},
+                "patient_id_prefix": {"type": "string", "maxLength": 20},
             }},
         "sources": {"type": "array", "maxItems": 64, "items": {
             "type": "object", "additionalProperties": False, "required": ["path", "role", "split", "note"],
@@ -100,8 +100,13 @@ Rules for the proposal:
   original wording.
 - dataset: name, description (Korean, one or two sentences), source_url (homepage or paper), license exactly as
   written by the dataset (or "unknown"), commercial_use Y/N/U derived from that license (CC-BY-NC/ND... => N,
-  CC-BY/CC-BY-SA/CC0 => Y, unclear => U), citation, patient_id_prefix: short uppercase code for PatientIDs,
-  [A-Z0-9_-]{2,16} (e.g. "AMOS").
+  CC-BY/CC-BY-SA/CC0 => Y, unclear => U), citation, patient_id_prefix: the company naming rule
+  <SOURCE>_<REGION>[_<MODALITY>][_<SUB>]_<TIER>, A-Z/0-9/"_" only, 3-20 characters, e.g. "AMOS_ABD_MRCT_NC",
+  "TCGA_PEL_MRCT_PUB". SOURCE: the program or challenge that made the data (TCGA, AMOS, MSD, KITS, LIDC, TSEG,
+  AUTOPET...; for an in-house export INT, or the hospital code YCC/SVS/SVG/SVY/NCC/SMC). REGION: HNN, THX, ABD,
+  PEL or FULL (several regions / whole body). MODALITY: CT, MR, MRCT (both), MULTI, RTS. SUB: optional short
+  token (CON, NON, PED, a year...). TIER: PUB when commercial_use is Y, NC when N, IO for internal-only data.
+  PatientID = PatientName = <prefix>_<case ID>, so the prefix must leave room for the case ID within 64.
 - pilot_subjects: exactly three subject keys used as samples (shown to the owner and sent on trial); prefer cases that have labels and, when the dataset has
   several modalities, one of each.
 - nifti_layout: "standard" unless the files are Onco NIfTI (LPS, arrays Z,Y,X) produced by nii2OncoNii.

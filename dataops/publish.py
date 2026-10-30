@@ -55,6 +55,8 @@ def approve(run: Run, approver: str, confirm: str, note: str = "") -> dict:
             raise RunError(f"파일럿이 모두 수신된 뒤에만 승인할 수 있습니다 (현재 {meta['status']})")
         if confirm.strip() != plan["dataset"]["name"].strip():
             raise RunError("확인 문구가 데이터셋 이름과 다릅니다")
+        if plan["dataset"].get("commercial_use") not in ("Y", "N"):     # Track P: U = not yet usable
+            raise RunError("라이선스(상업적 이용)가 미확정(U)이면 편입할 수 없습니다 — Y 또는 N으로 정한 뒤 승인하세요")
         pilot = run.load("manifest-pilot.json")
         if not pilot or pilot["plan_sha256"] != meta["plan_sha256"]:
             raise RunError("파일럿이 현재 plan으로 만들어지지 않았습니다 — 파일럿을 다시 보내세요")

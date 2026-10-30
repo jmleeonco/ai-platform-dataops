@@ -16,7 +16,7 @@ from dataops.config import LocalScp, Settings, load_settings  # noqa: E402
 from dataops.synthetic import make_mixed  # noqa: E402
 
 DATASET = {"dataset_uuid": "11111111-2222-4333-8444-555555555555", "name": "Synthetic mixed",
-           "license": "synthetic", "commercial_use": "U", "patient_id_prefix": "SYNPUB"}
+           "license": "synthetic", "commercial_use": "N", "patient_id_prefix": "SYN_FULL_MULTI_IO"}
 
 
 class LoopbackSCP:

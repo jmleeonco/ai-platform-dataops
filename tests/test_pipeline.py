@@ -2,13 +2,14 @@ import json
 import shutil
 from pathlib import Path
 
+import pydicom
 import pytest
 from conftest import DATASET, LoopbackSCP
 
 from dataops.config import LocalScp, load_settings
 from dataops.inventory import inventory
 from dataops.local_send import destination, send_local
-from dataops.plan import build_plan, validate_plan
+from dataops.plan import build_plan, prefix_problems, validate_plan
 from dataops.prepare import prepare, verify_artifacts
 from dataops.records import build_records
 from dataops.runs import Run, RunError
@@ -31,7 +32,8 @@ def make_run(settings, root, dataset=DATASET, **options) -> Run:
 
 
 def series_by_kind(plan):
-    return {s["series_key"].split(":", 1)[1] if s["kind"] == "nifti" else s["patient_id"]: s for s in plan["series"]}
+    return {s["series_key"].split(":", 1)[1] if s["kind"] == "nifti" else s["source_ids"]["patient_id"]: s
+            for s in plan["series"]}
 
 
 # --------------------------------------------------------------------------- inventory / plan
@@ -56,7 +58,8 @@ def test_plan_groups_and_blocks_masks(settings, mixed):
     mr = by["nifti/case02/t1.nii.gz"]
     assert ct["modality"] == "CT" and ct["needs_review"]
     assert mr["modality"] == "MR" and "nifti/case02/t1.json" in mr["sources"]
-    assert ct["patient_id"] == "SYNPUB_nifti_case01"
+    assert ct["patient_id"] == "SYN_FULL_MULTI_IO_nifti_case01"
+    assert by["SYN_P001"]["patient_id"] == "SYN_FULL_MULTI_IO_SYN_P001"          # <prefix>_<source ID>
     assert {s["rel"] for s in plan["skipped"]} == {"nifti/case01/case01_mask.nii.gz", "README.txt"}
 
 
@@ -69,9 +72,9 @@ def test_missing_prefix_is_unresolved_not_localreview(settings, mixed):
     assert not any("LOCALREVIEW" in (s["patient_id"] or "") for s in plan["series"])
     with pytest.raises(RunError):
         prepare(run)
-    # excluding the NIfTI series resolves it
-    for s in plan["series"]:
-        s["excluded"] = s["kind"] == "nifti"
+    # DICOM series need it too (PatientID = <prefix>_<source PatientID>); setting it resolves both
+    assert any(e.startswith("dicom:") and "patient_id_prefix" in e for e in run.load("plan_errors.json"))
+    plan["dataset"]["patient_id_prefix"] = DATASET["patient_id_prefix"]
     plan, errors = validate_plan(plan, run.load("inventory.json"))
     assert errors == [] and plan["unresolved"] == []
 
@@ -128,8 +131,13 @@ def test_prepare_freezes_exact_bytes_and_no_input_mutation(settings, mixed):
     assert snapshot(mixed) == before
     assert len(m["instances"]) == 6 + 6 + 8 + 8
     for inst in m["instances"]:
-        if inst["source"]["kind"] == "dicom":
-            assert inst["sha256"] == inst["source"]["sha256"]              # pass-through is byte-identical
+        if inst["source"]["kind"] == "dicom":                              # pass-through: only the PatientID
+            out = pydicom.dcmread(run.dir / inst["path"])                  # and PatientName get the prefix
+            src = pydicom.dcmread(mixed / inst["source"]["rel"])
+            assert out.PatientID == out.PatientName == f"{DATASET['patient_id_prefix']}_{src.PatientID}"
+            assert out.PixelData == src.PixelData and out.SOPInstanceUID == src.SOPInstanceUID
+            assert {e.keyword for e in out} == {e.keyword for e in src} and all(
+                out[e.tag].value == e.value for e in src if e.keyword not in ("PatientID", "PatientName"))
     assert verify_artifacts(run) == []
     assert run.meta["status"] == "PREPARED"
     with pytest.raises(RunError):
@@ -264,3 +272,14 @@ def test_scan_is_bounded(mixed, monkeypatch):
     assert full["stopped_after_s"] is None and full["totals"]["bytes"] > 0
     assert any(d.get("bytes_estimated") for d in full["dirs"] if d["files"] > 1)
     assert scanmod.scan(mixed, time_budget_s=0)["stopped_after_s"] == 0
+
+
+def test_prefix_naming_rule():
+    """Notion 04-1 / Track P: <source>_<region>[_<modality>][_<sub>]_<PUB|NC|IO>, tier agreeing with the license."""
+    for ok, cu in (("TCGA_PEL_MRCT_PUB", "Y"), ("AMOS_ABD_MRCT_NC", "N"), ("YCC_PEL_CT_BRACHY_IO", "N"),
+                   ("UNK_FULL_CT_IO", "U")):
+        assert prefix_problems(ok, cu) == [], ok
+    for bad, cu in (("AMOS", "N"), ("ycc_hnn_mr_io", "N"), ("YCC_HNN_", "N"), ("YCC-HNN-MR-IO", "N"),
+                    ("YCC_XYZ_CT_IO", "N"), ("AMOS_ABD_MRCT_PUB", "N"), ("TCGA_PEL_MRCT_NC", "Y"),
+                    ("A_VERY_LONG_PREFIX_ABD_IO", "N")):
+        assert prefix_problems(bad, cu), bad
