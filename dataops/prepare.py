@@ -22,7 +22,7 @@ from .legacy import n2d
 from .plan import validate_plan
 from .rtstruct import RtstructError, build_rtstruct, rtstruct_ids
 from .runs import Run, RunError
-from .util import copy_hashed, now_iso, safe_name, sha256_file, sha256_json
+from .util import copy_hashed, now_iso, pmap, safe_name, sha256_file, sha256_json
 
 MANIFESTS = {"pilot": "manifest-pilot.json", "full": "manifest.json"}
 BODY_KEYS = ("run_id", "run_uuid", "plan_sha256", "plan_revision", "scope", "instances")
@@ -136,9 +136,9 @@ def _instance_row(path: Path, run_dir: Path, sha: str, source: dict) -> dict:
 def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) -> list[dict]:
     """Write a pseudonymised copy (deid.dicom), a copy with the prefixed PatientID/PatientName, or (when the
     PatientID already is the outgoing one) a byte-for-byte copy."""
-    rows = []
     src_uid = (s.get("source_ids") or {}).get("series_uid", s["series_uid"])
-    for rel in s["sources"]:
+
+    def one(rel: str) -> dict:
         src = root / rel
         src_sha = sha256_file(src)
         ds = read_dicom_header(src)
@@ -166,8 +166,9 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) ->
             sha = copy_hashed(src, dst)
             if sha != src_sha:
                 raise RunError(f"복사 검증 실패 (hash 불일치): {rel}")
-        rows.append(_instance_row_raw(dst, run_dir, sha, ds, {"kind": "dicom", "rel": rel, "sha256": src_sha}))
-    return rows
+        return _instance_row_raw(dst, run_dir, sha, ds, {"kind": "dicom", "rel": rel, "sha256": src_sha})
+
+    return pmap(one, s["sources"])          # files of a series are independent; NFS reads are latency-bound
 
 
 def _instance_row_raw(path: Path, run_dir: Path, sha: str, ds, source: dict) -> dict:

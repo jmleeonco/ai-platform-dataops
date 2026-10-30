@@ -6,13 +6,14 @@ directories are not entered; symlinked directories are not followed.
 from __future__ import annotations
 
 import os
+import stat
 from collections import Counter
 from pathlib import Path
 
 import pydicom
 
 from .legacy import n2d
-from .util import now_iso
+from .util import now_iso, pmap
 
 SKIP_DIR_NAMES = {"backup", "backups"}
 SIDECAR_EXT = {".json"}
@@ -85,29 +86,54 @@ def _dicom_record(ds) -> dict:
     }
 
 
+def _lstat(path: Path):
+    try:
+        return path.lstat()
+    except OSError:
+        return None
+
+
 def walk(root: Path):
-    """Yield (path, skipped_dir_rel) pairs; skipped directories are reported, not entered."""
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        here = Path(dirpath)
-        keep = []
-        for d in sorted(dirnames):
-            rel = (here / d).relative_to(root).as_posix()
-            if d.lower() in SKIP_DIR_NAMES or d.startswith(".") or (here / d).is_symlink():
-                yield None, rel
+    """Yield (path, skipped_dir_rel, stat) triples in sorted top-down order; skipped directories are reported,
+    not entered. Each directory is listed once and its entries are stat'ed in parallel (NFS: one round trip
+    each). stat is None for a symlink or an entry that vanished; the caller stats those itself."""
+    def visit(here: Path):
+        try:
+            names = sorted(os.listdir(here))
+        except OSError:
+            return
+        paths = [here / n for n in names]
+        stats = pmap(_lstat, paths)
+        subdirs, files = [], []
+        for p, st in zip(paths, stats):
+            if st is None:
+                files.append((p, None))
+            elif stat.S_ISLNK(st.st_mode):
+                if p.is_dir():                        # a symlinked directory is reported, not followed
+                    yield None, p.relative_to(root).as_posix(), None
+                else:
+                    files.append((p, None))
+            elif stat.S_ISDIR(st.st_mode):
+                if p.name.lower() in SKIP_DIR_NAMES or p.name.startswith("."):
+                    yield None, p.relative_to(root).as_posix(), None
+                else:
+                    subdirs.append(p)
             else:
-                keep.append(d)
-        dirnames[:] = keep
-        for name in sorted(filenames):
-            yield here / name, None
+                files.append((p, st))
+        for p, st in files:
+            yield p, None, st
+        for d in subdirs:
+            yield from visit(d)
+    yield from visit(root)
 
 
 def inventory(root: Path) -> dict:
     root = root.resolve()
     if not root.is_dir():
         raise ValueError(f"input directory not found: {root}")
-    files, skipped_dirs = [], []
+    files, skipped_dirs, probe = [], [], []
     counts = Counter()
-    for path, skipped in walk(root):
+    for path, skipped, st in walk(root):
         if skipped is not None:
             skipped_dirs.append(skipped)
             continue
@@ -118,10 +144,9 @@ def inventory(root: Path) -> dict:
             if not target.is_relative_to(root):
                 rec.update(kind="skipped", reason="symlink outside input root")
                 files.append(rec)
-                counts["skipped"] += 1
                 continue
         try:
-            rec["size"] = path.stat().st_size
+            rec["size"] = st.st_size if st is not None else path.stat().st_size
         except OSError as e:
             rec.update(kind="unreadable", reason=str(e))
         if rec["kind"] == "other":
@@ -131,14 +156,15 @@ def inventory(root: Path) -> dict:
             elif ext in SIDECAR_EXT:
                 rec["kind"] = "sidecar"
             elif ext not in NON_DICOM_EXT:
-                ds = read_dicom_header(path)
-                if ds is not None:
-                    if str(ds.SOPClassUID) == DICOMDIR_SOP:
-                        rec.update(kind="dicomdir", reason="DICOMDIR index (not an image)")
-                    else:
-                        rec["kind"] = "dicom"
-                        rec["dicom"] = _dicom_record(ds)
-        counts[rec["kind"]] += 1
+                probe.append((rec, path))
         files.append(rec)
+    for (rec, _), ds in zip(probe, pmap(read_dicom_header, [p for _, p in probe])):
+        if ds is not None:
+            if str(ds.SOPClassUID) == DICOMDIR_SOP:
+                rec.update(kind="dicomdir", reason="DICOMDIR index (not an image)")
+            else:
+                rec["kind"] = "dicom"
+                rec["dicom"] = _dicom_record(ds)
+    counts.update(rec["kind"] for rec in files)
     return {"schema_version": 1, "input_root": str(root), "created_at": now_iso(),
             "counts": dict(counts), "skipped_dirs": skipped_dirs, "files": files}

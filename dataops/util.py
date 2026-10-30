@@ -16,6 +16,20 @@ def valid_uid(value) -> bool:
     return isinstance(value, str) and 1 <= len(value) <= 64 and UID_RE.fullmatch(value) is not None
 
 
+IO_WORKERS = int(os.environ.get("DATAOPS_IO_WORKERS") or 16)
+
+
+def pmap(fn, items, workers: int = IO_WORKERS) -> list:
+    """fn over items on a thread pool, results in input order. On NFS every open and stat is a round trip
+    to the server, so reading many small files one at a time is latency-bound; 16 at once is ~10x faster."""
+    items = list(items)
+    if workers <= 1 or len(items) < 2:
+        return [fn(i) for i in items]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(min(workers, len(items))) as ex:
+        return list(ex.map(fn, items))
+
+
 def now_iso() -> str:
     return _dt.datetime.now().astimezone().isoformat(timespec="seconds")
 

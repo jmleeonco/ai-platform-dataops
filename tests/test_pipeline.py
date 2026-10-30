@@ -270,7 +270,10 @@ def test_scan_is_bounded(mixed, monkeypatch):
     monkeypatch.setattr(scanmod, "STAT_PER_DIR", 1)
     full = scanmod.scan(mixed)
     assert full["stopped_after_s"] is None and full["totals"]["bytes"] > 0
-    assert any(d.get("bytes_estimated") for d in full["dirs"] if d["files"] > 1)
+    # walk stats every entry (in parallel), so sizes are exact, not estimated from the first STAT_PER_DIR
+    real = sum(p.stat().st_size for p in Path(mixed).rglob("*") if p.is_file() and not p.is_symlink()
+               and not any(part.startswith(".") or part.lower() in ("backup", "backups") for part in p.relative_to(mixed).parts))
+    assert not any(d.get("bytes_estimated") for d in full["dirs"]) and full["totals"]["bytes"] == real
     assert scanmod.scan(mixed, time_budget_s=0)["stopped_after_s"] == 0
 
 

@@ -25,7 +25,7 @@ MAX_DIRS = 400
 EXAMPLES = 4
 SAMPLES_PER_DIR = 2
 DICOM_PROBES_PER_DIR = 3
-STAT_PER_DIR = 200        # beyond this, file sizes in a directory are estimated (a stat is slow on NFS)
+STAT_PER_DIR = 200        # walk stats every entry; this caps only the extra stats of symlinked files
 TIME_BUDGET_S = 120       # the overview stops here; the agent is told it is partial
 
 
@@ -73,7 +73,7 @@ def scan(root: Path, time_budget_s: float = TIME_BUDGET_S) -> dict:
     dirs: dict[str, dict] = {}
     skipped_dirs, docs, errors = [], [], []
     totals = Counter()
-    for path, skipped in walk(root):
+    for path, skipped, st in walk(root):
         if time.monotonic() > deadline:
             stopped = True
             break
@@ -85,7 +85,10 @@ def scan(root: Path, time_budget_s: float = TIME_BUDGET_S) -> dict:
         d = dirs.setdefault(drel, {"dir": drel, "files": 0, "bytes": 0, "kinds": Counter(), "examples": [],
                                    "nifti_samples": [], "dicom_samples": [], "_dicom_probes": 0, "_stat": 0})
         size = 0
-        if d["_stat"] < STAT_PER_DIR:
+        if st is not None:                    # walk already stat'ed it
+            size = st.st_size
+            d["_stat"] += 1
+        elif d["_stat"] < STAT_PER_DIR:
             try:
                 size = path.stat().st_size
                 d["_stat"] += 1
@@ -135,15 +138,18 @@ def scan(root: Path, time_budget_s: float = TIME_BUDGET_S) -> dict:
             "dirs": out_dirs[:MAX_DIRS], "docs": docs[:200], "skipped_dirs": skipped_dirs, "errors": errors[:100]}
 
 
-def list_files(root: Path, rel_dir: str) -> list[str]:
-    """Every file under root/rel_dir (or the file itself), relative to root, with the inventory's skip rules."""
+def list_files(root: Path, rel_dir: str, sizes: bool = False) -> list:
+    """Every file under root/rel_dir (or the file itself), relative to root, with the inventory's skip rules.
+    sizes=True gives (rel, size) pairs, size None when walk could not stat the entry (a symlink)."""
     base = (root / rel_dir).resolve() if rel_dir not in ("", ".") else root
     if base.is_file():
-        return [base.relative_to(root).as_posix()]
+        rel = base.relative_to(root).as_posix()
+        return [(rel, base.stat().st_size)] if sizes else [rel]
     out = []
-    for path, skipped in walk(base):
+    for path, skipped, st in walk(base):
         if skipped is None and path is not None:
-            out.append(path.relative_to(root).as_posix())
+            rel = path.relative_to(root).as_posix()
+            out.append((rel, st.st_size if st is not None else None) if sizes else rel)
     return out
 
 

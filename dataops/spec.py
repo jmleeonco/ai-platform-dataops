@@ -21,7 +21,7 @@ from .plan import PREFIX_RE, dicom_series, validate_plan
 from .rtstruct import RTSTRUCT_VERSION
 from .rules import RULES_VERSION
 from .scan import file_kind, list_files
-from .util import now_iso
+from .util import now_iso, pmap
 
 ADAPTER = "agent-spec"
 ADAPTER_VERSION = "1"
@@ -177,12 +177,37 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
     skipped, unresolved, series = [], [], []
     images, labels = [], []
     log(f"spec: {len(included)} files under {len(spec['sources'])} sources")
-    for rel, src in sorted(included.items()):
+
+    def probe(item):
+        """stat, kind and header of one file; run in parallel (NFS round trips), errors kept for the loop."""
+        rel, src = item
         path = root / rel
-        kind = file_kind(path)
+        out = {"kind": file_kind(path)}
+        try:
+            out["size"] = path.stat().st_size
+        except OSError as e:
+            return {**out, "error": e}
+        if src["role"] == "ignore":
+            return out
+        if out["kind"] == "nifti":
+            try:
+                out["geo"] = header_geometry(path, layout)
+            except (SpecError, Exception) as e:  # noqa: BLE001 - any reader failure is reported per file
+                out["geo_error"] = e
+        elif out["kind"] == "dicom?" and src["role"] == "image":
+            ds = read_dicom_header(path)
+            out["dicom"] = _dicom_record(ds) if ds is not None else None
+        return out
+
+    items = sorted(included.items())
+    for (rel, src), pr in zip(items, pmap(probe, items)):
+        path = root / rel
+        kind = pr["kind"]
         rec = {"rel": rel, "size": None, "kind": "other", "source": src["path"]}
         try:
-            rec["size"] = path.stat().st_size
+            if "error" in pr:
+                raise pr["error"]
+            rec["size"] = pr["size"]
         except OSError as e:
             rec.update(kind="unreadable", reason=str(e)[:200])
             inv_files.append(rec)
@@ -196,7 +221,9 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
         if kind == "nifti":
             rec["kind"] = "nifti"
             try:
-                geo = header_geometry(path, layout)
+                if "geo_error" in pr:
+                    raise pr["geo_error"]
+                geo = pr["geo"]
             except (SpecError, Exception) as e:  # noqa: BLE001 - any reader failure is reported per file
                 rec.update(kind="unreadable", reason=str(e)[:200])
                 skipped.append({"rel": rel, "kind": "unsupported", "reason": f"NIfTI 헤더: {str(e)[:200]}"})
@@ -207,9 +234,8 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
                      "subject": m.group(1) if m else None}
             (images if src["role"] == "image" else labels).append(entry)
         elif kind in ("dicom?",) and src["role"] == "image":
-            ds = read_dicom_header(path)
-            if ds is not None:
-                rec.update(kind="dicom", dicom=_dicom_record(ds))
+            if pr["dicom"] is not None:
+                rec.update(kind="dicom", dicom=pr["dicom"])
             else:
                 skipped.append({"rel": rel, "kind": "other", "reason": "DICOM이 아닌 파일"})
         else:
@@ -292,7 +318,7 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
 
     # ---- everything else in the folder ----
     not_included = defaultdict(lambda: {"files": 0, "bytes": 0, "reason": None})
-    for rel in list_files(root, "."):
+    for rel, size in list_files(root, ".", sizes=True):
         if rel in included:
             continue
         hit = _excluded_by(rel, spec["excluded"])
@@ -300,7 +326,7 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
         g = not_included[(top, reason)]
         g["files"] += 1
         try:
-            g["bytes"] += (root / rel).stat().st_size
+            g["bytes"] += size if size is not None else (root / rel).stat().st_size
         except OSError:
             pass
     left_out = [{"path": top, "reason": reason, **{k: v for k, v in g.items() if k != "reason"}}
