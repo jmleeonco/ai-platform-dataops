@@ -94,6 +94,24 @@ def test_proposal_checks_refuse(challenge, patch, message):
         check_proposal(challenge.resolve(), {**CHALLENGE_PROPOSAL, **patch})
 
 
+def test_proposal_without_rules_version_is_flagged(challenge):
+    """The agent shows it read the dataset-intake skill by echoing codes.json's rules_version."""
+    assert not any("dataset-intake" in f for f in check_proposal(challenge, CHALLENGE_PROPOSAL)["findings"])
+    stale = dict(CHALLENGE_PROPOSAL, rules_version="")
+    assert "dataset-intake" in check_proposal(challenge, stale)["findings"][0]
+
+
+def test_agent_runs_with_the_intake_skill(tmp_path):
+    """The headless agent sees the skill in its work folder (project settings) and may invoke it."""
+    from dataops.agent import agent_command, install_skill
+    from dataops.rules import SKILL_DIR
+    dst = install_skill(tmp_path)
+    assert {p.name for p in dst.iterdir()} >= {"SKILL.md", "naming.md", "layouts.md", "vocabulary.md", "codes.json"}
+    assert (dst / "codes.json").read_bytes() == (SKILL_DIR / "codes.json").read_bytes()
+    cmd = agent_command(Settings(runtime_dir=tmp_path, agent_cmd="claude"), tmp_path, tmp_path)
+    assert "Read,Glob,Grep,Skill" in cmd and cmd[cmd.index("--setting-sources") + 1] == "project"
+
+
 def test_failed_proposal_marks_run_and_job(tmp_path, monkeypatch, challenge):
     bad = {**CHALLENGE_PROPOSAL, "sources": [{"path": "/etc", "role": "image", "split": "train", "note": ""}]}
     settings = make_settings(tmp_path, monkeypatch, bad)

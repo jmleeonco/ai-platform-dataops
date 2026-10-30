@@ -61,11 +61,16 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    `/mnt2/data/Public_dataset`; backup/hidden folders refused). Job `analyze`:
    `scan` (directory overview + NIfTI headers, ~1 min for AMOS 62 GB) → analysis agent → `spec`
    check → plan. Nothing is converted or sent.
-2. **Analysis agent**: `claude -p` with tools `Read,Glob,Grep` only, `--permission-mode dontAsk`, no MCP,
-   no settings, `--add-dir <dataset>`, work folder `~/.cache/ai-platform-dataops/agent/<run>/`,
+2. **Analysis agent**: `claude -p` with tools `Read,Glob,Grep,Skill` only, `--permission-mode dontAsk`, no MCP,
+   `--setting-sources project` (the work folder's own `.claude/`, which holds only a fresh copy of the
+   **dataset-intake skill**: naming rule, vocabulary, folder layout recipes, `codes.json`; the code's prefix
+   check reads the same `codes.json`), `--add-dir <dataset>`, work folder `~/.cache/ai-platform-dataops/agent/<run>/`,
    `--json-schema` (proposal in `dataops/agent.py`), cap `DATAOPS_AGENT_BUDGET_USD` (5) and
    `DATAOPS_AGENT_TIMEOUT_S` (1800), model `DATAOPS_AGENT_MODEL` (claude-opus-5-5). Dataset text is
-   data. Raw output: `runs/<run>/agent_proposal.json`.
+   data. Raw output: `runs/<run>/agent_proposal.json`. The proposal echoes `rules_version` from
+   `codes.json`; without it, table 4 says the rules were not read. Rules change in the skill (Notion is the
+   master copy), not in `agent.py`. `python -m dataops prefix-check PREFIX --commercial Y|N|U` checks a
+   prefix by hand.
 3. **Report**: every dataset gets the same standard report (`dataops/report.py`, schema_version 2) —
    the same numbered tables with the same columns, whatever the dataset; agent text only appears as
    cell values. Tables 6 and 7 are what leaves this machine: the DICOM values the local SCP receives, and

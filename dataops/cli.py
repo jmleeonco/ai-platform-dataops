@@ -122,7 +122,15 @@ def main(argv=None) -> int:
     sv = sub.add_parser("serve")
     sv.add_argument("--host")
     sv.add_argument("--port", type=int)
+    pc = sub.add_parser("prefix-check", help="check a PatientID prefix against the company naming rule")
+    pc.add_argument("prefix")
+    pc.add_argument("--commercial", choices=["Y", "N", "U"], default="U")
     args = p.parse_args(argv)
+    if args.cmd == "prefix-check":            # needs no settings or DB
+        from .plan import prefix_problems
+        problems = prefix_problems(args.prefix, args.commercial)
+        print("\n".join(problems) if problems else f"ok: PatientID = PatientName = {args.prefix}_<case ID>")
+        return 1 if problems else 0
     settings = load_settings()
     try:
         if args.cmd in ("plan", "ingest"):

@@ -7,6 +7,9 @@ Read AGENTS.md and docs/OPERATIONS.md first. Python is `~/.venvs/ai-platform-dat
 10.101.1.183 (run from the repo root). The owner normally drives everything in the browser
 (http://127.0.0.1:8096, `deploy/web.sh start`; from a PC `ssh -L 8096:127.0.0.1:8096 ubuntu@10.101.1.183`).
 
+Naming (prefix, PatientID/PatientName, license tier) and folder layouts follow the dataset-intake skill,
+which the analysis agent also loads; use it when choosing or checking a prefix.
+
 Analysing a folder for the owner:
 1. Start it like the browser does: `python -m dataops analyze DIR` (queued for the worker) or
    `--wait` to run it in this shell. DIR must be under DATAOPS_INPUT_ROOTS.

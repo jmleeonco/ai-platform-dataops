@@ -19,6 +19,7 @@ from .inventory import _dicom_record, read_dicom_header
 from .legacy import n2d
 from .plan import PREFIX_RE, dicom_series, validate_plan
 from .rtstruct import RTSTRUCT_VERSION
+from .rules import RULES_VERSION
 from .scan import file_kind, list_files
 from .util import now_iso
 
@@ -109,7 +110,11 @@ def check_proposal(root: Path, p: dict) -> dict:
             "excluded": excluded, "subject_pattern": {"regex": subj["regex"], "note": str(subj.get("note") or "")},
             "modality_rules": rules, "label_pairing": p["label_pairing"], "label_names": names,
             "pilot_subjects": [str(x) for x in (p.get("pilot_subjects") or [])][:4], "nifti_layout": layout,
-            "findings": [str(x)[:600] for x in p.get("findings") or []][:30],
+            "rules_version": str(p.get("rules_version") or ""),
+            "findings": ([] if p.get("rules_version") == RULES_VERSION else       # the skill was not read
+                         [f"⚠ 에이전트가 규칙(dataset-intake skill, {RULES_VERSION})을 읽었다는 표시가 없습니다 "
+                          f"(rules_version={str(p.get('rules_version') or '')[:40]!r}) — 접두어·구성 판단을 확인하세요"])
+            + [str(x)[:600] for x in p.get("findings") or []][:30],
             "questions": [str(x)[:600] for x in p.get("questions") or []][:10]}
 
 
@@ -325,6 +330,7 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
             "analysis": {"summary_ko": spec["summary_ko"], "findings": spec["findings"],
                          "questions": spec["questions"], "sources": spec["sources"], "excluded": spec["excluded"],
                          "subject_pattern": spec["subject_pattern"], "modality_rules": spec["modality_rules"],
+                         "rules_version": spec["rules_version"],
                          "label_pairing": spec["label_pairing"],
                          "label_names": {str(k): v for k, v in spec["label_names"].items()},
                          "citation": ds.get("citation"), "left_out": left_out, "agent": agent_meta or {}}}

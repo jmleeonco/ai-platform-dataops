@@ -16,6 +16,7 @@ from uuid import UUID
 from . import deid
 from .legacy import n2d
 from .rtstruct import rtstruct_ids
+from .rules import PREFIX_RULE, REGIONS, TIERS
 from .util import now_iso, sha256_file, valid_uid
 
 SCHEMA_VERSION = 1
@@ -23,13 +24,9 @@ ADAPTER = "default"
 ADAPTER_VERSION = "1"
 NIFTI_MODALITIES = ("CT", "MR")
 PREFIX_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")     # what is stored; the naming rule is prefix_problems
-# Company naming rule (Notion "04-1. Data prefix 규칙" and "Track P"): <source>_<region>[_<modality>][_<sub>]_<tier>,
-# A-Z / 0-9 / "_", 3..20 characters, starts with a letter, does not end with "_". The last token is the usability
-# tier, which has to agree with commercial_use. PatientID = PatientName = <prefix>_<source ID> (or _NNNN when
-# pseudonymised).
-PREFIX_RULE = re.compile(r"[A-Z][A-Z0-9_]{1,18}[A-Z0-9]")
-REGIONS = {"HNN", "THX", "ABD", "PEL", "FULL"}
-TIERS = {"PUB": {"Y"}, "NC": {"N"}, "IO": {"N", "Y"}}      # PUB = CC0/CC-BY, NC = non-commercial, IO = internal only
+# Company naming rule (Notion "04-1. Data prefix 규칙" and "Track P", copied in the dataset-intake skill):
+# <source>_<region>[_<modality>][_<sub>]_<tier>. The last token is the usability tier, which has to agree with
+# commercial_use. PatientID = PatientName = <prefix>_<source ID> (or _NNNN when pseudonymised).
 
 
 def prefix_problems(prefix: str | None, commercial_use: str) -> list[str]:

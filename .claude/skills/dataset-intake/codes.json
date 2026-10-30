@@ -1,0 +1,23 @@
+{
+  "rules_version": "naming-2026-10-30",
+  "source": "Notion 04-1 Data prefix 규칙 (v0.6) + Track P 공개 데이터셋 편입 트랙 (Curator 승인 2026-07-16). Notion is the master copy; this file is a copy.",
+  "prefix_pattern": "[A-Z][A-Z0-9_]{1,18}[A-Z0-9]",
+  "regions": {"HNN": "두경부 (head and neck, brain)", "THX": "흉부 (thorax)", "ABD": "복부 (abdomen)",
+              "PEL": "골반 (pelvis, prostate)", "FULL": "두 부위 이상 / 전신"},
+  "tiers": {"PUB": {"commercial_use": ["Y"], "meaning": "CC0 / CC-BY 등, 상업 포함 외부 반출 가능"},
+            "NC": {"commercial_use": ["N"], "meaning": "CC-BY-NC 등, 비상업·연구용"},
+            "IO": {"commercial_use": ["N", "Y"], "meaning": "Internal Only, 제한적 DUA·재배포 금지·사내 데이터"}},
+  "modalities": {"CT": "CT", "MR": "MR", "MRCT": "MR + CT", "MULTI": "그 밖의 여러 modality", "CBCTP": "CBCT pair",
+                 "RTP": "RTPLAN", "RTS": "RTSTRUCT", "PETCT": "PET/CT"},
+  "sources": {
+    "internal": {"INT": "사내데이터 / Internal Dataset", "SVG": "강남세브란스", "SVY": "용인세브란스",
+                 "SVS": "신촌세브란스", "SVR": "신촌세브란스 영상의학과", "YCC": "연세암병원", "OMN": "OneMedNet",
+                 "SMC": "삼성서울병원", "STMARY": "성모병원", "HELIX": "Helix 수의", "YUMC": "영남대병원",
+                 "NCC": "국립암센터", "SNUH": "서울대병원", "UNK": "출처 미상 (확인 불가일 때만)"},
+    "public": {"TCGA": "TCGA (TCIA 호스팅)", "TCIA": "TCIA 컬렉션 (만든 주체 코드가 없을 때)", "AMOS": "AMOS 챌린지",
+               "MSD": "Medical Segmentation Decathlon", "KITS": "KiTS", "LIDC": "LIDC-IDRI",
+               "TSEG": "TotalSegmentator (04-1 표에는 TSG — 미확정)", "AUTOPET": "autoPET"}
+  },
+  "subtypes": {"CON": "조영", "NON": "비조영", "ORL": "경구 조영", "PED": "소아", "IMPL": "임플란트",
+               "BRACHY": "근접치료", "4D": "4D", "YYYY": "수집 연도"}
+}
