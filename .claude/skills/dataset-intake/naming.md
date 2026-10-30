@@ -57,6 +57,9 @@ This is a copy of Notion "04-1. Data prefix 규칙" (v0.6) and "Track P". If the
 
 ## Worked examples
 
+These show how the rule is applied. They are not a list of registered prefixes: a prefix that matches a row
+here is not thereby taken. Only the Notion Data List says whether a prefix already exists.
+
 | Dataset | Prefix | Why |
 |---|---|---|
 | AMOS 2022 (CT + MR, abdomen, CC BY-NC-SA) | `AMOS_ABD_MRCT_NC` | Challenge code, abdomen, both modalities, non-commercial |
