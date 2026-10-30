@@ -30,6 +30,30 @@ def pmap(fn, items, workers: int = IO_WORKERS) -> list:
         return list(ex.map(fn, items))
 
 
+PROCS = int(os.environ.get("DATAOPS_PROCS") or min(10, os.cpu_count() or 1))
+
+
+def _pmap_chunk(job: tuple) -> list:
+    fn, chunk, threads = job
+    return pmap(fn, chunk, threads)
+
+
+def ppmap(fn, items, procs: int = PROCS, threads: int = 8, chunk: int = 64) -> list:
+    """pmap over worker processes, for per-file work that is CPU-bound under the GIL (DICOM header parsing):
+    chunks of items go to processes, each reading its chunk with a few threads. fn must be module-level
+    and items picklable. Small inputs stay in this process."""
+    items = list(items)
+    if procs <= 1 or len(items) < 2 * chunk:
+        return pmap(fn, items)
+    from concurrent.futures import ProcessPoolExecutor
+    chunks = [items[i:i + chunk] for i in range(0, len(items), chunk)]
+    out = []
+    with ProcessPoolExecutor(min(procs, len(chunks))) as ex:
+        for part in ex.map(_pmap_chunk, [(fn, c, threads) for c in chunks]):
+            out += part
+    return out
+
+
 def now_iso() -> str:
     return _dt.datetime.now().astimezone().isoformat(timespec="seconds")
 

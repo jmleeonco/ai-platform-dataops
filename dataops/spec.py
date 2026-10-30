@@ -15,13 +15,13 @@ import nibabel as nib
 import numpy as np
 
 from .agent import ROLES, SPLITS
-from .inventory import _dicom_record, read_dicom_header
+from .inventory import SKIP_DIR_NAMES, _dicom_record, read_dicom_header
 from .legacy import n2d
 from .plan import PREFIX_RE, dicom_series, validate_plan
 from .rtstruct import RTSTRUCT_VERSION
 from .rules import RULES_VERSION
 from .scan import file_kind, list_files
-from .util import now_iso, pmap
+from .util import now_iso, ppmap
 
 ADAPTER = "agent-spec"
 ADAPTER_VERSION = "1"
@@ -159,6 +159,37 @@ def _source_of(rel: str, sources: list[dict]) -> dict | None:
     return best
 
 
+def _walked(root: Path, rel: str) -> bool:
+    """Whether a walk of the root reaches rel (no hidden, backup or symlinked directory on the way)."""
+    parts = [] if rel in ("", ".") else rel.split("/")
+    return not any(part.startswith(".") or part.lower() in SKIP_DIR_NAMES or (root / "/".join(parts[:i + 1])).is_symlink()
+                   for i, part in enumerate(parts))
+
+
+def _probe(item: tuple) -> dict:
+    """stat, kind and header of one input file, for build_spec_plan. Runs in worker processes (ppmap), so it
+    is module-level and returns errors as text."""
+    root, rel, role, layout, size = item
+    path = root / rel
+    out = {"kind": file_kind(path), "size": size}
+    if size is None:                          # not stat'ed by the walk (a symlink)
+        try:
+            out["size"] = path.stat().st_size
+        except OSError as e:
+            return {**out, "error": str(e)}
+    if role == "ignore":
+        return out
+    if out["kind"] == "nifti":
+        try:
+            out["geo"] = header_geometry(path, layout)
+        except Exception as e:  # noqa: BLE001 - any reader failure is reported per file
+            out["geo_error"] = str(e)
+    elif out["kind"] == "dicom?" and role == "image":
+        ds = read_dicom_header(path)
+        out["dicom"] = _dicom_record(ds) if ds is not None else None
+    return out
+
+
 def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, agent_meta: dict | None = None,
                     log=print) -> tuple[dict, dict]:
     """(plan, inventory) from a checked proposal. Raises SpecError for an unusable proposal."""
@@ -168,9 +199,13 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
     rules = [(re.compile(r["regex"]), r) for r in spec["modality_rules"]]
     layout = spec["nifti_layout"]
 
+    sizes = dict(list_files(root, ".", sizes=True))     # one walk of the whole root, reused below
     included, inv_files = {}, []
     for s in spec["sources"]:
-        for rel in list_files(root, s["path"]):
+        p = s["path"]
+        rels = [r for r in sizes if p == "." or r == p or r.startswith(p + "/")] if _walked(root, p) \
+            else list_files(root, p)
+        for rel in rels:
             src = _source_of(rel, spec["sources"])
             if src is s:
                 included[rel] = s
@@ -178,41 +213,18 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
     images, labels = [], []
     log(f"spec: {len(included)} files under {len(spec['sources'])} sources")
 
-    def probe(item):
-        """stat, kind and header of one file; run in parallel (NFS round trips), errors kept for the loop."""
-        rel, src = item
-        path = root / rel
-        out = {"kind": file_kind(path)}
-        try:
-            out["size"] = path.stat().st_size
-        except OSError as e:
-            return {**out, "error": e}
-        if src["role"] == "ignore":
-            return out
-        if out["kind"] == "nifti":
-            try:
-                out["geo"] = header_geometry(path, layout)
-            except (SpecError, Exception) as e:  # noqa: BLE001 - any reader failure is reported per file
-                out["geo_error"] = e
-        elif out["kind"] == "dicom?" and src["role"] == "image":
-            ds = read_dicom_header(path)
-            out["dicom"] = _dicom_record(ds) if ds is not None else None
-        return out
-
     items = sorted(included.items())
-    for (rel, src), pr in zip(items, pmap(probe, items)):
+    probes = ppmap(_probe, [(root, rel, src["role"], layout, sizes.get(rel)) for rel, src in items])
+    for (rel, src), pr in zip(items, probes):
         path = root / rel
         kind = pr["kind"]
         rec = {"rel": rel, "size": None, "kind": "other", "source": src["path"]}
-        try:
-            if "error" in pr:
-                raise pr["error"]
-            rec["size"] = pr["size"]
-        except OSError as e:
-            rec.update(kind="unreadable", reason=str(e)[:200])
+        if "error" in pr:
+            rec.update(kind="unreadable", reason=pr["error"][:200])
             inv_files.append(rec)
-            skipped.append({"rel": rel, "kind": "unreadable", "reason": str(e)[:200]})
+            skipped.append({"rel": rel, "kind": "unreadable", "reason": pr["error"][:200]})
             continue
+        rec["size"] = pr["size"]
         if src["role"] == "ignore":
             rec["kind"] = "ignored"
             inv_files.append(rec)
@@ -220,15 +232,12 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
             continue
         if kind == "nifti":
             rec["kind"] = "nifti"
-            try:
-                if "geo_error" in pr:
-                    raise pr["geo_error"]
-                geo = pr["geo"]
-            except (SpecError, Exception) as e:  # noqa: BLE001 - any reader failure is reported per file
-                rec.update(kind="unreadable", reason=str(e)[:200])
-                skipped.append({"rel": rel, "kind": "unsupported", "reason": f"NIfTI 헤더: {str(e)[:200]}"})
+            if "geo_error" in pr:
+                rec.update(kind="unreadable", reason=pr["geo_error"][:200])
+                skipped.append({"rel": rel, "kind": "unsupported", "reason": f"NIfTI 헤더: {pr['geo_error'][:200]}"})
                 inv_files.append(rec)
                 continue
+            geo = pr["geo"]
             m = subj_rx.search(path.name)
             entry = {"rel": rel, "name": path.name, "split": src["split"], "geo": geo,
                      "subject": m.group(1) if m else None}
@@ -318,7 +327,7 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
 
     # ---- everything else in the folder ----
     not_included = defaultdict(lambda: {"files": 0, "bytes": 0, "reason": None})
-    for rel, size in list_files(root, ".", sizes=True):
+    for rel, size in sizes.items():
         if rel in included:
             continue
         hit = _excluded_by(rel, spec["excluded"])

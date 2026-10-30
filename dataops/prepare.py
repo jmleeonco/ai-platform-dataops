@@ -10,7 +10,9 @@ series already frozen for the pilot is reused byte for byte.
 """
 from __future__ import annotations
 
+import os
 import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -22,10 +24,13 @@ from .legacy import n2d
 from .plan import validate_plan
 from .rtstruct import RtstructError, build_rtstruct, rtstruct_ids
 from .runs import Run, RunError
-from .util import copy_hashed, now_iso, pmap, safe_name, sha256_file, sha256_json
+from .util import IO_WORKERS, copy_hashed, now_iso, pmap, safe_name, sha256_file, sha256_json
 
 MANIFESTS = {"pilot": "manifest-pilot.json", "full": "manifest.json"}
 BODY_KEYS = ("run_id", "run_uuid", "plan_sha256", "plan_revision", "scope", "instances")
+# DICOM series are frozen in this many worker processes (each with a few reader threads): the per-file work
+# (parse, pseudonymise, two hashes) holds the GIL, so threads alone stop near 85 files/s.
+FREEZE_PROCS = int(os.environ.get("DATAOPS_FREEZE_PROCS") or min(10, os.cpu_count() or 1))
 
 
 def manifest_name(scope: str) -> str:
@@ -69,6 +74,8 @@ def prepare(run: Run, scope: str = "full", log=lambda msg: None) -> dict:
         by_key = {s["series_key"]: s for s in plan["series"]}
         instances, series_out, images = [], [], {}
         chosen = sorted(chosen, key=lambda s: s["kind"] == "rtstruct")
+        todo = [s for s in chosen if s["kind"] == "dicom" and s["series_uid"] not in reusable]
+        frozen = _freeze_dicom_parallel(root, todo, art_root, run.dir, plan, log) if len(todo) > 1 else {}
         for n, s in enumerate(chosen, start=1):
             log(f"[{n}/{len(chosen)}] {s['series_key']}")
             sdir = art_root / safe_name(s["series_uid"][-40:], 48)
@@ -76,6 +83,8 @@ def prepare(run: Run, scope: str = "full", log=lambda msg: None) -> dict:
             # sources are re-hashed even when the artifacts are reused: a changed input is refused
             if reused and all(_pin(pins, root, src) == sha for src, sha in reused["sources"].items()):
                 rows, report = reused["instances"], reused["report"]
+            elif s["series_key"] in frozen:
+                rows, report = frozen[s["series_key"]], None
             else:
                 if sdir.exists():
                     shutil.rmtree(sdir)
@@ -133,7 +142,37 @@ def _instance_row(path: Path, run_dir: Path, sha: str, source: dict) -> dict:
     return _instance_row_raw(path, run_dir, sha, ds, source)
 
 
-def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) -> list[dict]:
+_WORKER: dict = {}
+
+
+def _worker_init(root: Path, run_dir: Path, plan: dict) -> None:
+    _WORKER.update(root=root, run_dir=run_dir, plan=plan)       # the plan crosses once per process
+
+
+def _freeze_one(job: tuple) -> tuple[str, list[dict]]:
+    s, sdir = job
+    if sdir.exists():
+        shutil.rmtree(sdir)
+    return s["series_key"], _freeze_dicom(_WORKER["root"], s, sdir, _WORKER["run_dir"], _WORKER["plan"], workers=4)
+
+
+def _freeze_dicom_parallel(root: Path, series: list[dict], art_root: Path, run_dir: Path, plan: dict,
+                           log) -> dict:
+    """{series_key: rows} for DICOM series frozen in worker processes (FREEZE_PROCS)."""
+    out = {}
+    jobs = [(s, art_root / safe_name(s["series_uid"][-40:], 48)) for s in series]
+    with ProcessPoolExecutor(min(FREEZE_PROCS, len(jobs)), initializer=_worker_init,
+                             initargs=(root, run_dir, plan)) as ex:
+        futures = [ex.submit(_freeze_one, j) for j in jobs]
+        for k, f in enumerate(as_completed(futures), start=1):
+            key, rows = f.result()
+            out[key] = rows
+            if k == len(jobs) or k % 10 == 0:
+                log(f"DICOM 시리즈 {k}/{len(jobs)} 고정 ({sum(len(r) for r in out.values())} 파일)")
+    return out
+
+
+def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, workers: int = IO_WORKERS) -> list[dict]:
     """Write a pseudonymised copy (deid.dicom), a copy with the prefixed PatientID/PatientName, or (when the
     PatientID already is the outgoing one) a byte-for-byte copy."""
     src_uid = (s.get("source_ids") or {}).get("series_uid", s["series_uid"])
@@ -168,7 +207,7 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) ->
                 raise RunError(f"복사 검증 실패 (hash 불일치): {rel}")
         return _instance_row_raw(dst, run_dir, sha, ds, {"kind": "dicom", "rel": rel, "sha256": src_sha})
 
-    return pmap(one, s["sources"])          # files of a series are independent; NFS reads are latency-bound
+    return pmap(one, s["sources"], workers)  # files of a series are independent; NFS reads are latency-bound
 
 
 def _instance_row_raw(path: Path, run_dir: Path, sha: str, ds, source: dict) -> dict:
