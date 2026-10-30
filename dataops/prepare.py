@@ -80,7 +80,7 @@ def prepare(run: Run, scope: str = "full", log=lambda msg: None) -> dict:
                 if sdir.exists():
                     shutil.rmtree(sdir)
                 if s["kind"] == "dicom":
-                    rows, report = _freeze_dicom(root, s, sdir, run.dir), None
+                    rows, report = _freeze_dicom(root, s, sdir, run.dir, plan), None
                 elif s["kind"] == "nifti":
                     rows, report = _convert_nifti(root, s, sdir, run.dir, plan, pins)
                 else:
@@ -98,7 +98,7 @@ def prepare(run: Run, scope: str = "full", log=lambda msg: None) -> dict:
         run.save(name, manifest)
         if scope == "pilot":
             run.set_status("PILOT_READY", f"pilot: {len(instances)} instances frozen "
-                                          f"({', '.join(sorted({s['subject_key'] for s in chosen}))})",
+                                          f"({', '.join(sorted({deid.subject(plan, s['subject_key']) for s in chosen}))})",
                            pilot_manifest_sha256=manifest["manifest_sha256"])
         else:
             run.set_status("PREPARED", f"{len(instances)} instances frozen",
@@ -133,18 +133,30 @@ def _instance_row(path: Path, run_dir: Path, sha: str, source: dict) -> dict:
     return _instance_row_raw(path, run_dir, sha, ds, source)
 
 
-def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path) -> list[dict]:
+def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict) -> list[dict]:
+    """Copy byte for byte, or with pseudonymisation on, write a pseudonymised copy (deid.dicom)."""
     rows = []
+    src_uid = (s.get("source_ids") or {}).get("series_uid", s["series_uid"])
     for rel in s["sources"]:
         src = root / rel
         src_sha = sha256_file(src)
         ds = read_dicom_header(src)
-        if ds is None or str(ds.get("SeriesInstanceUID", "")) != s["series_uid"]:
+        if ds is None or str(ds.get("SeriesInstanceUID", "")) != src_uid:
             raise RunError(f"입력 파일이 계획 이후 바뀌었습니다: {rel}")
-        dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
-        sha = copy_hashed(src, dst)
-        if sha != src_sha:
-            raise RunError(f"복사 검증 실패 (hash 불일치): {rel}")
+        if deid.enabled(plan):
+            ds = deid.dicom(plan, pydicom.dcmread(src, force=True), s["patient_id"])
+            if str(ds.SeriesInstanceUID) != s["series_uid"] or str(ds.StudyInstanceUID) != s["study_uid"]:
+                raise RunError(f"비식별 UID가 계획과 다릅니다: {rel}")
+            dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            ds.save_as(dst, enforce_file_format=True)
+            sha = sha256_file(dst)
+            ds = pydicom.dcmread(dst, stop_before_pixels=True)
+        else:
+            dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
+            sha = copy_hashed(src, dst)
+            if sha != src_sha:
+                raise RunError(f"복사 검증 실패 (hash 불일치): {rel}")
         rows.append(_instance_row_raw(dst, run_dir, sha, ds, {"kind": "dicom", "rel": rel, "sha256": src_sha}))
     return rows
 

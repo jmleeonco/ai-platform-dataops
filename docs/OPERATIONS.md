@@ -83,8 +83,13 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    subject key becomes a keyed pseudonym (HMAC under `~/.config/ai-platform-dataops/deid.key`, created on
    first use, and the dataset UUID: same folder → same pseudonyms) in PatientID / PatientName /
    SeriesDescription and in the DB, ImageComments leaves out the source path, and the DB stores a keyed
-   hash instead of source paths. Original DICOM passed through is not covered yet: with it on, such series
-   are a plan error. The
+   hash instead of source paths. Original DICOM exports are rewritten instead of copied: PatientID /
+   PatientName become `<prefix>_<pseudonym>`, person names, birth date, accession, institution and the
+   other identifiers in `deid.REMOVE` are emptied, private tags are dropped, every instance UID is replaced
+   by a keyed `2.25.` UID (consistently, so an RTSTRUCT still references its CT), and study/series dates are
+   kept. "비식별 켜고 분석" on the new-analysis form switches it on before the first sample extraction. While
+   on, the pages (sample view, report, lists) show pseudonyms and hashed paths instead of the originals;
+   the folder picker on the new-analysis page still shows folder names. The
    whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
    above; dataset fields, splits, labels and history are under "설정 · 기록". The folder overview
    (`scan.py`) stops after 120 s and stats at most 200 files per directory (sizes beyond are estimated). `/runs/<run>/report` has all 10, `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with

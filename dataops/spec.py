@@ -17,7 +17,7 @@ import numpy as np
 from .agent import ROLES, SPLITS
 from .inventory import _dicom_record, read_dicom_header
 from .legacy import n2d
-from .plan import PREFIX_RE, validate_plan
+from .plan import PREFIX_RE, dicom_series, validate_plan
 from .rtstruct import RTSTRUCT_VERSION
 from .scan import file_kind, list_files
 from .util import now_iso
@@ -278,6 +278,13 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
                                       "label_names": {str(k): v for k, v in spec["label_names"].items()},
                                       "source_sha256": None, "identity": f"path:{lb['rel']}", "deterministic": True}})
 
+    # ---- original DICOM: passed through (pseudonymised when switched on), one series per Series UID ----
+    _, _, dicom = dicom_series(inv_files, root)
+    for s in dicom:
+        s["split"] = included[s["sources"][0]]["split"]
+        s["metadata"]["split"] = s["split"]
+    series += dicom
+
     # ---- everything else in the folder ----
     not_included = defaultdict(lambda: {"files": 0, "bytes": 0, "reason": None})
     for rel in list_files(root, "."):
@@ -294,13 +301,14 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
     left_out = [{"path": top, "reason": reason, **{k: v for k, v in g.items() if k != "reason"}}
                 for (top, reason), g in sorted(not_included.items())]
 
-    subjects = sorted({s["subject_key"] for s in series if s["kind"] == "nifti"})
-    with_label = {s["subject_key"] for s in series if s["kind"] == "rtstruct"}
+    image_kinds = ("nifti", "dicom")
+    subjects = sorted({s["subject_key"] for s in series if s["kind"] in image_kinds})
+    with_label = {s["subject_key"] for s in series if s["kind"] == "rtstruct" or s["modality"] in ("RTSTRUCT", "SEG")}
     pilot = [x for x in spec["pilot_subjects"] if x in subjects][:SAMPLES]
     if len(pilot) < SAMPLES:
         for mod in ("CT", "MR", None):
             for s in series:
-                if s["kind"] == "nifti" and s["subject_key"] not in pilot and s["subject_key"] in with_label \
+                if s["kind"] in image_kinds and s["subject_key"] not in pilot and s["subject_key"] in with_label \
                         and (mod is None or s["modality"] == mod) and len(pilot) < SAMPLES:
                     pilot.append(s["subject_key"])
                     break

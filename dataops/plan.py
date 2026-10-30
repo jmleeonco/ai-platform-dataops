@@ -65,25 +65,21 @@ def _group_label(rel: str, group_by: str, root_name: str) -> str:
     return "_".join(parts[:-1]) or root_name
 
 
-def build_plan(inv: dict, dataset: dict, run_id: str, options: dict | None = None) -> dict:
-    options = {"nifti_group_by": "dir", "nifti_layout": "auto", "modality_override": None,
-               "max_series_per_study": 16, **(options or {})}
-    dataset = validate_dataset(dataset)
-    root = Path(inv["input_root"])
-    subjects, studies, series, skipped, unresolved = {}, {}, [], [], []
-
-    # ---------------- DICOM pass-through ----------------
+def dicom_series(files: list[dict], root: Path) -> tuple[dict, dict, list[dict]]:
+    """(subjects, studies, series) for the original DICOM files of an inventory, one series per Series UID.
+    source_ids keeps the identity read from the files; validate_plan derives the outgoing one from it."""
+    subjects, studies, series = {}, {}, []
     by_series = defaultdict(list)
-    for f in inv["files"]:
+    for f in files:
         if f["kind"] == "dicom":
             d = f["dicom"]
             key = d["series_uid"] or f"(missing series uid) {Path(f['rel']).parent.as_posix()}"
             by_series[key].append(f)
-    for key, files in sorted(by_series.items()):
-        files.sort(key=lambda f: f["rel"])
-        first = files[0]["dicom"]
+    for key, group in sorted(by_series.items()):
+        group.sort(key=lambda f: f["rel"])
+        first = group[0]["dicom"]
         seen, duplicates, conflicts, sources = {}, [], [], []
-        for f in files:
+        for f in group:
             sop = f["dicom"]["sop_uid"]
             if sop in seen:
                 a, b = sha256_file(root / seen[sop]), sha256_file(root / f["rel"])
@@ -91,8 +87,8 @@ def build_plan(inv: dict, dataset: dict, run_id: str, options: dict | None = Non
                 continue
             seen[sop] = f["rel"]
             sources.append(f["rel"])
-        patients = sorted({f["dicom"]["patient_id"] for f in files})
-        studies_here = sorted({f["dicom"]["study_uid"] for f in files})
+        patients = sorted({f["dicom"]["patient_id"] for f in group})
+        studies_here = sorted({f["dicom"]["study_uid"] for f in group})
         meta = dict(first["series"])
         subject_key = first["patient_id"]
         subjects.setdefault(subject_key, {"source_subject_key": subject_key, "patient_id": first["patient_id"],
@@ -102,16 +98,30 @@ def build_plan(inv: dict, dataset: dict, run_id: str, options: dict | None = Non
         s = {"series_key": f"dicom:{key}", "kind": "dicom", "excluded": False,
              "subject_key": subject_key, "patient_id": first["patient_id"],
              "study_uid": first["study_uid"], "series_uid": first["series_uid"],
+             "source_ids": {"patient_id": first["patient_id"], "study_uid": first["study_uid"],
+                            "series_uid": first["series_uid"]},
              "modality": meta.get("Modality", ""), "modality_basis": "DICOM Modality tag",
              "needs_review": False, "description": str(meta.get("SeriesDescription", "")),
              "series_number": meta.get("SeriesNumber"), "instance_count": len(sources),
-             "sop_class_uids": sorted({f["dicom"]["sop_class_uid"] for f in files}),
+             "sop_class_uids": sorted({f["dicom"]["sop_class_uid"] for f in group}),
              "sources": sources, "duplicates": duplicates, "conflicts": conflicts,
              "metadata": meta, "conversion": None}
         if len(patients) > 1 or len(studies_here) > 1:
             s["conflicts"].append({"reason": "series spans several PatientID/Study UID values",
                                    "patients": patients, "studies": studies_here})
         series.append(s)
+    return subjects, studies, series
+
+
+def build_plan(inv: dict, dataset: dict, run_id: str, options: dict | None = None) -> dict:
+    options = {"nifti_group_by": "dir", "nifti_layout": "auto", "modality_override": None,
+               "max_series_per_study": 16, **(options or {})}
+    dataset = validate_dataset(dataset)
+    root = Path(inv["input_root"])
+    subjects, studies, series, skipped, unresolved = {}, {}, [], [], []
+
+    # ---------------- DICOM pass-through ----------------
+    subjects, studies, series = dicom_series(inv["files"], root)
 
     # ---------------- NIfTI conversion proposals ----------------
     sidecars = {f["rel"] for f in inv["files"] if f["kind"] == "sidecar"}
@@ -247,18 +257,19 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
             if f is None or f["kind"] != "nifti":
                 errors.append(f"{key}: 입력 목록에 없는 NIfTI {rel}")
         else:
+            src = s.setdefault("source_ids", {k: s[k] for k in ("patient_id", "study_uid", "series_uid")})
+            s.update(patient_id=deid.patient_id(plan, prefix, src["patient_id"]),
+                     study_uid=deid.uid(plan, src["study_uid"]), series_uid=deid.uid(plan, src["series_uid"]))
             if s.get("excluded"):
                 continue
-            if deid.enabled(plan):
-                errors.append(f"{key}: 원본 DICOM은 아직 비식별할 수 없습니다 — 비식별을 끄거나 이 시리즈를 제외하세요")
             for rel in s["sources"]:
                 f = inv_files.get(rel)
-                if f is None or f["kind"] != "dicom" or f["dicom"]["series_uid"] != s["series_uid"]:
+                if f is None or f["kind"] != "dicom" or f["dicom"]["series_uid"] != src["series_uid"]:
                     errors.append(f"{key}: 입력 목록과 맞지 않는 DICOM 파일 {rel}")
                     break
                 d = f["dicom"]
-                if d["patient_id"] != s["patient_id"] or d["study_uid"] != s["study_uid"]:
-                    errors.append(f"{key}: DICOM은 그대로 전달하므로 PatientID/Study UID를 plan에서 바꿀 수 없습니다 ({rel})")
+                if d["patient_id"] != src["patient_id"] or d["study_uid"] != src["study_uid"]:
+                    errors.append(f"{key}: 파일의 PatientID/Study UID가 계획과 다릅니다 ({rel})")
                     break
             if s["conflicts"]:
                 errors.append(f"{key}: 같은 SOP UID에 다른 바이트 또는 여러 환자/검사 — 확인 필요 {s['conflicts'][:3]}")
@@ -293,10 +304,15 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
                          "origin": "derived:prefix+group" if any(s["kind"] == "nifti" and s["subject_key"] == k
                                                                  for s in active) else "source:PatientID"}
                         for k, v in sorted(subjects.items())]
-    old_meta = {st["study_uid"]: st.get("metadata", {}) for st in plan.get("studies", [])}
-    plan["studies"] = [{"study_uid": u, "subject_key": k,
-                        "origin": "source" if u in old_meta and old_meta[u] else "generated",
-                        "metadata": old_meta.get(u, {})} for u, k in sorted(studies.items())]
+    # a source study keeps its metadata when pseudonymisation switches its UID
+    old_meta = {st.get("source_study_uid", st["study_uid"]): st.get("metadata", {}) for st in plan.get("studies", [])}
+    source_uid = {s["study_uid"]: s["source_ids"]["study_uid"] for s in plan["series"] if s.get("source_ids")}
+    plan["studies"] = []
+    for u, k in sorted(studies.items()):
+        src = source_uid.get(u, u)
+        plan["studies"].append({"study_uid": u, "subject_key": k,
+                                "origin": "source" if old_meta.get(src) else "generated",
+                                "metadata": old_meta.get(src, {}), **({"source_study_uid": src} if src != u else {})})
     by_key = {s["series_key"]: s for s in active}
     group_sizes = defaultdict(int)
     for s in active:

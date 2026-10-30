@@ -194,13 +194,54 @@ def test_sample_view_flags_identifiers_passed_through(settings, mixed):
     assert "DICOM 파일에 들어갈 값" in page and "DB에 들어갈 값" in page and "비식별 켜기" in page   # off by default
 
 
-def test_deid_refuses_original_dicom(settings, mixed, tmp_path, monkeypatch):
+def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
+    """Pseudonymisation on: an original DICOM export leaves with a pseudonym, without names or identifiers and
+    with new UIDs that still reference each other; study dates stay. The page does not show the originals."""
+    import pydicom
     from dataops import deid
+    from dataops.compare import sample_view
+    from dataops.inventory import read_dicom_header
     from dataops.plan import validate_plan
     monkeypatch.setenv("DATAOPS_DEID_KEY_FILE", str(tmp_path / "deid.key"))
+    files = sorted(p for p in mixed.rglob("*") if p.is_file() and read_dicom_header(p) is not None)
+    sops = [str(pydicom.dcmread(p).SOPInstanceUID) for p in files]
+    for i, p in enumerate(files):
+        ds = pydicom.dcmread(p)
+        ds.AccessionNumber, ds.PatientBirthDate, ds.InstitutionName = "ACC123", "19500101", "Some Hospital"
+        ds.ReferringPhysicianName = "DOC^ONE"
+        ds.add_new(0x00091010, "LO", "private note")
+        ref = pydicom.Dataset()
+        ref.ReferencedSOPClassUID, ref.ReferencedSOPInstanceUID = ds.SOPClassUID, sops[(i + 1) % len(sops)]
+        ds.ReferencedImageSequence = [ref]
+        ds.save_as(p)
     run = make_run(settings, mixed, DATASET)
-    plan, errors = validate_plan(deid.enable(run.load("plan.json")), run.load("inventory.json"))
-    assert any("원본 DICOM은 아직 비식별할 수 없습니다" in e for e in errors)
+    plan = deid.enable(run.load("plan.json"))
+    dicom = next(s for s in plan["series"] if s["kind"] == "dicom")
+    source_series, source_pid = dicom["series_uid"], dicom["patient_id"]
+    plan["pilot"] = {"subjects": [dicom["subject_key"]]}
+    plan, errors = validate_plan(plan, run.load("inventory.json"))
+    assert not errors, errors
+    run.store_plan(plan, errors, "test")
+    m = prepare(run, "pilot")
+    dicom = next(s for s in plan["series"] if s["kind"] == "dicom")
+    assert dicom["series_uid"] != source_series and dicom["patient_id"].startswith(DATASET["patient_id_prefix"] + "_S")
+    out = [pydicom.dcmread(run.dir / i["path"]) for i in m["instances"] if i["series_uid"] == dicom["series_uid"]]
+    assert out and {str(d.SOPInstanceUID) for d in out}.isdisjoint(sops)
+    out_sops = {str(d.SOPInstanceUID) for d in out}
+    for d in out:
+        assert d.PatientID == d.PatientName == dicom["patient_id"] and d.PatientIdentityRemoved == "YES"
+        assert d.get("AccessionNumber") == "" and d.get("PatientBirthDate") == "" and d.get("InstitutionName") == ""
+        assert d.ReferringPhysicianName == "" and (0x0009, 0x1010) not in d
+        assert d.StudyDate == "20200101" and str(d.SeriesInstanceUID) == dicom["series_uid"]
+        assert d.file_meta.MediaStorageSOPInstanceUID == d.SOPInstanceUID
+        if len(files) == len(out):           # all files in one series: the references are remapped consistently
+            assert d.ReferencedImageSequence[0].ReferencedSOPInstanceUID in out_sops
+    case = sample_view(run)["cases"][0]
+    assert case["name"].startswith("S") and case["dicom"][0]["source"].startswith("(가림")
+    client = TestClient(create_app(settings))
+    for url in ("", "/report", "/report.json", "/series.json", "/dicom.json", "/series.csv"):
+        page = client.get(f"/runs/{run.id}{url}").text
+        assert source_pid not in page and "SYNTH^" not in page and "ACC123" not in page and "DOC^ONE" not in page, url
 
 
 def test_legacy_page_without_and_with_a_snapshot(settings, test_db):

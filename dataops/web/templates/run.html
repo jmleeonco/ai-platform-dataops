@@ -48,11 +48,10 @@
 <section id="pilot">
 <h2>1. 샘플 → Local SCP <span class="mono small muted">{{ settings.local_scp.key }}</span></h2>
 {% set can_pilot = meta.status in ['PLANNED', 'PILOT_READY', 'PILOT_SENT', 'PILOT_PARTIAL', 'PILOT_FAILED'] and not active %}
-{% set chosen = (plan.pilot or {}).subjects or [] %}
 <form method="post" action="/runs/{{ run.id }}/pilot" class="inline">
   {{ csrf_field(csrf) }}
   <select name="subject" id="sample-pick">
-  {% for case in sample.cases or [] %}<option value="{{ case.subject_key }}" data-case="case-{{ loop.index }}">샘플 {{ loop.index }} · {{ case.subject_key }}{{ ' · ' ~ case.sent if case.sent }}</option>{% endfor %}
+  {% for case in sample.cases or [] %}<option value="{{ case.name }}" data-case="case-{{ loop.index }}">샘플 {{ loop.index }} · {{ case.name }}{{ ' · ' ~ case.sent if case.sent }}</option>{% endfor %}
   </select>
   <button type="submit" class="primary" {{ 'disabled' if not can_pilot or not chosen }}>이 샘플 Local SCP로 보내기</button>
 </form>
@@ -100,7 +99,7 @@
 <p class="small"><label><input type="checkbox" id="cmp-all"> 빈 값·고정값 행도 보기</label></p>
 {% for case in sample.cases %}{% set ci = loop.index %}
 <div class="case" id="case-{{ ci }}">
-<p class="case-name">샘플 {{ ci }} · <b class="mono">{{ case.subject_key }}</b>{% if case.flags %} <span class="badge b-bad">식별 정보 {{ case.flags }}건이 그대로 나감</span>{% endif %}</p>
+<p class="case-name">샘플 {{ ci }} · <b class="mono">{{ case.name }}</b>{% if case.flags %} <span class="badge b-bad">식별 정보 {{ case.flags }}건이 그대로 나감</span>{% endif %}</p>
 
 <h3>DICOM 메타데이터 <span class="muted small">Local SCP·Central이 받는 DICOM 파일 (시리즈 첫 장의 태그 전부)</span></h3>
 <nav class="ser-tabs">{% for se in case.dicom %}<a href="#" data-ser="ser-{{ ci }}-{{ loop.index }}">{{ se.label }}{% if se.flags %} <span class="badge b-bad">식별 {{ se.flags }}</span>{% endif %}</a>{% endfor %}</nav>

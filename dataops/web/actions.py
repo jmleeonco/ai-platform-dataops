@@ -92,7 +92,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
     async def new_submit(request: Request):
         form = await checked_form(request)
         try:
-            run, _ = start_analysis(settings, form.get("input_root", ""), form.get("by", ""))
+            run, _ = start_analysis(settings, form.get("input_root", ""), form.get("by", ""), form.get("deid") == "1")
         except RunError as e:
             return RedirectResponse(f"/new?err={quote(str(e))}", status_code=303)
         return back(run.id, msg="분석을 시작했습니다. 폴더 크기에 따라 몇 분 걸립니다.")
@@ -177,13 +177,14 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
     def set_pilot_subjects(run: Run, form: dict) -> list[str]:
         editable(run)
         plan = run.load("plan.json")
-        active = {s["subject_key"] for s in plan["series"] if not s.get("excluded")}
+        # the page names subjects by their pseudonym when pseudonymisation is on
+        active = {deid.subject(plan, s["subject_key"]): s["subject_key"] for s in plan["series"] if not s.get("excluded")}
         chosen = [form.get(f"pilot{i}", "") for i in range(1, SAMPLES + 1)]
         chosen = [c for i, c in enumerate(chosen) if c and c not in chosen[:i]]
         bad = [c for c in chosen if c not in active]
         if bad or not chosen:
             raise RunError(f"포함된 대상자가 아닙니다: {', '.join(bad) or '(비어 있음)'}")
-        plan["pilot"] = {"subjects": chosen}
+        plan["pilot"] = {"subjects": [active[c] for c in chosen]}
         return save_plan(run, plan, f"파일럿 대상자: {', '.join(chosen)} (웹)")
 
     @app.post("/runs/{run_id}/pilot-subjects")
@@ -199,7 +200,8 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
     def subjects_from_form(run: Run, form: dict) -> None:
         """Subjects typed beside the sample/send buttons are saved first when they differ from the plan."""
         chosen = [c for c in (form.get(f"pilot{i}") for i in range(1, SAMPLES + 1)) if c]
-        if chosen and chosen != ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects"):
+        plan = run.load("plan.json") or {}
+        if chosen and chosen != [deid.subject(plan, k) for k in (plan.get("pilot") or {}).get("subjects") or []]:
             errors = set_pilot_subjects(run, form)
             if errors:
                 raise RunError(f"plan 오류 {len(errors)}건: {errors[0]}")
@@ -232,15 +234,17 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
         try:
             subjects_from_form(run, form)
             check_pilot_state(run)
-            samples = ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects") or []
-            subject = form.get("subject") or None
-            if subject is not None and subject not in samples:
-                raise RunError(f"샘플이 아닙니다: {subject}")
-            submit(settings, "pilot", run.id, {"target": settings.local_scp.key, "subject": subject},
+            plan = run.load("plan.json") or {}
+            # the page names a sample by its pseudonym when pseudonymisation is on
+            samples = {deid.subject(plan, k): k for k in (plan.get("pilot") or {}).get("subjects") or []}
+            name = form.get("subject") or None
+            if name is not None and name not in samples:
+                raise RunError(f"샘플이 아닙니다: {name}")
+            submit(settings, "pilot", run.id, {"target": settings.local_scp.key, "subject": samples.get(name)},
                    form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e), anchor="pilot")
-        return back(run.id, msg=f"{subject or '샘플'} → Local SCP 전송을 시작했습니다 ({settings.local_scp.key})",
+        return back(run.id, msg=f"{name or '샘플'} → Local SCP 전송을 시작했습니다 ({settings.local_scp.key})",
                     anchor="pilot")
 
     @app.post("/runs/{run_id}/deid")

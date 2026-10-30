@@ -64,7 +64,7 @@ def build_records(run: Run, preview: bool = False) -> dict:
                                     "subject_uuid": subject_uuid(duuid, deid.subject(plan, s["subject_key"])),
                                     "study_date": m.get("StudyDate"), "description": desc,
                                     "metadata_json": m or None})
-        meta_json = dict(s.get("metadata") or {}) or None
+        meta_json = deid.metadata(plan, dict(s.get("metadata") or {})) or None
         if meta_json and "label_of" in meta_json:
             meta_json["label_of"] = deid.path(plan, meta_json["label_of"])
         rows["series"].append({"series_uid": s["series_uid"], "study_uid": s["study_uid"], "modality": s["modality"],

@@ -96,9 +96,15 @@ def test_conflicting_study_and_duplicate_sop(settings, tmp_path):
 def test_dicom_patient_id_edit_rejected(settings, mixed):
     run = make_run(settings, mixed)
     plan = run.load("plan.json")
-    next(s for s in plan["series"] if s["kind"] == "dicom")["patient_id"] = "EDITED"
+    s = next(s for s in plan["series"] if s["kind"] == "dicom")
+    original = s["patient_id"]
+    s["patient_id"] = "EDITED"                      # the outgoing ID is derived from the files, not edited
+    plan, errors = validate_plan(plan, run.load("inventory.json"))
+    assert not errors and next(x for x in plan["series"] if x["kind"] == "dicom")["patient_id"] == original
+    s = next(s for s in plan["series"] if s["kind"] == "dicom")
+    s["source_ids"]["patient_id"] = "EDITED"
     _, errors = validate_plan(plan, run.load("inventory.json"))
-    assert any("바꿀 수 없습니다" in e for e in errors)
+    assert any("계획과 다릅니다" in e for e in errors)
 
 
 def test_modality_edit_changes_nifti_uids(settings, mixed):

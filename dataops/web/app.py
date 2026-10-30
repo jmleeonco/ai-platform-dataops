@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from .. import __version__
 from .. import db as dbmod
+from .. import deid
 from ..compare import sample_view
 from ..config import Settings
 from ..jobs import active_job, job_log, list_jobs
@@ -137,14 +138,16 @@ def create_app(settings: Settings) -> FastAPI:
         active = active_job(settings, run.id)
         editable = (meta["status"] in EDITABLE and meta["status"] not in ("ANALYZING", "ANALYSIS_FAILED")
                     and not active)
-        report = build_report(run, settings) if plan.get("series") else None
+        report = shown_report(run) if plan.get("series") else None
         secs = {s["no"]: s for s in (report or {}).get("sections", []) if s["no"] != 10}
         return page(request, "run.html", run=run, meta=meta, plan=plan, pilot=pilot,
                     pilot_stale=bool(pilot and pilot.get("plan_sha256") != meta.get("plan_sha256")),
                     journals=journals(run), plan_errors=run.load("plan_errors.json", []),
                     blocking=[r[2] for r in (secs.get(4) or {}).get("rows", []) if r[1] == "오류"],
                     registration=run.load("registration.json"), summary=_summary(plan),
-                    subjects=sorted({x["subject_key"] for x in plan.get("series", []) if not x.get("excluded")}),
+                    subjects=sorted({deid.subject(plan, x["subject_key"]) for x in plan.get("series", [])
+                                     if not x.get("excluded")}),
+                    chosen=[deid.subject(plan, k) for k in (plan.get("pilot") or {}).get("subjects") or []],
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
                     editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
                     db_sec=secs.get(7), sample=sample_view(run) if plan.get("series") else {"ready": False},
@@ -153,11 +156,15 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/runs/{run_id}/report", response_class=HTMLResponse)
     def report_page(request: Request, run_id: str, refresh: bool = False):
         run = get_run(run_id)
-        return page(request, "report.html", run=run, report=build_report(run, settings, refresh), titles=TITLES)
+        return page(request, "report.html", run=run, report=shown_report(run, refresh), titles=TITLES)
 
     @app.get("/runs/{run_id}/report.json")
     def report_json(run_id: str):
-        return build_report(get_run(run_id), settings)
+        return shown_report(get_run(run_id))
+
+    def shown_report(run: Run, refresh: bool = False) -> dict:
+        """The report as the pages show it: masked like the outgoing data when pseudonymisation is on."""
+        return deid.redact(run.load("plan.json") or {}, build_report(run, settings, refresh))
 
     @app.get("/runs/{run_id}/metadata")
     def metadata_redirect(run_id: str):
@@ -168,11 +175,13 @@ def create_app(settings: Settings) -> FastAPI:
         if not md["ready"]:
             raise HTTPException(404)
         if which == "dicom":
-            return {"columns": dicom_columns(), "rows": md["dicom"]["rows"],
-                    "filters": ["split", "kind", "pilot", "origin", "check"],
-                    "dataset": (md["plan"].get("dataset") or {}).get("name")}
-        return {"columns": source_columns(md), "rows": md["rows"], "filters": ["split", "kind", "included", "pilot"],
-                "dataset": (md["plan"].get("dataset") or {}).get("name")}
+            out = {"columns": dicom_columns(), "rows": md["dicom"]["rows"],
+                   "filters": ["split", "kind", "pilot", "origin", "check"],
+                   "dataset": (md["plan"].get("dataset") or {}).get("name")}
+        else:
+            out = {"columns": source_columns(md), "rows": md["rows"], "filters": ["split", "kind", "included", "pilot"],
+                   "dataset": (md["plan"].get("dataset") or {}).get("name")}
+        return deid.redact(md["plan"], out)
 
     @app.get("/runs/{run_id}/dicom.json")
     def dicom_json(run_id: str):

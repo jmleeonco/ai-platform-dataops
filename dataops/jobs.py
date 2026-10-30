@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from . import deid
 from .config import Settings
 from .runs import Run, RunError
 from .util import now_iso, read_json, write_json
@@ -78,11 +79,12 @@ def submit(settings: Settings, kind: str, run_id: str, params: dict | None = Non
     return job
 
 
-def start_analysis(settings: Settings, input_root: str, by: str = "") -> tuple[Run, dict]:
+def start_analysis(settings: Settings, input_root: str, by: str = "", deid_on: bool = False) -> tuple[Run, dict]:
+    """deid_on: pseudonymise from the start, so even the first sample extraction carries no identifiers."""
     root = check_input_root(settings, input_root)
     run = Run.create(settings.runs_dir, dataset_uuid_for(str(root)), str(root))
-    run.set_status("ANALYZING", f"분석 요청{f' ({by})' if by else ''}")
-    return run, submit(settings, "analyze", run.id, {"input_root": str(root)}, by)
+    run.set_status("ANALYZING", f"분석 요청{f' ({by})' if by else ''}{' · 비식별 켜짐' if deid_on else ''}")
+    return run, submit(settings, "analyze", run.id, {"input_root": str(root), "deid": deid_on}, by)
 
 
 def job_log(settings: Settings, job_id: str, n: int = 200) -> list[str]:
@@ -182,6 +184,8 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     log("spec: checking the proposal and building the plan (NIfTI headers only)")
     plan, inv = build_spec_plan(root, out["proposal"], run.id, run.meta["dataset_uuid"], out["meta"], log)
     run.save("inventory.json", inv)
+    if job["params"].get("deid") or deid.enabled(run.load("plan.json") or {}):    # kept on a re-analysis too
+        deid.enable(plan)
     plan, errors = validate_plan(plan, inv)
     meta = run.store_plan(plan, errors, f"분석 완료 (에이전트 {out['meta'].get('model')}, ${out['meta'].get('cost_usd')})")
     log(f"plan: {len(plan['series'])} series, {len(errors)} errors, status {meta['status']}")
