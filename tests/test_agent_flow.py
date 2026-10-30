@@ -84,7 +84,9 @@ def test_analysis_builds_checked_plan(tmp_path, monkeypatch, challenge):
 @pytest.mark.parametrize("patch, message", [
     ({"sources": [{"path": "../outside", "role": "image", "split": "train", "note": ""}]}, "상대 경로"),
     ({"sources": [{"path": "nope", "role": "image", "split": "train", "note": ""}]}, "없습니다"),
-    ({"sources": [{"path": "labelsTr", "role": "label", "split": "train", "note": ""}]}, "image 역할"),
+    ({"sources": [{"path": "labelsTr", "role": "label", "split": "train", "pattern": "a/b", "note": ""}]}, "pattern"),
+    ({"label_kind": "masks"}, "label_kind"),
+    ({"roi_name_regex": "_RS_.+"}, "그룹 1"),
     ({"subject_pattern": {"regex": "case_\\d+", "note": ""}}, "그룹 1"),
     ({"subject_pattern": {"regex": "(", "note": ""}}, "정규식 오류"),
     ({"dataset": dict(CHALLENGE_PROPOSAL["dataset"], patient_id_prefix="bad prefix!")}, "patient_id_prefix"),

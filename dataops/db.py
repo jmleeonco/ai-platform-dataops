@@ -107,13 +107,19 @@ def migrate(conn) -> list[str]:
 # --------------------------------------------------------------------------- registration
 KEYS = {"datasets": ["dataset_uuid"], "subjects": ["subject_uuid"], "studies": ["study_uid"],
         "series": ["series_uid"], "dataset_series": ["dataset_uuid", "series_uid"], "ingest_runs": ["run_uuid"],
-        "instances": ["sop_uid"], "transfer_results": ["run_uuid", "target_key", "sop_uid"]}
+        "instances": ["sop_uid"], "transfer_results": ["run_uuid", "target_key", "sop_uid"],
+        "deid_runs": ["run_uuid"], "deid_subject_mappings": ["subject_uuid"], "deid_series_mappings": ["series_uid"],
+        "deid_instance_mappings": ["sop_uid"]}
 # Columns that identify an object; a different value on an existing row is a conflict, never an overwrite.
 IDENTITY = {"subjects": ["dataset_uuid", "source_subject_key", "patient_id"], "studies": ["subject_uuid"],
             "series": ["study_uid"], "instances": ["series_uid", "sop_class_uid", "artifact_sha256"],
-            "ingest_runs": ["dataset_uuid", "manifest_sha256"]}
+            "ingest_runs": ["dataset_uuid", "manifest_sha256"],
+            "deid_subject_mappings": ["dataset_uuid", "original_patient_id", "pseudonym_patient_id"],
+            "deid_series_mappings": ["original_series_uid"], "deid_instance_mappings": ["original_sop_uid"]}
 # Columns kept from the first registration.
-KEEP_FIRST = {"series": {"first_run_uuid"}, "instances": {"prepared_run_uuid", "artifact_relative_path"}}
+KEEP_FIRST = {"series": {"first_run_uuid"}, "instances": {"prepared_run_uuid", "artifact_relative_path"},
+              "deid_subject_mappings": {"run_uuid"}, "deid_series_mappings": {"run_uuid"},
+              "deid_instance_mappings": {"run_uuid"}}
 
 
 def _fetch_existing(cur, table: str, rows: list[dict]) -> dict:
@@ -203,6 +209,9 @@ def row_status(cur, table: str, rows: list[dict]) -> list[tuple[str, list[str]]]
 
 def _norm(v):
     import json
+    from decimal import Decimal
+    if isinstance(v, Decimal):          # DECIMAL columns come back as Decimal; rows carry the rounded float
+        return float(v)
     if isinstance(v, str):
         try:
             return json.dumps(json.loads(v), sort_keys=True, ensure_ascii=False) if v[:1] in "{[" else v

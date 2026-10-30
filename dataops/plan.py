@@ -251,9 +251,10 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
                      description=s.get("description") or n2d._clip(f"{ref['description']} labels"))
             if s.get("excluded"):
                 continue
-            f = inv_files.get(rel)
-            if f is None or f["kind"] != "nifti":
-                errors.append(f"{key}: 입력 목록에 없는 라벨 NIfTI {rel}")
+            for r in s["sources"]:
+                f = inv_files.get(r)
+                if f is None or f["kind"] != "nifti":
+                    errors.append(f"{key}: 입력 목록에 없는 라벨 NIfTI {r}")
         elif s["kind"] == "nifti":
             conv = s["conversion"]
             rel = s["sources"][0]
@@ -359,6 +360,11 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
             return any(s.get("modality") not in NIFTI_MODALITIES for s in refs)
         if u["code"] == "too_many_series_in_group":
             return any(group_sizes[s["conversion"]["group_label"]] > limit for s in refs)
+        if u["code"] == "no_image":
+            return not has_image
         return bool(refs) or not u.get("series_keys")
+    has_image = any(s["kind"] in ("nifti", "dicom") for s in active)
+    if not has_image:
+        errors.append("변환할 영상 시리즈가 없습니다 — 에이전트의 질문·제외 사유를 보고 폴더나 구성을 정한 뒤 다시 분석하세요")
     plan["unresolved"] = [u for u in plan.get("unresolved", []) if still_open(u)]
     return plan, errors

@@ -57,10 +57,20 @@ MAPPING = [
     ("series.instance_count", "oncolabdb.lab_dataset_items.instance_count", "내보내기", ""),
     ("studies.description", "oncolabdb.lab_dataset_items.study_description", "내보내기", ""),
     ("studies.study_date", "oncolabdb.lab_dataset_items.study_date", "내보내기", "NIfTI 변환본은 비어 있음"),
-    ("series.metadata_json (간격)", "oncolabdb.lab_dataset_items.slice_thickness", "값 꺼내서 내보내기",
-     "pixel_spacing, image_orientation도 같음"),
-    ("RTSTRUCT의 ROI 이름", "oncolabdb.lab_dataset_items.roi_names", "내보내기", "라벨 시리즈만"),
-    ("RTSTRUCT가 가리키는 영상", "oncolabdb.lab_dataset_items.referenced_series_uid", "내보내기", "라벨 시리즈만"),
+    *[(f"series.{c}", f"oncolabdb.lab_dataset_items.{c}", "내보내기", "보낸 DICOM 첫 파일의 값 (migration 0004)")
+      for c in ("slice_thickness", "spacing_between_slices", "pixel_spacing", "image_orientation", "patient_position",
+                "image_type", "rescale_slope", "rescale_intercept", "bits_allocated", "repetition_time", "echo_time",
+                "inversion_time", "flip_angle", "magnetic_field_strength", "scanning_sequence", "sequence_variant",
+                "sequence_name", "diffusion_b_value", "number_of_temporal_positions", "temporal_position_identifier",
+                "contrast_bolus_agent", "contrast_bolus_ingredient", "contrast_bolus_volume",
+                "contrast_bolus_total_dose", "series_date", "body_part_examined")],
+    ("series.roi_names", "oncolabdb.lab_dataset_items.roi_names", "내보내기", "라벨 시리즈만. 새 DB는 JSON 목록 — 기존 구분자 확인 필요"),
+    ("series.referenced_series_uid", "oncolabdb.lab_dataset_items.referenced_series_uid", "내보내기", "라벨 시리즈만"),
+    ("subjects.patient_name", "oncolabdb.lab_dataset_items.patient_name", "내보내기", "= PatientID (명명 규칙)"),
+    ("subjects.patient_sex", "oncolabdb.lab_dataset_items.patient_sex", "내보내기", ""),
+    ("subjects.patient_age", "oncolabdb.lab_dataset_items.patient_age", "내보내기", ""),
+    ("subjects.patient_weight", "oncolabdb.lab_dataset_items.patient_weight", "내보내기", ""),
+    ("subjects.patient_ethnicity", "oncolabdb.lab_dataset_items.patient_ethnicity", "내보내기", "가명화 시 비어 있음"),
     ("series.source_path", "oncolabdb.lab_dataset_items.study_path", "의미 확인 필요",
      "기존 study_path가 원본 위치인지 NAS 위치인지 모름"),
     ("subjects.patient_id", "scpdb.dicom_instances.PatientID", "Central SCP가 수신하며 등록",
@@ -72,7 +82,104 @@ MAPPING = [
     ("series.modality", "scpdb.dicom_instances.Modality", "Central SCP가 수신하며 등록", ""),
     ("transfer_results.verification_json", "scpdb.dicom_instances.InstancePath", "Central 수신 확인 때 읽어 옴",
      "Central의 실제 저장 위치"),
+    *[(f"{new}", f"scpdb.dicom_instances.{old}", "Central SCP가 수신하며 등록", "보낸 DICOM 값 그대로")
+      for new, old in (("subjects.patient_name", "PatientName"), ("subjects.patient_sex", "PatientSex"),
+                       ("subjects.patient_age", "PatientAge"), ("studies.study_date", "StudyDate"),
+                       ("studies.description", "StudyDescription"), ("series.series_number", "SeriesNumber"),
+                       ("series.series_date", "SeriesDate"), ("series.series_time", "SeriesTime"),
+                       ("series.description", "SeriesDescription"), ("series.manufacturer", "Manufacturer"),
+                       ("series.frame_of_reference_uid", "FrameOfReferenceUID"), ("instances.sop_class_uid", "SOPClassUID"),
+                       ("instances.slice_location", "SliceLocation"), ("series.referenced_series_uid", "ReferencedSeriesUID"),
+                       ("series.roi_names", "RoiNames"))],
+    # pseudonymisation maps: oncolabdb.enc_* (the existing pipeline's re-identification tables)
+    ("deid_runs.run_uuid", "oncolabdb.enc_pipeline_runs.run_id", "내보내기", "가명화한 실행만"),
+    ("ingest_runs.created_at", "oncolabdb.enc_pipeline_runs.started_at", "내보내기", ""),
+    ("ingest_runs.registered_at", "oncolabdb.enc_pipeline_runs.completed_at", "내보내기", ""),
+    ("ingest_runs.status", "oncolabdb.enc_pipeline_runs.terminal_status", "값 변환 후 내보내기", "상태 어휘가 다름"),
+    ("ingest_runs.approval_json (approved_by)", "oncolabdb.enc_pipeline_runs.operator_subject", "값 꺼내서 내보내기", ""),
+    ("ingest_runs.manifest_sha256", "oncolabdb.enc_pipeline_runs.config_fingerprint", "내보내기", "의미 확인 필요"),
+    ("datasets.name", "oncolabdb.enc_pipeline_runs.src_dataset_name", "내보내기", ""),
+    ("deid_runs.patient_id_prefix", "oncolabdb.enc_pipeline_runs.patient_id_prefix", "내보내기", ""),
+    ("deid_runs.key_label", "oncolabdb.enc_pipeline_runs.pseudonym_internal_hash_label", "내보내기", ""),
+    ("deid_runs.pipeline_version", "oncolabdb.enc_pipeline_runs.pipeline_version", "내보내기", ""),
+    ("deid_runs.summary_json", "oncolabdb.enc_pipeline_runs.summary_json", "내보내기", ""),
+    ("external_mappings.target_dataset_id", "oncolabdb.enc_pipeline_runs.lab_dataset_id", "external_mappings로 연결", ""),
+    ("deid_subject_mappings.run_uuid", "oncolabdb.enc_patient_mappings.run_id", "내보내기", ""),
+    ("deid_subject_mappings.internal_hash", "oncolabdb.enc_patient_mappings.internal_hash", "내보내기",
+     "keyed hash 32자 — 기존 방식과 값이 같지는 않음"),
+    *[(f"deid_subject_mappings.{c}", f"oncolabdb.enc_patient_mappings.{c}", "내보내기", note)
+      for c, note in (("original_patient_id", ""), ("original_patient_name", "수집하지 않아 비어 있음"),
+                      ("original_patient_address", "수집하지 않아 비어 있음"), ("original_institution", ""),
+                      ("original_patient_birth_date", "수집하지 않아 비어 있음"))],
+    ("deid_subject_mappings.pseudonym_patient_id", "oncolabdb.enc_patient_mappings.pseudonym_display_id", "내보내기", ""),
+    ("deid_series_mappings.run_uuid", "oncolabdb.enc_series_mappings.run_id", "내보내기", ""),
+    ("deid_series_mappings.internal_hash", "oncolabdb.enc_series_mappings.internal_hash", "내보내기", ""),
+    ("deid_series_mappings.series_uid", "oncolabdb.enc_series_mappings.series_uid", "내보내기",
+     "기존 열이 원본/가명 중 어느 UID인지 확인 필요 (원본은 original_series_uid)"),
+    ("deid_series_mappings.modality", "oncolabdb.enc_series_mappings.modality", "내보내기", ""),
+    ("deid_series_mappings.original_acq_date", "oncolabdb.enc_series_mappings.ori_acq_date", "내보내기", ""),
+    ("deid_series_mappings.original_acq_time", "oncolabdb.enc_series_mappings.ori_acq_time", "내보내기", ""),
+    ("deid_series_mappings.out_acq_date", "oncolabdb.enc_series_mappings.enc_acq_date", "내보내기", "날짜 유지라 원본과 같음"),
+    ("deid_series_mappings.out_acq_time", "oncolabdb.enc_series_mappings.enc_acq_time", "내보내기", ""),
 ]
+# Columns of the compared tables that the new DB deliberately has no value for, and why.
+NOT_MAPPED = {
+    "id": "기존 DB의 auto increment 키 (새 DB는 UUID / UID, external_mappings로 연결)",
+    "created_at": "기존 DB가 넣을 때 채움", "updated_at": "기존 DB가 채움", "added_at": "기존 DB가 넣을 때 채움",
+    "status": "LAB 진행 상태 (COLLECTING 등) — LAB에서 관리", "tags": "LAB 큐레이션", "usage_notes": "LAB 큐레이션",
+    "created_by": "LAB 사용자", "added_by": "LAB 사용자", "sort_order": "LAB 화면 순서",
+    "male_count": "등록된 subjects.patient_sex에서 계산", "female_count": "등록된 subjects.patient_sex에서 계산",
+    "sex_counts": "등록된 subjects.patient_sex에서 계산", "patient_count": "등록된 소속에서 계산",
+    "series_count": "등록된 소속에서 계산", "modalities": "등록된 소속에서 계산",
+    "source_origin": "데이터셋 출처 분류 — 접두어 SOURCE 코드에서 값 변환 (어휘 확인 필요)",
+    "ai_model_version": "AI 모델 관리 (LAB)", "collection_countries": "큐레이션 입력", "collection_year": "큐레이션 입력",
+    "collection_institution": "큐레이션 입력 (원본 기관명은 가명화 시 deid_subject_mappings.original_institution)",
+    "year_start": "등록된 study_date에서 계산", "year_end": "등록된 study_date에서 계산",
+    "contour_year_start": "LAB 컨투어 작업", "contour_year_end": "LAB 컨투어 작업",
+    "disclosure_scope": "접두어 TIER(PUB/NC/IO)에서 값 변환 (어휘 확인 필요)",
+    "contrast_method": "LAB 분류 설정", "contrast_custom_keywords": "LAB 분류 설정", "contrast_counts": "LAB 분류 결과",
+    "sequence_method": "LAB 분류 설정", "body_part_custom_keywords": "LAB 분류 설정",
+    "performed_procedure_code": "DICOM 코드 시퀀스 — 수집 안 함 (의미 확인 필요)",
+    "procedure_code": "DICOM 코드 시퀀스 — 수집 안 함 (의미 확인 필요)",
+    "biological_features": "LAB 분석 결과", "non_biological_features": "LAB 분석 결과",
+    "contrast_predicted": "LAB AI 예측", "contrast_manual": "LAB 수동 입력", "contrast_predicted_reason": "LAB AI 예측",
+    "sequence_predicted": "LAB AI 예측", "sequence_manual": "LAB 수동 입력", "sequence_predicted_reason": "LAB AI 예측",
+    "implant_predicted": "LAB AI 예측", "implant_manual": "LAB 수동 입력", "implant_predicted_reason": "LAB AI 예측",
+    "contour_status": "LAB 컨투어 작업", "contour_assignee": "LAB 컨투어 작업",
+    "contour_assignee_comment": "LAB 컨투어 작업", "contour_reviewer": "LAB 컨투어 작업",
+    "contour_reviewer_comment": "LAB 컨투어 작업", "contour_completed_at": "LAB 컨투어 작업",
+    "meta_scan_status": "LAB 메타 스캔 상태", "split_origin_series_uid": "LAB 시리즈 분할 기능",
+    "split_key": "LAB 시리즈 분할 기능", "split_value": "LAB 시리즈 분할 기능", "split_run_id": "LAB 시리즈 분할 기능",
+    "from_stage": "기존 파이프라인 내부 단계", "publish_mode": "기존 파이프라인 내부 설정",
+    "dest_working_label": "기존 파이프라인 작업 폴더",
+    "PatientBirthDate": "보내는 DICOM에서 비움 (가명화) / 공개 데이터는 원본에 없음",
+    "AccessionNumber": "보내는 DICOM에서 비움", "ReferringPhysicianName": "보내는 DICOM에서 비움",
+    "InstancePath": "Central의 저장 위치 — 수신 확인 때 transfer_results.verification_json에 저장",
+    "Tag": "Central 운영 필드", "ImportedDateTime": "Central SCP가 수신 시각을 채움",
+}
+# The tables a merge writes or reads value by value: every column must be mapped or listed in NOT_MAPPED.
+COMPARED_TABLES = [("oncolabdb", "lab_datasets"), ("oncolabdb", "lab_dataset_items"), ("oncolabdb", "enc_pipeline_runs"),
+                   ("oncolabdb", "enc_patient_mappings"), ("oncolabdb", "enc_series_mappings"),
+                   ("scpdb", "dicom_instances")]
+
+
+def column_coverage(snap: dict | None) -> list[dict]:
+    """Every column of COMPARED_TABLES: which new-DB value fills it, or why none does."""
+    if not snap:
+        return []
+    by_old = {}
+    for new, old, how, note in MAPPING:
+        by_old.setdefault(old.lower(), []).append(new)
+    out = []
+    for c in snap["columns"]:
+        if (c["s"], c["t"]) not in COMPARED_TABLES:
+            continue
+        full = f"{c['s']}.{c['t']}.{c['c']}"
+        news = by_old.get(full.lower())
+        out.append({"column": full, "type": c["type"], "new": news or [],
+                    "state": "대응" if news else ("대응 안 함" if c["c"] in NOT_MAPPED else "대응 없음"),
+                    "why": "" if news else NOT_MAPPED.get(c["c"], "")})
+    return out
 EXPORT_TABLES = {("oncolabdb", "lab_datasets"), ("oncolabdb", "lab_dataset_items")}   # the export writes these
 KNOWN = [   # observed 2026-10-27 (docs/CONTEXT.md, docs/DATABASE.md) — shown until a snapshot exists
     "MariaDB 10.5.8. scpdb 7테이블, oncolabdb 26테이블, 테이블+인덱스 약 9.45 GB.",
@@ -197,7 +304,8 @@ def view(snap: dict | None, new_types: dict | None = None) -> dict:
         key = new.split(" ")[0]
         return new_types.get(key) if re.fullmatch(r"\w+\.\w+", key) and " " not in new else None
     if not snap:
-        return {"tables": [], "required": [], "mapping": [
+        return {"tables": [], "required": [], "coverage": [], "compared": [f"{s}.{t}" for s, t in COMPARED_TABLES],
+                "mapping": [
             dict(zip(("new", "old", "how", "note"), m), state="확인 전", type=None, new_type=new_type(m[0]),
                  fit="확인 전", fit_note="") for m in MAPPING]}
     tables = {}
@@ -234,4 +342,5 @@ def view(snap: dict | None, new_types: dict | None = None) -> dict:
                  "covered": f"{c['s']}.{c['t']}.{c['c']}" in covered}
                 for c in snap["columns"] if (c["s"], c["t"]) in EXPORT_TABLES and c["nullable"] == "NO"
                 and c["dflt"] is None and "auto_increment" not in (c["extra"] or "")]
-    return {"tables": out, "mapping": mapping, "required": required}
+    return {"tables": out, "mapping": mapping, "required": required, "coverage": column_coverage(snap),
+            "compared": [f"{s}.{t}" for s, t in COMPARED_TABLES]}

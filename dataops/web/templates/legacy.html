@@ -34,6 +34,7 @@ DATAOPS_LEGACY_DB_SCHEMAS=scpdb,oncolabdb</pre>
   <div class="stat"><span>새 DB</span>{% if new_db %}<b class="b-ok small">{{ new_db.migrations.current }}</b><span>{{ settings.db.host }}:{{ settings.db.port }}/{{ settings.db.name }} · 데이터셋 {{ new_db.counts.datasets }} · 시리즈 {{ new_db.counts.series }}</span>
     {% else %}<b class="b-bad">연결 안 됨</b><span>{{ new_db_error }}</span>{% endif %}</div>
   <div class="stat"><span>기존 DB 필수 열 (기본값 없는 NOT NULL)</span>{% if snap %}<b class="{{ 'b-ok' if req_ok == v.required|length else 'b-bad' }}">{{ req_ok }} / {{ v.required|length }} 채움</b><span>{{ v.required|map(attribute='column')|map('replace', 'oncolabdb.', '')|join(', ') }}</span>{% else %}<b class="b-warn">확인 전</b><span>구조를 읽은 뒤</span>{% endif %}</div>
+  {% set cc = v.coverage %}<div class="stat"><span>기존 열 대응 ({{ cc|length }}열, 비교 테이블 {{ v.compared|length }}개)</span>{% if cc %}<b class="{{ 'b-ok' if not cc|selectattr('state', 'equalto', '대응 없음')|list else 'b-bad' }}">{{ cc|selectattr('state', 'equalto', '대응')|list|length }} 대응 · {{ cc|selectattr('state', 'equalto', '대응 안 함')|list|length }} 사유 있음 · {{ cc|selectattr('state', 'equalto', '대응 없음')|list|length }} 없음</b><span><a href="#coverage">열별 보기</a></span>{% else %}<b class="b-warn">확인 전</b><span>구조를 읽은 뒤</span>{% endif %}</div>
   <div class="stat"><span>타입·길이</span><b>{{ fits|select('equalto', '맞음')|list|length }} 맞음</b><span>ID 대응 {{ fits|select('equalto', 'ID 대응')|list|length }} · 계산 {{ fits|select('equalto', '계산')|list|length }} · 값 변환 {{ fits|select('equalto', '값 변환')|list|length }} · 길이 주의 {{ fits|select('equalto', '길이 주의')|list|length }}</span></div>
   <div class="stat"><span>내보내기 기능</span><b class="b-warn">아직 없음</b><span>점검 결과를 반영해 만들 예정</span></div>
 </div>
@@ -52,6 +53,18 @@ DATAOPS_LEGACY_DB_SCHEMAS=scpdb,oncolabdb</pre>
 <td class="small">{{ m.how }}</td><td class="small">{{ m.note }}</td></tr>{% endfor %}
 </table></div>
 </section>
+
+{% if v.coverage %}
+<section id="coverage">
+<h2>기존 열별 대응 <span class="muted small">{{ v.compared|join(', ') }} — 모든 열이 새 DB 값으로 채워지거나, 채우지 않는 이유가 있어야 합니다</span></h2>
+<div class="table-wrap"><table class="std">
+<tr><th>기존 열</th><th>타입</th><th>상태</th><th>새 DB 값 / 사유</th></tr>
+{% for c in v.coverage %}<tr><td class="mono small">{{ c.column }}</td><td class="mono small">{{ c.type }}</td>
+<td><span class="badge {{ 'b-ok' if c.state == '대응' else ('b-bad' if c.state == '대응 없음' else '') }}">{{ c.state }}</span></td>
+<td class="small">{% if c.new %}<span class="mono">{{ c.new|join(', ') }}</span>{% else %}{{ c.why }}{% endif %}</td></tr>{% endfor %}
+</table></div>
+</section>
+{% endif %}
 
 {% if not snap %}
 <section>

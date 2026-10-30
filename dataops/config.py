@@ -61,6 +61,9 @@ class CentralScp:
         return f"central:{self.called_ae}@{self.host}:{self.port}"
 
 
+INTERNAL_ROOTS = ("/mnt2/data/Onco_dataset", "/mnt2-v3-test/data/Onco_dataset")
+
+
 @dataclass
 class Settings:
     runtime_dir: Path
@@ -73,6 +76,8 @@ class Settings:
     backup_system: str = "ai-platform-dataops"
     central: CentralScp = field(default_factory=CentralScp)
     input_roots: tuple = ("/mnt2/data/Public_dataset",)
+    # Internal (hospital / in-house) data: analysed with pseudonymisation on unless the requester turns it off.
+    internal_roots: tuple = INTERNAL_ROOTS
     agent_cmd: str = "claude"
     agent_model: str = "claude-opus-5-5"
     agent_budget_usd: float = 5.0
@@ -126,6 +131,7 @@ def load_settings(env: dict | None = None) -> Settings:
                            calling_ae=get("DATAOPS_CENTRAL_CALLING_AE") or "DATAOPS",
                            enabled=(get("DATAOPS_CENTRAL_ENABLED") or "").lower() in ("1", "true", "yes")),
         input_roots=tuple(r for r in (get("DATAOPS_INPUT_ROOTS") or "/mnt2/data/Public_dataset").split(":") if r),
+        internal_roots=tuple(r for r in (get("DATAOPS_INTERNAL_ROOTS") or ":".join(INTERNAL_ROOTS)).split(":") if r),
         agent_cmd=get("DATAOPS_AGENT_CMD") or shutil.which("claude") or str(Path.home() / ".local/bin/claude"),
         agent_model=get("DATAOPS_AGENT_MODEL") or "claude-opus-5-5",
         agent_budget_usd=float(get("DATAOPS_AGENT_BUDGET_USD") or 5),

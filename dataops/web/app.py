@@ -31,7 +31,7 @@ from ..metadata import build as build_metadata
 from ..report import INDEX_COLUMNS, TITLES, dataset_index, db_preview, dicom_columns, source_columns
 from ..report import build as build_report
 from ..prepare import MANIFESTS
-from ..publish import central_ready
+from ..publish import central_ready, coverage
 from ..records import TABLES
 from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
@@ -148,7 +148,8 @@ def create_app(settings: Settings) -> FastAPI:
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
                     editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
                     db_sec=secs.get(7), sample=sample_view(run) if plan.get("series") else {"ready": False},
-                    header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]])
+                    header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]],
+                    cover=coverage(run, plan, run.load("manifest.json")) if plan.get("series") else None)
 
     @app.get("/runs/{run_id}/report", response_class=HTMLResponse)
     def report_page(request: Request, run_id: str, refresh: bool = False):

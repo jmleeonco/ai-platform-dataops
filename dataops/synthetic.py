@@ -148,5 +148,57 @@ CHALLENGE_PROPOSAL = {
 }
 
 
+def make_masks_and_flat(root: Path) -> Path:
+    """Two layouts the pipeline must split by file name: an internal-style export with one folder per subject and
+    date, a CT and one binary mask file per ROI next to it (RS_<ROI>), and a flat folder of volume-N / labels-N
+    pairs (CT-ORG style)."""
+    shape = (24, 20, 8)
+    affine = np.diag([-0.8, -0.8, 2.5, 1.0])
+    for subj, rois in (("P1", ("GTV", "CTV")), ("P2", ("GTV",))):
+        d = root / "export" / subj / "d1"
+        d.mkdir(parents=True, exist_ok=True)
+        nib.save(nib.Nifti1Image(np.full(shape, -1000, dtype=np.int16), affine), str(d / f"{subj}_CT_st.nii.gz"))
+        lab = _labels(shape, int(subj[1:]))
+        for roi in rois:                          # CTV contains GTV: overlapping masks, not one label map
+            m = (lab > 0) if roi == "CTV" else (lab == 1)
+            nib.save(nib.Nifti1Image(m.astype(np.uint8), affine), str(d / f"{subj}_RS_st_{roi}.nii.gz"))
+    nib.save(nib.Nifti1Image(np.zeros(shape, dtype=np.uint8), affine),       # an empty mask: no ROI, reported
+             str(root / "export" / "P2" / "d1" / "P2_RS_st_empty.nii.gz"))
+    flat = root / "flat"
+    flat.mkdir(parents=True, exist_ok=True)
+    for n in (1, 2):
+        nib.save(nib.Nifti1Image(np.full(shape, -1000, dtype=np.int16), affine), str(flat / f"volume-{n}.nii.gz"))
+        nib.save(nib.Nifti1Image(_labels(shape, n), affine), str(flat / f"labels-{n}.nii.gz"))
+    (flat / "notes.txt").write_text("volume-N is the CT, labels-N its organ labels\n", encoding="utf-8")
+    return root
+
+
+MASKS_PROPOSAL = {
+    **CHALLENGE_PROPOSAL,
+    "summary_ko": "합성 내부 데이터: 대상자/날짜 폴더마다 CT 1개와 ROI별 이진 마스크.",
+    "dataset": {**CHALLENGE_PROPOSAL["dataset"], "name": "SynMasks", "commercial_use": "N", "license": "internal",
+                "patient_id_prefix": "SYN_HNN_CT_IO"},
+    "sources": [{"path": "export", "role": "image", "split": "none", "pattern": "*_CT_*.nii.gz", "note": ""},
+                {"path": "export", "role": "label", "split": "none", "pattern": "*_RS_*.nii.gz", "note": ""}],
+    "excluded": [{"path": "flat", "reason": "다른 데이터"}],
+    "subject_pattern": {"regex": "^(P\\d+)_", "note": ""},
+    "modality_rules": [{"regex": "_CT_", "modality": "CT", "basis": "파일명 CT"}],
+    "label_pairing": "same_folder", "label_kind": "binary_masks", "roi_name_regex": "_RS_st_(.+)\\.nii",
+    "label_names": [], "pilot_subjects": ["P1", "P2"], "findings": [], "questions": [],
+}
+FLAT_PROPOSAL = {
+    **CHALLENGE_PROPOSAL,
+    "summary_ko": "합성 CT-ORG 형식: 한 폴더에 volume-N 영상과 labels-N 라벨.",
+    "dataset": {**CHALLENGE_PROPOSAL["dataset"], "name": "SynFlat", "patient_id_prefix": "SYNF_ABD_CT_PUB"},
+    "sources": [{"path": "flat", "role": "image", "split": "train", "pattern": "volume-*.nii.gz", "note": ""},
+                {"path": "flat", "role": "label", "split": "train", "pattern": "labels-*.nii.gz", "note": ""}],
+    "excluded": [{"path": "export", "reason": "다른 데이터"}],
+    "subject_pattern": {"regex": "-(\\d+)\\.nii", "note": ""},
+    "modality_rules": [{"regex": "volume-", "modality": "CT", "basis": "README: CT"}],
+    "label_pairing": "subject", "label_kind": "label_map", "roi_name_regex": "",
+    "pilot_subjects": ["1", "2"], "findings": [], "questions": [],
+}
+
+
 if __name__ == "__main__":
     print(make_mixed(Path(sys.argv[1])))

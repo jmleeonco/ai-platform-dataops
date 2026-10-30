@@ -45,7 +45,30 @@ ingest_runs: revision/manifest hash/status, conversion and interpretation eviden
 transfer_results: per target/run/instance delivery and verification evidence.
 external_mappings: new dataset UUID -> legacy DB numeric dataset ID, scoped by system.
 
-No need to copy production patient mapping tables or PACS configuration into this DB.
+Migration 0004 (2026-10-31) makes a later merge column-to-column:
+- `series`, `subjects`, `instances` gained a column for every value the existing DB keeps per series, subject
+  and file, named like `oncolabdb.lab_dataset_items` (slice_thickness, pixel_spacing, image_orientation,
+  image_type, rescale_*, echo/repetition/inversion time, flip_angle, magnetic_field_strength, sequence_*,
+  diffusion_b_value, contrast_bolus_*, body_part_examined, series_date/time, manufacturer,
+  frame_of_reference_uid, referenced_series_uid, roi_names, patient_name/sex/age/weight/ethnicity,
+  slice_location). The values are read from the first frozen (outgoing) file of each series
+  (`records.outgoing_headers`); before a series is frozen the preview falls back to the source header with
+  UIDs as they will leave.
+- `deid_runs`, `deid_subject_mappings`, `deid_series_mappings`, `deid_instance_mappings` correspond to
+  `oncolabdb.enc_pipeline_runs` / `enc_patient_mappings` / `enc_series_mappings` (+ one row per file). They are
+  filled only for pseudonymised runs and hold the originals in clear (original PatientID, Study/Series/SOP UID,
+  full source path, institution) next to the pseudonym, so the source is found from the DB alone. Person
+  names, birth dates and addresses are never read, so those columns stay empty. Public tables keep only what
+  leaves (`instances.source_path` stays a keyed hash).
+
+`/legacy` lists every column of the six tables a merge maps value by value (lab_datasets, lab_dataset_items,
+enc_pipeline_runs, enc_patient_mappings, enc_series_mappings, scpdb.dicom_instances; 170 columns on
+2026-10-31): 101 are filled from a new-DB column (`legacy_db.MAPPING`), 69 are LAB workflow, AI predictions,
+auto keys or values the outgoing DICOM empties, each with its reason (`legacy_db.NOT_MAPPED`).
+`tests/test_db.py` fails if a column of those tables (`tests/data/legacy_compared_columns.json`, shape only)
+has neither, or if a mapped new-DB column does not exist after the migrations.
+
+No PACS configuration is copied into this DB.
 Only fields necessary for the dataset should be collected. DB preview must use the same
 DTO/projection as registration (not a separately coded approximation).
 

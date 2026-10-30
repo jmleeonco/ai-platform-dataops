@@ -73,6 +73,9 @@ def _mac(plan: dict, text: str) -> str:
     return hmac.new(bytes.fromhex(plan["deid"]["key"]), text.encode(), hashlib.sha256).hexdigest()
 
 
+mac = _mac          # the keyed hash, for the internal_hash columns of the deid_* maps
+
+
 def number(plan: dict) -> None:
     """Give every subject of the plan a pseudonym number (0001, 0002, ...), kept in plan["deid"]["subjects"].
     Numbers already given never change; new subjects continue after the highest one, in keyed-hash order so the
@@ -125,12 +128,15 @@ REMOVE = {
 }
 # Kept in the DB's series metadata only when pseudonymisation is off.
 METADATA_DROP = {"InstitutionName"}
+METADATA_UIDS = {"FrameOfReferenceUID"}      # replaced like every UID of the file
 
 
 def metadata(plan: dict, meta: dict | None) -> dict | None:
+    """Series metadata as it is stored in the DB: UIDs as they leave, institution dropped."""
     if not meta or not enabled(plan):
         return meta
-    return {k: v for k, v in meta.items() if k not in METADATA_DROP}
+    return {k: (uid(plan, v) if k in METADATA_UIDS and isinstance(v, str) else v)
+            for k, v in meta.items() if k not in METADATA_DROP and k not in REMOVE}
 
 
 def dicom(plan: dict, ds: pydicom.Dataset, out_patient_id: str) -> pydicom.Dataset:

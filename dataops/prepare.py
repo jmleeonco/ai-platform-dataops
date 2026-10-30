@@ -125,8 +125,13 @@ def _reusable(run: Run, plan: dict) -> dict:
         for s in m["series"]:
             rows = [i for i in m["instances"] if i["series_uid"] == s["series_uid"]]
             out[s["series_uid"]] = {"instances": rows, "report": s.get("conversion_report"),
-                                    "sources": {r["source"]["rel"]: r["source"]["sha256"] for r in rows}}
+                                    "sources": {k: v for r in rows for k, v in _source_files(r["source"]).items()}}
     return out
+
+
+def _source_files(source: dict) -> dict:
+    """{rel: sha256} of every input file an artifact was made from (several for an RTSTRUCT from masks)."""
+    return source.get("files") or {source["rel"]: source["sha256"]}
 
 
 def _pin(pins: dict, root: Path, rel: str) -> str:
@@ -183,7 +188,9 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, wo
         ds = read_dicom_header(src)
         if ds is None or str(ds.get("SeriesInstanceUID", "")) != src_uid:
             raise RunError(f"입력 파일이 계획 이후 바뀌었습니다: {rel}")
+        source = {"kind": "dicom", "rel": rel, "sha256": src_sha}
         if deid.enabled(plan):
+            source["sop_uid"] = str(ds.SOPInstanceUID)          # the original, for deid_instance_mappings
             ds = deid.dicom(plan, pydicom.dcmread(src, force=True), s["patient_id"])
             if str(ds.SeriesInstanceUID) != s["series_uid"] or str(ds.StudyInstanceUID) != s["study_uid"]:
                 raise RunError(f"비식별 UID가 계획과 다릅니다: {rel}")
@@ -205,7 +212,7 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, wo
             sha = copy_hashed(src, dst)
             if sha != src_sha:
                 raise RunError(f"복사 검증 실패 (hash 불일치): {rel}")
-        return _instance_row_raw(dst, run_dir, sha, ds, {"kind": "dicom", "rel": rel, "sha256": src_sha})
+        return _instance_row_raw(dst, run_dir, sha, ds, source)
 
     return pmap(one, s["sources"], workers)  # files of a series are independent; NFS reads are latency-bound
 
@@ -214,10 +221,11 @@ def _instance_row_raw(path: Path, run_dir: Path, sha: str, ds, source: dict) -> 
     ts = ""
     if getattr(ds, "file_meta", None) is not None:
         ts = str(ds.file_meta.get("TransferSyntaxUID", ""))
-    num = ds.get("InstanceNumber")
+    num, loc = ds.get("InstanceNumber"), ds.get("SliceLocation")
     return {"sop_uid": str(ds.SOPInstanceUID), "sop_class_uid": str(ds.SOPClassUID),
             "series_uid": str(ds.SeriesInstanceUID), "study_uid": str(ds.get("StudyInstanceUID", "")),
-            "instance_number": int(num) if num not in (None, "") else None, "transfer_syntax": ts,
+            "instance_number": int(num) if num not in (None, "") else None,
+            "slice_location": str(loc)[:32] if loc not in (None, "") else None, "transfer_syntax": ts,
             "path": path.relative_to(run_dir).as_posix(), "sha256": sha, "size": path.stat().st_size,
             "source": source}
 
@@ -269,9 +277,11 @@ def _convert_nifti(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, p
 
 
 def _convert_rtstruct(root: Path, s: dict, sdir: Path, run_dir: Path, image: dict, pins: dict):
+    """One RTSTRUCT from a label map (one ROI per value) or from binary masks (one ROI per file)."""
     from .spec import header_geometry               # local import: spec imports plan/agent
     conv, rel = s["conversion"], s["sources"][0]
-    src_sha = _pin(pins, root, rel)
+    files = {r: _pin(pins, root, r) for r in s["sources"]}
+    src_sha = files[rel]
     img_conv = image["conversion"]
     geo = header_geometry(root / image["sources"][0], img_conv["layout"])
     sop_class = str(n2d.SOP_CLASS_BY_MODALITY[image["modality"]])
@@ -285,11 +295,13 @@ def _convert_rtstruct(root: Path, s: dict, sdir: Path, run_dir: Path, image: dic
         raise RunError(f"RTSTRUCT UID 불일치: {s['series_key']}")
     out = sdir / "RS0001.dcm"
     try:
-        report = build_rtstruct(root / rel, conv["layout"], ctx, {int(k): v for k, v in conv["label_names"].items()},
+        label = [root / r for r in s["sources"]] if conv.get("masks") else root / rel
+        report = build_rtstruct(label, conv["layout"], ctx, {int(k): v for k, v in conv["label_names"].items()},
                                 series_uid, sop_uid, int(s["series_number"]), s["description"], out)
     except RtstructError as e:
         raise RunError(f"RTSTRUCT 변환 실패 {rel}: {e}") from None
-    return [_instance_row(out, run_dir, sha256_file(out), {"kind": "rtstruct", "rel": rel, "sha256": src_sha})], report
+    source = {"kind": "rtstruct", "rel": rel, "sha256": src_sha, **({"files": files} if len(files) > 1 else {})}
+    return [_instance_row(out, run_dir, sha256_file(out), source)], report
 
 
 def verify_artifacts(run: Run, manifest: dict | None = None) -> list[str]:

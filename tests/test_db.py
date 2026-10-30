@@ -22,7 +22,7 @@ def counts(conn):
 
 def test_migrations_apply_once_and_detect_edits(conn, monkeypatch):
     st = dbmod.migration_status(conn)
-    assert st["pending"] == [] and st["current"] == "0003_source_paths"
+    assert st["pending"] == [] and st["current"] == "0004_legacy_fields_and_deid_maps"
     assert dbmod.migrate(conn) == []
     files = dbmod.migration_files()
     monkeypatch.setattr(dbmod, "migration_files", lambda: [(files[0][0], "0" * 64, files[0][2]), *files[1:]])
@@ -101,3 +101,70 @@ def test_series_in_second_dataset_membership(conn, settings, tmp_path):
                           "ingest_runs": rec["ingest_runs"]})
     rows = dbmod.query(conn, "SELECT dataset_uuid FROM dataset_series ORDER BY dataset_uuid")
     assert len(rows) == 2 and counts(conn)["series"] == 1
+
+
+def test_deid_run_registers_its_maps_and_legacy_columns(conn, settings, mixed, tmp_path, monkeypatch):
+    """A pseudonymised run: the public tables hold only what leaves; the deid_* maps (oncolabdb enc_* tables)
+    hold every original next to it, so the source can be found from the DB alone."""
+    import pydicom
+    from dataops import deid
+    from dataops.inventory import read_dicom_header
+    from dataops.plan import validate_plan
+    monkeypatch.setenv("DATAOPS_DEID_KEY_FILE", str(tmp_path / "deid.key"))
+    src = {str(pydicom.dcmread(p).SOPInstanceUID): p for p in mixed.rglob("*")
+           if p.is_file() and read_dicom_header(p) is not None}
+    run = make_run(settings, mixed)
+    plan, errors = validate_plan(deid.enable(run.load("plan.json")), run.load("inventory.json"))
+    assert not errors
+    run.store_plan(plan, errors, "test")
+    prepare(run)
+    dbmod.register_run(conn, run)
+    q = lambda sql: dbmod.query(conn, sql)                          # noqa: E731
+    dicom = [s for s in plan["series"] if s["kind"] == "dicom"]
+    subj = {r["original_patient_id"]: r for r in q("SELECT * FROM deid_subject_mappings")}
+    assert set(subj) == {s["source_ids"]["patient_id"] for s in dicom} | {
+        s["subject_key"] for s in plan["series"] if s["kind"] == "nifti"}
+    pids = {r["patient_id"] for r in q("SELECT patient_id FROM subjects")}
+    assert {r["pseudonym_patient_id"] for r in subj.values()} == pids and not set(subj) & pids
+    ser = {r["series_uid"]: r for r in q("SELECT * FROM deid_series_mappings")}
+    for s in dicom:
+        assert ser[s["series_uid"]]["original_series_uid"] == s["source_ids"]["series_uid"] != s["series_uid"]
+    inst = q("SELECT * FROM deid_instance_mappings")
+    assert len(inst) == q("SELECT COUNT(*) n FROM instances")[0]["n"] and any(r["original_sop_uid"] for r in inst)
+    for r in inst:
+        if r["original_sop_uid"]:                                  # an original DICOM file: found again
+            assert src[r["original_sop_uid"]].as_posix() == r["original_source_path"] != r["sop_uid"]
+    assert all(r["source_path"].startswith("deid:") for r in q("SELECT source_path FROM instances"))
+    run_row = q("SELECT * FROM deid_runs")[0]
+    assert run_row["profile"] == deid.PROFILE and run_row["run_uuid"] == run.meta["run_uuid"]
+    ct = q("SELECT * FROM series WHERE modality='CT' AND source_kind='dicom' LIMIT 1")[0]
+    assert ct["sop_class_uid"] and ct["pixel_spacing"] and ct["slice_thickness"] is not None
+    assert ct["frame_of_reference_uid"] is None or ct["frame_of_reference_uid"].startswith("2.25.")
+    assert q("SELECT patient_name, patient_id FROM subjects LIMIT 1")[0]["patient_name"] == \
+        q("SELECT patient_name, patient_id FROM subjects LIMIT 1")[0]["patient_id"]
+
+
+def test_public_run_has_no_deid_rows(conn, settings, mixed):
+    run = make_run(settings, mixed)
+    prepare(run)
+    dbmod.register_run(conn, run)
+    for t in ("deid_runs", "deid_subject_mappings", "deid_series_mappings", "deid_instance_mappings"):
+        assert dbmod.query(conn, f"SELECT COUNT(*) n FROM {t}")[0]["n"] == 0
+
+
+def test_every_existing_column_has_a_counterpart_or_a_reason(conn):
+    """oncolabdb / scpdb (shape only, tests/data): every column of the tables a merge maps value by value is
+    filled from a new-DB column or listed in NOT_MAPPED with the reason, and every new-DB column named in the
+    mapping exists after the migrations."""
+    import json
+    import re
+    from pathlib import Path
+    from dataops import legacy_db
+    snap = json.loads((Path(__file__).parent / "data" / "legacy_compared_columns.json").read_text(encoding="utf-8"))
+    cov = legacy_db.column_coverage(snap)
+    assert len(cov) == len(snap["columns"]) and [c["column"] for c in cov if c["state"] == "대응 없음"] == []
+    have = {(r["t"], r["c"]) for r in dbmod.query(
+        conn, "SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()")}
+    named = {tuple(m[0].split(" ")[0].split(".")) for m in legacy_db.MAPPING if re.fullmatch(r"\w+\.\w+", m[0].split(" ")[0])}
+    assert named and named <= have, named - have
+    assert all(m["state"] == "있음" for m in legacy_db.view(snap)["mapping"])

@@ -28,7 +28,12 @@ SERIES_TAGS = ["Modality", "SeriesDescription", "SeriesNumber", "SeriesDate", "B
                "Manufacturer", "ManufacturerModelName", "SliceThickness", "SpacingBetweenSlices", "PixelSpacing",
                "Rows", "Columns", "KVP", "ConvolutionKernel", "ContrastBolusAgent", "MagneticFieldStrength",
                "SequenceName", "ScanningSequence", "EchoTime", "RepetitionTime", "ImageOrientationPatient",
-               "PhotometricInterpretation", "BitsStored", "PatientSex", "PatientAge", "InstitutionName"]
+               "PhotometricInterpretation", "BitsStored", "PatientSex", "PatientAge", "InstitutionName",
+               # also kept by oncolabdb.lab_dataset_items / scpdb.dicom_instances (migration 0004)
+               "SeriesTime", "AcquisitionDate", "AcquisitionTime", "FrameOfReferenceUID", "PatientPosition",
+               "ImageType", "RescaleSlope", "RescaleIntercept", "BitsAllocated", "InversionTime", "FlipAngle",
+               "SequenceVariant", "ContrastBolusVolume", "PatientWeight", "DiffusionBValue", "NumberOfTemporalPositions",
+               "TemporalPositionIdentifier", "ContrastBolusIngredient", "ContrastBolusTotalDose", "EthnicGroup"]
 STUDY_TAGS = ["StudyDate", "StudyDescription"]
 
 

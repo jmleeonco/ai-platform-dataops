@@ -84,6 +84,20 @@
 {% else %}
 <p class="muted small">샘플 하나가 Local SCP에 모두 수신된 뒤 승인할 수 있습니다.</p>
 {% endif %}
+{% if cover %}
+<details class="small" id="coverage"{{ ' open' if cover.unclassified or cover.missing_series }}>
+<summary>폴더 전체 파일 처리 내역: {{ cover.files }}개 ({{ (cover.bytes / 1e9)|round(2) }} GB) 중
+전송 {{ (cover.rows|selectattr('category', 'equalto', '전송')|map(attribute='files')|sum) }}개
+· 시리즈 {{ cover.series }}개 · 파일 {{ cover.instances_frozen if cover.instances_frozen is defined else cover.instances_planned }}개 보낼 예정
+{% if cover.unclassified %}<span class="b-bad">미분류 {{ cover.unclassified }}</span>{% endif %}
+{% if cover.missing_series %}<span class="b-bad">고정 안 된 시리즈 {{ cover.missing_series|length }}</span>{% endif %}</summary>
+<table class="std"><tr><th>처리</th><th>파일</th><th>크기</th></tr>
+{% for g in cover.rows %}<tr><td>{{ g.category }}</td><td class="num">{{ g.files }}</td><td class="num">{{ (g.bytes / 1e6)|round(1) }} MB</td></tr>{% endfor %}
+</table>
+<p class="muted">Central 전송은 승인 뒤 모든 시리즈를 고정(전체 변환)하고, 여기서 미분류 파일이 0이며 모든 시리즈가 고정됐을 때만 시작합니다.
+파일마다 전송 결과를 기록하고, 다시 누르면 받지 못한 파일만 다시 보냅니다.</p>
+</details>
+{% endif %}
 {% for j in journals if j.target.kind == 'central' %}
 <p class="small"><span class="mono">{{ j.target_key }}</span> {% for k, v in j.instances.values()|groupby('status') %}{{ status(k) }} {{ v|length }} {% endfor %}</p>
 {% endfor %}

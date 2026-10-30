@@ -1,5 +1,5 @@
 {
-  "rules_version": "naming-2026-10-30",
+  "rules_version": "naming-2026-10-31",
   "source": "Notion 04-1 Data prefix 규칙 (v0.6) + Track P 공개 데이터셋 편입 트랙 (Curator 승인 2026-07-16). Notion is the master copy; this file is a copy.",
   "prefix_pattern": "[A-Z][A-Z0-9_]{1,18}[A-Z0-9]",
   "regions": {"HNN": "두경부 (head and neck, brain)", "THX": "흉부 (thorax)", "ABD": "복부 (abdomen)",

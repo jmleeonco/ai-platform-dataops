@@ -77,22 +77,42 @@ def _rasterize(contours: list[np.ndarray], shape) -> np.ndarray:
     return acc.astype(bool)
 
 
-def build_rtstruct(label_path: Path, layout: str, image: dict, label_names: dict[int, str],
-                   series_uid: str, sop_uid: str, series_number: int, description: str, out_path: Path) -> dict:
-    """image: patient_id, patient_name, study_uid, study_description, series_uid, frame_of_reference_uid,
-    sop_class_uid, sop_uids (one per canonical slice k), affine (4x4 canonical LPS), shape (ni, nj, nk)."""
-    data, affine = canonical_label(label_path, layout)
+def _on_grid(path: Path, layout: str, image: dict):
+    data, affine = canonical_label(path, layout)
     if tuple(data.shape) != tuple(image["shape"]):
         raise RtstructError(f"라벨 크기 {tuple(data.shape)} 가 영상 {tuple(image['shape'])} 과 다릅니다")
     if not np.allclose(affine, np.asarray(image["affine"]), atol=GEOMETRY_TOL_MM):
         raise RtstructError("라벨과 영상의 위치/방향(affine)이 다릅니다 — 같은 격자가 아니면 변환하지 않습니다")
-    values = sorted(int(v) for v in np.unique(data) if v != 0)
+    return data, affine
+
+
+def build_rtstruct(label_path: Path | list[Path], layout: str, image: dict, label_names: dict[int, str],
+                   series_uid: str, sop_uid: str, series_number: int, description: str, out_path: Path) -> dict:
+    """label_path: one label map (one ROI per non-zero value), or a list of binary masks (one ROI per file, its
+    non-zero voxels; ROI i is label_names[i]). image: patient_id, patient_name, study_uid, study_description,
+    series_uid, frame_of_reference_uid, sop_class_uid, sop_uids (one per canonical slice k), affine (4x4
+    canonical LPS), shape (ni, nj, nk)."""
+    if isinstance(label_path, list):
+        masks = []
+        for i, p in enumerate(label_path, start=1):
+            data, affine = _on_grid(p, layout, image)
+            masks.append((i, data != 0))
+        present = [i for i, m in masks if m.any()]
+        values = present
+        mask_of = dict(masks)
+        if not present:
+            raise RtstructError("모든 마스크가 비어 있습니다")
+    else:
+        data, affine = _on_grid(label_path, layout, image)
+        values = sorted(int(v) for v in np.unique(data) if v != 0)
+        mask_of = None
     rois, report_rois = [], []
     for number, value in enumerate(values, start=1):
         name = label_names.get(value) or f"label_{value}"
+        vol = mask_of[value] if mask_of is not None else data == value
         contours, inter, total_mask, total_raster = [], 0, 0, 0
-        for k in np.nonzero(np.any(data == value, axis=(0, 1)))[0]:
-            m = data[:, :, k] == value
+        for k in np.nonzero(np.any(vol, axis=(0, 1)))[0]:
+            m = vol[:, :, k]
             cs = _contours(m)
             r = _rasterize(cs, m.shape)
             inter += int(np.count_nonzero(m & r))
@@ -109,7 +129,7 @@ def build_rtstruct(label_path: Path, layout: str, image: dict, label_names: dict
                             "named": value in label_names})
     if not rois:
         raise RtstructError("라벨 볼륨에 0이 아닌 값이 없습니다")
-    missing = sorted(set(label_names) - set(values) - {0})
+    missing = sorted(set(label_names) - set(values) - {0})          # a value absent, or an empty mask
 
     ds = Dataset()
     ds.file_meta = FileMetaDataset()

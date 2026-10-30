@@ -61,7 +61,8 @@ def browse(settings: Settings, rel: str | None) -> dict:
         except OSError:
             continue
     parent = str(cur.parent) if cur and any(cur != r and cur.is_relative_to(r) for r in roots) else None
-    return {"current": str(cur) if cur else None, "entries": entries[:500], "parent": parent, "roots": roots}
+    return {"current": str(cur) if cur else None, "entries": entries[:500], "parent": parent, "roots": roots,
+            "internal": settings.internal_roots}
 
 
 def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
@@ -92,7 +93,9 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
     async def new_submit(request: Request):
         form = await checked_form(request)
         try:
-            run, _ = start_analysis(settings, form.get("input_root", ""), form.get("by", ""), form.get("deid") == "1")
+            choice = form.get("deid", "auto")
+            run, _ = start_analysis(settings, form.get("input_root", ""), form.get("by", ""),
+                                    None if choice not in ("1", "0") else choice == "1")
         except RunError as e:
             return RedirectResponse(f"/new?err={quote(str(e))}", status_code=303)
         return back(run.id, msg="분석을 시작했습니다. 폴더 크기에 따라 몇 분 걸립니다.")

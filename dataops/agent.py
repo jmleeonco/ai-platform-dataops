@@ -23,13 +23,15 @@ from .util import now_iso, write_json
 
 ROLES = ["image", "label", "ignore"]
 SPLITS = ["train", "validation", "test", "other", "none"]
+PAIRINGS = ["same_name", "subject", "same_folder"]
+LABEL_KINDS = ["label_map", "binary_masks"]
 
 PROPOSAL_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["rules_version", "summary_ko", "dataset", "sources", "excluded", "subject_pattern",
-                 "modality_rules", "label_pairing", "label_names", "pilot_subjects", "findings", "questions",
-                 "nifti_layout"],
+                 "modality_rules", "label_pairing", "label_kind", "roi_name_regex", "label_names", "pilot_subjects",
+                 "findings", "questions", "nifti_layout"],
     "properties": {
         "rules_version": {"type": "string", "maxLength": 64},
         "summary_ko": {"type": "string", "maxLength": 4000},
@@ -47,8 +49,9 @@ PROPOSAL_SCHEMA = {
                 "patient_id_prefix": {"type": "string", "maxLength": 20},
             }},
         "sources": {"type": "array", "maxItems": 64, "items": {
-            "type": "object", "additionalProperties": False, "required": ["path", "role", "split", "note"],
+            "type": "object", "additionalProperties": False, "required": ["path", "role", "split", "pattern", "note"],
             "properties": {"path": {"type": "string", "maxLength": 500}, "role": {"type": "string", "enum": ROLES},
+                           "pattern": {"type": "string", "maxLength": 200},
                            "split": {"type": "string", "enum": SPLITS}, "note": {"type": "string", "maxLength": 500}}}},
         "excluded": {"type": "array", "maxItems": 64, "items": {
             "type": "object", "additionalProperties": False, "required": ["path", "reason"],
@@ -60,7 +63,9 @@ PROPOSAL_SCHEMA = {
             "type": "object", "additionalProperties": False, "required": ["regex", "modality", "basis"],
             "properties": {"regex": {"type": "string", "maxLength": 200}, "modality": {"type": "string", "enum": ["CT", "MR"]},
                            "basis": {"type": "string", "maxLength": 300}}}},
-        "label_pairing": {"type": "string", "enum": ["same_name", "subject"]},
+        "label_pairing": {"type": "string", "enum": PAIRINGS},
+        "label_kind": {"type": "string", "enum": LABEL_KINDS},
+        "roi_name_regex": {"type": "string", "maxLength": 200},
         "label_names": {"type": "array", "maxItems": 256, "items": {
             "type": "object", "additionalProperties": False, "required": ["value", "name"],
             "properties": {"value": {"type": "integer", "minimum": 1, "maximum": 65535},

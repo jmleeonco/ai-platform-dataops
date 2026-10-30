@@ -58,7 +58,10 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 `runtime/jobs/<job>.log`, page `/jobs`).
 
 1. **새 분석** (`/new`): an absolute folder under `DATAOPS_INPUT_ROOTS` (default
-   `/mnt2/data/Public_dataset`; backup/hidden folders refused). Job `analyze`:
+   `/mnt2/data/Public_dataset`; on this host also `/mnt2/data/Onco_dataset` and its read-only copy
+   `/mnt2-v3-test/data/Onco_dataset`; backup/hidden folders refused). Pseudonymisation is chosen by location
+   ("자동", the default): on for a folder under `DATAOPS_INTERNAL_ROOTS` (default the two Onco_dataset roots:
+   hospital and in-house data), off for public data, which keep their published case IDs; 켬 / 끔 override it. Job `analyze`:
    `scan` (directory overview + NIfTI headers, ~1 min for AMOS 62 GB) → analysis agent → `spec`
    check → plan. Nothing is converted or sent.
    NFS inputs are read in parallel: each directory is listed once and stat'ed with 64 threads, header probes
@@ -103,7 +106,7 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    PatientName become `<prefix>_<pseudonym>`, person names, birth date, accession, institution and the
    other identifiers in `deid.REMOVE` are emptied, private tags are dropped, every instance UID is replaced
    by a keyed `2.25.` UID (consistently, so an RTSTRUCT still references its CT), and study/series dates are
-   kept. "비식별 켜고 분석" on the new-analysis form switches it on before the first sample extraction. The
+   kept. The new-analysis form decides it before the first sample extraction (자동 / 켬 / 끔, see 1). The
    pages are for the owner: the left (source) column always shows the real values; only the right
    (outgoing) column follows the switch. The
    whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
@@ -148,10 +151,17 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    the one sample chosen in its dropdown; `approval.pilot_subjects` lists the received ones) for the current plan, the
    approver's name and the dataset name typed as confirmation. Stored in `run.json` `approval`
    (plan sha256, pilot manifest sha256, target) and later in `ingest_runs.approval_json`.
-6. **Central + DB** (job `publish`): full freeze (pilot artifacts reused after their sources are
-   re-hashed) → C-STORE to Central with a journal → registration in the management DB. Refused unless
-   `DATAOPS_CENTRAL_HOST/PORT/CALLED_AE` are set **and** `DATAOPS_CENTRAL_ENABLED=true`; the target is
-   not set (owner, 2026-10-28), so an approval is recorded and publication waits.
+6. **Central + DB** (job `publish`): full freeze of every series of the plan (pilot artifacts reused after
+   their sources are re-hashed) → C-STORE of every frozen file to Central with a journal (one record per SOP;
+   pressing again sends only what was not accepted) → registration in the management DB. Before the first
+   file leaves, `publish.coverage` accounts for **every file of the input folder** — sent (a series), excluded
+   series, skipped by the plan (with the reason), duplicate / conflicting copy, or left out (outside every
+   source, with the agent's reason) — and publication is refused while a file the plan read is unclassified or
+   an active series is missing from the full manifest. The run page shows this table under section 2
+   ("폴더 전체 파일 처리 내역"). Refused unless `DATAOPS_CENTRAL_HOST/PORT/CALLED_AE` are set **and**
+   `DATAOPS_CENTRAL_ENABLED=true`; the target is not set (owner, 2026-10-28 and 2026-10-31: no send to
+   Central, not even a test), so an approval is recorded and publication waits. The algorithm is tested
+   against a loopback SCP only (`tests/test_agent_flow.py`).
 
 CLI equivalents: `analyze DIR [--wait]`, `pilot RUN`, `approve RUN --by NAME --confirm NAME`,
 `publish RUN [--dry-run]`, `worker [--once]`.

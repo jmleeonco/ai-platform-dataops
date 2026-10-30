@@ -7,6 +7,7 @@ derived UIDs use the file's path inside the dataset as its identity (`conversion
 """
 from __future__ import annotations
 
+import fnmatch
 import re
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
@@ -14,7 +15,7 @@ from pathlib import Path, PurePosixPath
 import nibabel as nib
 import numpy as np
 
-from .agent import ROLES, SPLITS
+from .agent import LABEL_KINDS, PAIRINGS, ROLES, SPLITS
 from .inventory import SKIP_DIR_NAMES, _dicom_record, read_dicom_header
 from .legacy import n2d
 from .plan import PREFIX_RE, dicom_series, validate_plan
@@ -32,6 +33,10 @@ SAMPLES = 3                # sample subjects: extracted at analysis, shown, sent
 
 class SpecError(ValueError):
     pass
+
+
+def posix_parent(rel: str) -> str:
+    return rel.rsplit("/", 1)[0] if "/" in rel else "."
 
 
 def _clean_rel(root: Path, rel: str) -> str:
@@ -74,10 +79,16 @@ def check_proposal(root: Path, p: dict) -> dict:
     for s in p.get("sources") or []:
         if s.get("role") not in ROLES or s.get("split") not in SPLITS:
             raise SpecError(f"source {s.get('path')!r}: role/split 값 오류")
+        pattern = str(s.get("pattern") or "").strip()
+        if len(pattern) > MAX_REGEX or "/" in pattern:
+            raise SpecError(f"source {s.get('path')!r}: pattern은 파일 이름 glob (경로 구분자 없이, {MAX_REGEX}자 이하)")
         sources.append({"path": _clean_rel(root, s["path"]), "role": s["role"], "split": s["split"],
-                        "note": str(s.get("note") or "")[:500]})
-    if not any(s["role"] == "image" for s in sources):
-        raise SpecError("image 역할의 source가 없습니다")
+                        "pattern": pattern, "note": str(s.get("note") or "")[:500]})
+    seen = set()
+    for s in sources:
+        if (s["path"], s["pattern"]) in seen:
+            raise SpecError(f"source {s['path']!r} 가 같은 pattern {s['pattern']!r} 으로 두 번 나옵니다")
+        seen.add((s["path"], s["pattern"]))
     excluded = []
     for e in p.get("excluded") or []:
         try:
@@ -101,14 +112,21 @@ def check_proposal(root: Path, p: dict) -> dict:
         if not 1 <= v <= 65535:
             raise SpecError(f"label 값 {v} 범위 오류")
         names[v] = str(item["name"]).strip()[:64] or f"label_{v}"
-    if p.get("label_pairing") not in ("same_name", "subject"):
-        raise SpecError("label_pairing 은 same_name 또는 subject")
+    if p.get("label_pairing") not in PAIRINGS:
+        raise SpecError(f"label_pairing 은 {', '.join(PAIRINGS)} 중 하나")
+    kind = p.get("label_kind") or "label_map"
+    if kind not in LABEL_KINDS:
+        raise SpecError(f"label_kind 는 {', '.join(LABEL_KINDS)} 중 하나")
+    roi_rx = str(p.get("roi_name_regex") or "")
+    if roi_rx and _regex(roi_rx, "roi_name_regex").groups < 1:
+        raise SpecError("roi_name_regex 에는 ROI 이름을 잡는 그룹 1이 있어야 합니다")
     layout = p.get("nifti_layout") or "standard"
     if layout not in ("standard", "onco"):
         raise SpecError("nifti_layout 은 standard 또는 onco")
     return {"summary_ko": str(p.get("summary_ko") or "")[:4000], "dataset": ds, "sources": sources,
             "excluded": excluded, "subject_pattern": {"regex": subj["regex"], "note": str(subj.get("note") or "")},
-            "modality_rules": rules, "label_pairing": p["label_pairing"], "label_names": names,
+            "modality_rules": rules, "label_pairing": p["label_pairing"], "label_kind": kind,
+            "roi_name_regex": roi_rx, "label_names": names,
             "pilot_subjects": [str(x) for x in (p.get("pilot_subjects") or [])][:4], "nifti_layout": layout,
             "rules_version": str(p.get("rules_version") or ""),
             "findings": ([] if p.get("rules_version") == RULES_VERSION else       # the skill was not read
@@ -150,13 +168,23 @@ def _excluded_by(rel: str, excluded: list[dict]) -> tuple[str, str] | None:
 
 
 def _source_of(rel: str, sources: list[dict]) -> dict | None:
-    best = None
+    """The most specific source covering rel whose file-name pattern (if any) matches; at the same path a source
+    with a pattern wins over one without."""
+    best, name = None, rel.rsplit("/", 1)[-1]
     for s in sources:
         p = s["path"]
-        if p == "." or rel == p or rel.startswith(p + "/"):
-            if best is None or len(p) > len(best["path"]):
+        if (p == "." or rel == p or rel.startswith(p + "/")) and (not s["pattern"] or fnmatch.fnmatchcase(name, s["pattern"])):
+            rank = (len(p), bool(s["pattern"]))
+            if best is None or rank > (len(best["path"]), bool(best["pattern"])):
                 best = s
     return best
+
+
+def roi_name(spec: dict, name: str) -> str:
+    """ROI name of a binary mask file: group 1 of roi_name_regex, or the file name without its extension."""
+    m = re.search(spec["roi_name_regex"], name) if spec["roi_name_regex"] else None
+    stem = re.sub(r"\.nii(\.gz)?$", "", name)
+    return ((m.group(1) if m else stem).strip() or stem)[:64]
 
 
 def _walked(root: Path, rel: str) -> bool:
@@ -289,12 +317,16 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
     by_name = defaultdict(list)
     for key, (s, im) in image_series.items():
         by_name[im["name"]].append(key)
-    by_subj = defaultdict(list)
+    by_subj, by_dir = defaultdict(list), defaultdict(list)
     for key, (s, im) in image_series.items():
         by_subj[s["subject_key"]].append(key)
+        by_dir[posix_parent(im["rel"])].append(key)
+    masks = defaultdict(list)            # binary_masks: image series key -> its mask files
     for lb in labels:
         if spec["label_pairing"] == "same_name":
             cands = by_name.get(lb["name"], [])
+        elif spec["label_pairing"] == "same_folder":
+            cands = by_dir.get(posix_parent(lb["rel"]), [])
         else:
             cands = by_subj.get(lb["subject"], []) if lb["subject"] else []
         if len(cands) != 1:
@@ -307,6 +339,9 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
             skipped.append({"rel": lb["rel"], "kind": "label",
                             "reason": f"영상 {img['rel']} 과 격자(크기/위치/방향)가 달라 RTSTRUCT로 만들 수 없음"})
             continue
+        if spec["label_kind"] == "binary_masks":
+            masks[cands[0]].append(lb)
+            continue
         series.append({"series_key": f"rtstruct:{lb['rel']}", "kind": "rtstruct", "excluded": False,
                        "split": img_s["split"], "reference": img_s["series_key"],
                        "subject_key": img_s["subject_key"], "patient_id": None, "study_uid": None, "series_uid": None,
@@ -317,6 +352,28 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
                        "conversion": {"converter": RTSTRUCT_VERSION, "layout": layout,
                                       "label_names": {str(k): v for k, v in spec["label_names"].items()},
                                       "source_sha256": None, "identity": f"path:{lb['rel']}", "deterministic": True}})
+
+    for key, lbs in sorted(masks.items()):       # one RTSTRUCT per image, one ROI per mask file
+        img_s, img = image_series[key]
+        lbs = sorted(lbs, key=lambda x: x["rel"])
+        names, used = {}, set()
+        for i, lb in enumerate(lbs, start=1):
+            base = n = roi_name(spec, lb["name"])
+            k = 2
+            while n in used:
+                n, k = f"{base}_{k}"[:64], k + 1
+            used.add(n)
+            names[str(i)] = n
+        series.append({"series_key": f"rtstruct:masks:{img['rel']}", "kind": "rtstruct", "excluded": False,
+                       "split": img_s["split"], "reference": img_s["series_key"],
+                       "subject_key": img_s["subject_key"], "patient_id": None, "study_uid": None, "series_uid": None,
+                       "modality": "RTSTRUCT", "modality_basis": f"이진 마스크 {len(lbs)}개 → RTSTRUCT",
+                       "needs_review": False, "description": None, "series_number": None, "instance_count": 1,
+                       "sop_class_uids": [], "sources": [lb["rel"] for lb in lbs], "duplicates": [], "conflicts": [],
+                       "metadata": {"split": img_s["split"], "label_of": img["rel"], "mask_files": len(lbs)},
+                       "conversion": {"converter": RTSTRUCT_VERSION, "layout": layout, "masks": True,
+                                      "label_names": names, "source_sha256": None,
+                                      "identity": f"masks:{img['rel']}", "deterministic": True}})
 
     # ---- original DICOM: passed through (pseudonymised when switched on), one series per Series UID ----
     _, _, dicom = dicom_series(inv_files, root)
@@ -331,7 +388,9 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
         if rel in included:
             continue
         hit = _excluded_by(rel, spec["excluded"])
-        top, reason = hit if hit else (rel.split("/")[0] if "/" in rel else rel, "어느 source에도 속하지 않음")
+        under = [x for x in spec["sources"] if x["pattern"] and (x["path"] == "." or rel.startswith(x["path"] + "/"))]
+        top, reason = hit if hit else (rel.split("/")[0] if "/" in rel else rel,
+                                       "source 파일 패턴과 맞지 않음" if under else "어느 source에도 속하지 않음")
         g = not_included[(top, reason)]
         g["files"] += 1
         try:
@@ -341,17 +400,24 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
     left_out = [{"path": top, "reason": reason, **{k: v for k, v in g.items() if k != "reason"}}
                 for (top, reason), g in sorted(not_included.items())]
 
+    if not any(x["kind"] in ("nifti", "dicom") for x in series):
+        unresolved.append({"code": "no_image", "blocking": True, "series_keys": [],
+                           "message": "변환할 영상이 없습니다 — 에이전트 질문과 제외 사유를 확인하세요"
+                                      + ("" if any(x["role"] == "image" for x in spec["sources"])
+                                         else " (image 역할의 source 없음)")})
     image_kinds = ("nifti", "dicom")
     subjects = sorted({s["subject_key"] for s in series if s["kind"] in image_kinds})
     with_label = {s["subject_key"] for s in series if s["kind"] == "rtstruct" or s["modality"] in ("RTSTRUCT", "SEG")}
     pilot = [x for x in spec["pilot_subjects"] if x in subjects][:SAMPLES]
-    if len(pilot) < SAMPLES:
+    for labelled in (True, False):          # subjects with labels first; images only when none has a label
         for mod in ("CT", "MR", None):
             for s in series:
-                if s["kind"] in image_kinds and s["subject_key"] not in pilot and s["subject_key"] in with_label \
-                        and (mod is None or s["modality"] == mod) and len(pilot) < SAMPLES:
+                if s["kind"] in image_kinds and s["subject_key"] not in pilot and len(pilot) < SAMPLES \
+                        and (s["subject_key"] in with_label or not labelled) and (mod is None or s["modality"] == mod):
                     pilot.append(s["subject_key"])
                     break
+        if pilot:
+            break
     ds = spec["dataset"]
     dataset = {"dataset_uuid": dataset_uuid, "name": ds.get("name") or root.name, "source_url": ds.get("source_url"),
                "license": ds.get("license"), "description": ds.get("description"),
@@ -366,7 +432,8 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
                          "questions": spec["questions"], "sources": spec["sources"], "excluded": spec["excluded"],
                          "subject_pattern": spec["subject_pattern"], "modality_rules": spec["modality_rules"],
                          "rules_version": spec["rules_version"],
-                         "label_pairing": spec["label_pairing"],
+                         "label_pairing": spec["label_pairing"], "label_kind": spec["label_kind"],
+                         "roi_name_regex": spec["roi_name_regex"],
                          "label_names": {str(k): v for k, v in spec["label_names"].items()},
                          "citation": ds.get("citation"), "left_out": left_out, "agent": agent_meta or {}}}
     inventory = {"schema_version": 1, "input_root": str(root), "created_at": now_iso(),

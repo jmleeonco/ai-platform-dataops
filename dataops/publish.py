@@ -19,6 +19,52 @@ PUBLISH_STATES = {"PREPARED", "LOCAL_SENT", "LOCAL_PARTIAL", "LOCAL_FAILED", "CE
                   "CENTRAL_FAILED"}
 
 
+def coverage(run: Run, plan: dict | None = None, manifest: dict | None = None) -> dict:
+    """Where every file of the input folder goes: sent (a series of the plan), held back (an excluded series, a
+    file the plan skips, a duplicate or conflicting copy) or left out (outside every source, with the reason).
+    `unclassified` counts files the plan read but did not decide on; Central publication requires 0. With the
+    full manifest, `missing_series` lists active series it does not hold."""
+    plan = plan if plan is not None else (run.load("plan.json") or {})
+    inv = run.load("inventory.json") or {"files": []}
+    where = {}
+    for se in plan.get("series", []):
+        for rel in se["sources"]:
+            where[rel] = "제외한 시리즈" if se.get("excluded") else "전송"
+        for d in se.get("duplicates", []):
+            where.setdefault(d["rel"], "중복 사본 (같은 SOP, 같은 내용: 한 번만 전송)")
+        for c in se.get("conflicts", []):
+            if "rel" in c:
+                where.setdefault(c["rel"], "충돌 사본 (같은 SOP, 다른 내용)")
+    for sk in plan.get("skipped", []):
+        where.setdefault(sk["rel"], f"건너뜀: {sk.get('reason') or sk.get('kind')}"[:120])
+    groups: dict[str, dict] = {}
+
+    def add(cat, files, size):
+        g = groups.setdefault(cat, {"category": cat, "files": 0, "bytes": 0})
+        g["files"] += files
+        g["bytes"] += size or 0
+    unclassified = 0
+    for f in inv["files"]:
+        cat = where.get(f["rel"])
+        if cat is None:
+            unclassified += 1
+            cat = "미분류"
+        add(cat, 1, f.get("size"))
+    for e in (plan.get("analysis") or {}).get("left_out", []):
+        add(f"범위 밖: {e['reason']}"[:160], e.get("files", 0), e.get("bytes", 0))
+    order = {"전송": 0, "제외한 시리즈": 1}
+    rows = sorted(groups.values(), key=lambda g: (order.get(g["category"], 2), -g["files"]))
+    active = [se for se in plan.get("series", []) if not se.get("excluded")]
+    out = {"rows": rows, "files": sum(g["files"] for g in rows), "bytes": sum(g["bytes"] for g in rows),
+           "unclassified": unclassified, "series": len(active),
+           "instances_planned": sum(int(se.get("instance_count") or 0) for se in active)}
+    if manifest is not None:
+        held = {se["series_uid"] for se in manifest["series"]}
+        out["missing_series"] = [se["series_key"] for se in active if se["series_uid"] not in held]
+        out["instances_frozen"] = len(manifest["instances"])
+    return out
+
+
 def central_ready(central: CentralScp) -> tuple[bool, str]:
     if not central.configured:
         return False, "Central SCP 미설정 (DATAOPS_CENTRAL_HOST/PORT/CALLED_AE)"
@@ -88,6 +134,10 @@ def publish_central(run: Run, settings: Settings, dry_run: bool = False) -> dict
         manifest = run.load("manifest.json")
         if not approval or not manifest or manifest["plan_sha256"] != approval["plan_sha256"]:
             raise RunError("승인된 plan으로 고정된 manifest가 아닙니다 — Central 전송 거부")
+        cov = coverage(run, manifest=manifest)       # every file of the folder decided, every series frozen
+        if cov["unclassified"] or cov["missing_series"]:
+            raise RunError(f"폴더 전체 처리 내역이 맞지 않습니다 (미분류 파일 {cov['unclassified']}개, "
+                           f"manifest에 없는 시리즈 {len(cov['missing_series'])}개) — Central 전송 거부")
         target = {"host": c.host, "port": int(c.port), "called_ae": c.called_ae, "calling_ae": c.calling_ae,
                   "kind": "central", "approved_by": approval["approved_by"]}
         r = send_with_journal(run, "full", c.key, target, dest, dry_run)

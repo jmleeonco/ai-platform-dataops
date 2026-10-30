@@ -79,11 +79,22 @@ def submit(settings: Settings, kind: str, run_id: str, params: dict | None = Non
     return job
 
 
-def start_analysis(settings: Settings, input_root: str, by: str = "", deid_on: bool = False) -> tuple[Run, dict]:
-    """deid_on: pseudonymise from the start, so even the first sample extraction carries no identifiers."""
+def is_internal(settings: Settings, root: Path) -> bool:
+    """Is the folder under an internal-data root (hospital or in-house data, identifiers in the files)?"""
+    return any(root == Path(r).resolve() or root.is_relative_to(Path(r).resolve()) for r in settings.internal_roots)
+
+
+def start_analysis(settings: Settings, input_root: str, by: str = "", deid_on: bool | None = None) -> tuple[Run, dict]:
+    """deid_on: pseudonymise from the start, so even the first sample extraction carries no identifiers.
+    None decides by location: on for internal data (DATAOPS_INTERNAL_ROOTS), off for public data, which are
+    de-identified already and keep their published case IDs."""
     root = check_input_root(settings, input_root)
+    auto = deid_on is None
+    if auto:
+        deid_on = is_internal(settings, root)
     run = Run.create(settings.runs_dir, dataset_uuid_for(str(root)), str(root))
-    run.set_status("ANALYZING", f"분석 요청{f' ({by})' if by else ''}{' · 비식별 켜짐' if deid_on else ''}")
+    why = (" · 비식별 켜짐" if deid_on else "") + (" (내부 데이터 위치라 자동)" if auto and deid_on else "")
+    run.set_status("ANALYZING", f"분석 요청{f' ({by})' if by else ''}{why}")
     return run, submit(settings, "analyze", run.id, {"input_root": str(root), "deid": deid_on}, by)
 
 
