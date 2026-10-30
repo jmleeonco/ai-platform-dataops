@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-import re
 import secrets
 from pathlib import Path
 
@@ -150,31 +149,3 @@ def dicom(plan: dict, ds: pydicom.Dataset, out_patient_id: str) -> pydicom.Datas
         meta.MediaStorageSOPInstanceUID = uid(plan, str(meta.MediaStorageSOPInstanceUID))
     return ds
 
-
-def redact(plan: dict, obj):
-    """A copy of a page's data (report, tables) with source paths and subject keys shown as they leave, so the
-    web pages do not show identifiers kept in folder names (unchanged when pseudonymisation is off)."""
-    if not enabled(plan):
-        return obj
-    swap = {}
-    for s in plan.get("series", []):
-        if len(s["subject_key"]) >= 3:
-            swap[s["subject_key"]] = subject(plan, s["subject_key"])
-        for rel in s.get("sources") or []:
-            parts = rel.split("/")
-            for n in range(1, len(parts) + 1):
-                swap.setdefault("/".join(parts[:n]), path(plan, "/".join(parts[:n])))
-    swap.pop(".", None)
-    if not swap:
-        return obj
-    rx = re.compile("|".join(re.escape(k) for k in sorted(swap, key=len, reverse=True)))
-
-    def walk(o):
-        if isinstance(o, str):
-            return rx.sub(lambda m: swap[m.group(0)], o)
-        if isinstance(o, dict):
-            return {walk(k) if isinstance(k, str) else k: walk(v) for k, v in o.items()}
-        if isinstance(o, (list, tuple)):
-            return [walk(v) for v in o]
-        return o
-    return walk(obj)

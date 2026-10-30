@@ -110,18 +110,6 @@ def _nifti_sources(c: dict) -> dict:
     return out
 
 
-MASK = "(가림: 비식별 켜짐)"
-MASKED_DB = {"대상자 키", "원본 경로", "원본 전체 경로"}
-
-
-def _mask(rows: list[dict], kws: set) -> list[dict]:
-    """With pseudonymisation on, the page does not show an identifying source value that is replaced."""
-    for r in rows:
-        if r["src"] is not None and r["changed"] and (r["item"].split(" ")[0] in kws or r["from"] in MASKED_DB):
-            r["src"] = MASK
-    return rows
-
-
 def _row(group, item, src_from, src, out, action, ident=False) -> dict:
     src, out = _text(src), _text(out)
     return {"group": group, "item": item, "from": src_from, "src": src, "out": out, "action": action,
@@ -187,7 +175,7 @@ def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
         else:
             action = "생성"
         rows.append(_row("DB", col, label or "—", sv, v, action, (table, col) in DB_KEEPS and s["kind"] == "dicom"))
-    return _mask(rows, set()) if c["deid"] else rows
+    return rows
 
 
 def _dataset_rows(rec: dict, input_root: str) -> list[dict]:
@@ -223,13 +211,11 @@ def sample_view(run: Run) -> dict:
     def one(table, key, value):
         return next((r for r in recs[table] if r[key] == value), None)
     ds_rec = recs["datasets"][0] if recs["datasets"] else {}
-    on = deid.enabled(plan)
     cases = {}
     for s in sorted(pilot_series(plan), key=lambda x: (x["subject_key"], x["kind"] == "rtstruct", x["series_key"])):
         rel = (s.get("sources") or [None])[0]
         image = by_key.get(s.get("reference")) if s["kind"] == "rtstruct" else None
         c = {"s": s, "rel": rel, "dataset_name": plan["dataset"].get("name"), "input_root": plan["input_root"],
-             "deid": on,
              "image_rel": ((image or {}).get("sources") or [None])[0],
              "hdr": nifti_header(rel) if s["kind"] == "nifti" and rel else None,
              "src_ds": read_dicom_header(root / rel) if s["kind"] == "dicom" and rel else None}
@@ -243,14 +229,9 @@ def sample_view(run: Run) -> dict:
             except Exception:  # noqa: BLE001 - shown as "not extracted"
                 out_ds = None
         label = f"{KIND_LABEL.get(s['kind'], s['kind'])} {s.get('modality') or ''}".strip()
-        case = cases.setdefault(s["subject_key"], {"subject_key": s["subject_key"], "dicom": [], "db": [],
-                                                   "name": deid.subject(plan, s["subject_key"])})
+        case = cases.setdefault(s["subject_key"], {"subject_key": s["subject_key"], "dicom": [], "db": []})
         rows = _dicom_rows(c, out_ds)
-        if on:
-            names = {el.keyword for el in c["src_ds"] if el.VR == "PN"} if c["src_ds"] is not None else set()
-            _mask(rows, IDENTIFYING | names)
-        case["dicom"].append({"uid": s["series_uid"], "kind": s["kind"], "label": label,
-                              "source": MASK if on else rel,
+        case["dicom"].append({"uid": s["series_uid"], "kind": s["kind"], "label": label, "source": rel,
                               "frozen": out_ds is not None, "rows": rows, "flags": sum(1 for r in rows if r["flag"])})
         db = case["db"]
         if not db:

@@ -196,7 +196,7 @@ def test_sample_view_flags_identifiers_passed_through(settings, mixed):
 
 def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
     """Pseudonymisation on: an original DICOM export leaves with a pseudonym, without names or identifiers and
-    with new UIDs that still reference each other; study dates stay. The page does not show the originals."""
+    with new UIDs that still reference each other; study dates stay."""
     import pydicom
     from dataops import deid
     from dataops.compare import sample_view
@@ -236,12 +236,13 @@ def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
         assert d.file_meta.MediaStorageSOPInstanceUID == d.SOPInstanceUID
         if len(files) == len(out):           # all files in one series: the references are remapped consistently
             assert d.ReferencedImageSequence[0].ReferencedSOPInstanceUID in out_sops
-    case = sample_view(run)["cases"][0]
-    assert case["name"].startswith("S") and case["dicom"][0]["source"].startswith("(가림")
-    client = TestClient(create_app(settings))
-    for url in ("", "/report", "/report.json", "/series.json", "/dicom.json", "/series.csv"):
-        page = client.get(f"/runs/{run.id}{url}").text
-        assert source_pid not in page and "SYNTH^" not in page and "ACC123" not in page and "DOC^ONE" not in page, url
+    # the page is for the owner: the left column keeps the real source values, the right one what leaves
+    rows = {r["item"].split(" ")[0]: r for r in sample_view(run)["cases"][0]["dicom"][0]["rows"]}
+    assert rows["PatientID"]["src"] == source_pid and rows["PatientID"]["out"] == dicom["patient_id"]
+    assert rows["AccessionNumber"]["src"] == "ACC123" and not rows["AccessionNumber"]["out"]
+    assert rows["StudyDate"]["src"] == rows["StudyDate"]["out"] == "20200101"
+    page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
+    assert source_pid in page and dicom["patient_id"] in page
 
 
 def test_legacy_page_without_and_with_a_snapshot(settings, test_db):

@@ -87,9 +87,9 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    PatientName become `<prefix>_<pseudonym>`, person names, birth date, accession, institution and the
    other identifiers in `deid.REMOVE` are emptied, private tags are dropped, every instance UID is replaced
    by a keyed `2.25.` UID (consistently, so an RTSTRUCT still references its CT), and study/series dates are
-   kept. "비식별 켜고 분석" on the new-analysis form switches it on before the first sample extraction. While
-   on, the pages (sample view, report, lists) show pseudonyms and hashed paths instead of the originals;
-   the folder picker on the new-analysis page still shows folder names. The
+   kept. "비식별 켜고 분석" on the new-analysis form switches it on before the first sample extraction. The
+   pages are for the owner: the left (source) column always shows the real values; only the right
+   (outgoing) column follows the switch. The
    whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
    above; dataset fields, splits, labels and history are under "설정 · 기록". The folder overview
    (`scan.py`) stops after 120 s and stats at most 200 files per directory (sizes beyond are estimated). `/runs/<run>/report` has all 10, `report.json`, `dicom.json` / `dicom.csv` (6), `records.json` / `records/<table>.csv` (7, with
