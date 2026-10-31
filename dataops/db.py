@@ -13,11 +13,12 @@ from pathlib import Path
 import pymysql
 import pymysql.cursors
 
-from .records import TABLES, build_records, to_db_value
+from .records import DEID_TABLES, MANAGEMENT_TABLES, build_records, deid_map_records, to_db_value
 from .runs import Run
 from .util import now_iso
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "sql" / "migrations"
+DEIDMAP_MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "sql" / "deid_map_migrations"
 NAME_RE = re.compile(r"[A-Za-z0-9_]{1,64}")
 FORBIDDEN_SCHEMAS = {"scpdb", "oncolabdb", "mysql", "information_schema", "performance_schema", "sys"}
 
@@ -54,9 +55,9 @@ def connection(db: dict):
 
 
 # --------------------------------------------------------------------------- migrations
-def migration_files() -> list[tuple[str, str, list[str]]]:
+def migration_files(directory: Path = MIGRATIONS_DIR) -> list[tuple[str, str, list[str]]]:
     out = []
-    for p in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql")):
+    for p in sorted(directory.glob("[0-9][0-9][0-9][0-9]_*.sql")):
         text = p.read_text(encoding="utf-8")
         body = "\n".join(line for line in text.splitlines() if not line.strip().startswith("--"))
         statements = [s.strip() for s in body.split(";") if s.strip()]
@@ -64,32 +65,32 @@ def migration_files() -> list[tuple[str, str, list[str]]]:
     return out
 
 
-def migration_status(conn) -> dict:
+def migration_status(conn, directory: Path = MIGRATIONS_DIR) -> dict:
     with conn.cursor() as cur:
         cur.execute("SHOW TABLES LIKE 'schema_migrations'")
         applied = {}
         if cur.fetchone():
             cur.execute("SELECT version, sha256, applied_at FROM schema_migrations ORDER BY version")
             applied = {r["version"]: r for r in cur.fetchall()}
-    files = migration_files()
+    files = migration_files(directory)
     changed = [v for v, sha, _ in files if v in applied and applied[v]["sha256"] != sha]
     pending = [v for v, _, _ in files if v not in applied]
     return {"applied": sorted(applied), "pending": pending, "changed": changed,
             "current": max(applied) if applied else None}
 
 
-def migrate(conn) -> list[str]:
+def migrate(conn, directory: Path = MIGRATIONS_DIR) -> list[str]:
     """Apply pending migrations in order. MariaDB DDL is not transactional: a failure stops and reports."""
     with conn.cursor() as cur:
         cur.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(64) CHARACTER SET ascii PRIMARY KEY,"
                     " sha256 CHAR(64) CHARACTER SET ascii NOT NULL,"
                     " applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB")
     conn.commit()
-    status = migration_status(conn)
+    status = migration_status(conn, directory)
     if status["changed"]:
         raise DbError(f"이미 적용된 migration 파일이 바뀌었습니다: {status['changed']} — 새 migration으로 추가하세요")
     done = []
-    for version, sha, statements in migration_files():
+    for version, sha, statements in migration_files(directory):
         if version not in status["pending"]:
             continue
         with conn.cursor() as cur:
@@ -134,12 +135,12 @@ def _fetch_existing(cur, table: str, rows: list[dict]) -> dict:
     return found
 
 
-def register(conn, records: dict) -> dict:
-    """Insert/update every row in one transaction; identity conflicts roll everything back."""
+def register(conn, records: dict, tables: list[str] = MANAGEMENT_TABLES) -> dict:
+    """Insert/update every row of `tables` in one transaction; identity conflicts roll everything back."""
     conflicts, stats = [], {}
     try:
         with conn.cursor() as cur:
-            subj = records["subjects"]
+            subj = records["subjects"] if "subjects" in tables else []
             if subj:
                 cond = " OR ".join("(dataset_uuid=%s AND source_subject_key=%s)" for _ in subj)
                 cur.execute(f"SELECT * FROM subjects WHERE {cond}",
@@ -148,7 +149,7 @@ def register(conn, records: dict) -> dict:
                     want = next(s for s in subj if s["source_subject_key"] == r["source_subject_key"])
                     if r["subject_uuid"] != want["subject_uuid"] or r["patient_id"] != want["patient_id"]:
                         conflicts.append(f"subjects: {r['source_subject_key']!r} 기존 PatientID {r['patient_id']!r}")
-            for table in TABLES:
+            for table in tables:
                 rows = records[table]
                 if not rows:
                     stats[table] = {"inserted": 0, "updated": 0, "unchanged": 0}
@@ -181,8 +182,9 @@ def register(conn, records: dict) -> dict:
                 stats[table] = {"inserted": ins, "updated": upd, "unchanged": same}
             if conflicts:
                 raise RegistrationConflict(conflicts)
-            run_uuid = records["ingest_runs"][0]["run_uuid"]
-            cur.execute("UPDATE ingest_runs SET registered_at=CURRENT_TIMESTAMP WHERE run_uuid=%s", (run_uuid,))
+            if "ingest_runs" in tables:
+                run_uuid = records["ingest_runs"][0]["run_uuid"]
+                cur.execute("UPDATE ingest_runs SET registered_at=CURRENT_TIMESTAMP WHERE run_uuid=%s", (run_uuid,))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -220,8 +222,24 @@ def _norm(v):
     return v
 
 
-def register_run(conn, run: Run) -> dict:
+def save_deid_map(map_conn, run: Run) -> dict | None:
+    """Write the pseudonymisation map of a run to the map DB (idempotent; a different original for an existing
+    pseudonym is a conflict). None when the run is not pseudonymised."""
+    rows = deid_map_records(run)
+    if rows is None:
+        return None
+    stats = register(map_conn, rows, DEID_TABLES)
+    run.save("deid_map.json", {"at": now_iso(), "stats": stats})
+    return stats
+
+
+def register_run(conn, run: Run, map_conn=None) -> dict:
+    """The map first (so no pseudonym is ever registered without the way back), then the management DB."""
     records = build_records(run)
+    if any(records.get(t) for t in DEID_TABLES):
+        if map_conn is None:
+            raise DbError("가명 대응 DB가 설정되지 않아 가명화한 run을 등록할 수 없습니다 (DATAOPS_DEIDMAP_DB_*)")
+        register(map_conn, records, DEID_TABLES)
     stats = register(conn, records)
     reg = run.load("registration.json") or {"history": []}
     reg["history"].append({"at": now_iso(), "stats": stats, "status_at_registration": run.meta["status"]})
@@ -231,13 +249,14 @@ def register_run(conn, run: Run) -> dict:
 
 
 # --------------------------------------------------------------------------- read helpers (web)
-BROWSABLE = TABLES + ["schema_migrations", "external_mappings"]
+BROWSABLE = MANAGEMENT_TABLES + ["schema_migrations", "external_mappings"]
+DEIDMAP_BROWSABLE = DEID_TABLES + ["schema_migrations"]
 
 
-def table_counts(conn) -> dict:
+def table_counts(conn, tables: list[str] = BROWSABLE) -> dict:
     out = {}
     with conn.cursor() as cur:
-        for t in BROWSABLE:
+        for t in tables:
             try:
                 cur.execute(f"SELECT COUNT(*) AS n FROM `{t}`")
                 out[t] = cur.fetchone()["n"]

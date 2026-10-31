@@ -219,9 +219,28 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     return {"series": len(plan["series"]), "errors": len(errors), "status": run.meta["status"]}
 
 
+def save_deid_map(settings: Settings, run: Run, log=lambda msg: None) -> dict | None:
+    """Pseudonymised run: write original <-> pseudonym to the map DB as soon as pseudonymised files exist, before
+    anything is sent. Without a configured map DB the map stays in plan.json / the manifests only."""
+    from . import db as dbmod
+    if not deid.enabled(run.load("plan.json") or {}):
+        return None
+    if not settings.deid_map_configured:
+        log("가명 대응 DB 설정 없음 — 대응표는 run 폴더(plan.json, manifest)에만 있습니다")
+        return None
+    with dbmod.connection(settings.deid_map_db) as conn:
+        st = dbmod.migration_status(conn, dbmod.DEIDMAP_MIGRATIONS_DIR)
+        if st["pending"] or st["changed"]:
+            raise RunError(f"가명 대응 DB schema가 최신이 아닙니다 ({st}) — `python -m dataops db-migrate` 먼저")
+        stats = dbmod.save_deid_map(conn, run)
+    log(f"가명 대응 DB 저장: {stats}")
+    return stats
+
+
 def _sample(settings: Settings, run: Run, job: dict, log) -> dict:
     from .prepare import prepare
     m = prepare(run, "pilot", log)
+    save_deid_map(settings, run, log)
     log(f"samples extracted: {len(m['instances'])} instances of {len(m['series'])} series")
     return {"instances": len(m["instances"]), "series": len(m["series"])}
 
@@ -230,6 +249,7 @@ def _pilot(settings: Settings, run: Run, job: dict, log) -> dict:
     from .local_send import send_local
     from .prepare import prepare
     m = prepare(run, "pilot", log)
+    save_deid_map(settings, run, log)              # before anything pseudonymised leaves
     log(f"pilot frozen: {len(m['instances'])} instances; sending to {settings.local_scp.key}")
     subject = job["params"].get("subject")
     r = send_local(run, settings.local_scp, scope="pilot", subjects=[subject] if subject else None)
@@ -247,6 +267,7 @@ def _publish(settings: Settings, run: Run, job: dict, log) -> dict:
     if run.meta["status"] == "APPROVED":
         m = prepare(run, "full", log)
         log(f"full freeze: {len(m['instances'])} instances")
+    save_deid_map(settings, run, log)
     log(f"sending to {settings.central.key}")
     r = publish_central(run, settings)
     log(f"central: {r['counts']} -> {r['status']}")
@@ -255,7 +276,11 @@ def _publish(settings: Settings, run: Run, job: dict, log) -> dict:
             st = dbmod.migration_status(conn)
             if st["pending"] or st["changed"]:
                 raise RunError(f"DB schema가 최신이 아닙니다 ({st})")
-            r["registered"] = dbmod.register_run(conn, run)
+            if settings.deid_map_configured:
+                with dbmod.connection(settings.deid_map_db) as map_conn:
+                    r["registered"] = dbmod.register_run(conn, run, map_conn)
+            else:
+                r["registered"] = dbmod.register_run(conn, run)
         log(f"DB registered: {r['registered']}")
     else:
         log("DB 설정 없음 — 등록 생략")

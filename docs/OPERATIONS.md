@@ -11,7 +11,8 @@ shows runs, extracted metadata, DB rows, delivery results and backups.
 |---|---|---|
 | Python env | `~/.venvs/ai-platform-dataops` | `uv venv` (python3-venv/ensurepip unavailable; `/drive` is NTFS so the venv is on ext4) |
 | Management DB | container `ai-platform-dataops-db` (`mariadb:11.4`), `127.0.0.1:13306`, volume `ai-platform-dataops-db-data` | schema `public_dataops`, app account `dataops_app` (rights on its schema and `dataops_test_%` only) |
-| Secrets | `~/.config/ai-platform-dataops/env` (mode 600) | DB app/root passwords; never in Git, never under `/drive`, never in backups |
+| Pseudonym map DB | same container, schema `dataops_deid_map`, account `dataops_deid` (rights on that schema only) | original ↔ pseudonym of pseudonymised runs; written when pseudonymised files are made; see docs/DATABASE.md |
+| Secrets | `~/.config/ai-platform-dataops/env` (mode 600) | DB app/root/map passwords; never in Git, never under `/drive`, never in backups |
 | Runtime | `runtime/runs/<run_id>/` in the repo (gitignored) | inventory, plan, frozen artifacts, manifest, transfer journals, registration |
 | Web app + worker | `deploy/web.sh start`, `http://127.0.0.1:8096/` | loopback bind; CSRF + Origin checks on every POST; jobs in `runtime/jobs` |
 | Analysis agent | `~/.local/bin/claude` (headless), work dirs `~/.cache/ai-platform-dataops/agent/` | read-only tools, JSON-schema output, budget/time caps |

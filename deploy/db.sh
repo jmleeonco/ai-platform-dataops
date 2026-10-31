@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Management DB (MariaDB in Docker, user-level; no sudo) for ai-platform-dataops.
 #
-#   deploy/db.sh init     create secrets (once), start the container, create the app account
+#   deploy/db.sh init     create secrets (once), start the container, create the app account and the
+#                         pseudonym map schema/account
+#   deploy/db.sh init-deid-map   only the pseudonym map schema/account
 #   deploy/db.sh up       start (or create) the container
 #   deploy/db.sh down     stop the container (data volume kept)
 #   deploy/db.sh status   container state and a ping
@@ -77,10 +79,34 @@ GRANT ALL PRIVILEGES ON \`dataops\_test\_%\`.* TO '$DATAOPS_DB_USER'@'%';
 FLUSH PRIVILEGES;
 EOF
   echo "app account $DATAOPS_DB_USER ready on schema $DATAOPS_DB_NAME"
+  init_deid_map
+}
+
+# Pseudonymisation map DB: original <-> pseudonym, in its own schema with its own account (the app account has
+# no rights on it, and this account none on the management schema). The password is the env file's
+# DATAOPS_DEIDMAP_DB_PASSWORD; a random one is added when it is missing.
+init_deid_map() {
+  if ! grep -q '^DATAOPS_DEIDMAP_DB_PASSWORD=' "$ENV_FILE"; then
+    umask 077
+    { echo "DATAOPS_DEIDMAP_DB_NAME=dataops_deid_map"; echo "DATAOPS_DEIDMAP_DB_USER=dataops_deid"
+      echo "DATAOPS_DEIDMAP_DB_PASSWORD=$(rand)"; } >> "$ENV_FILE"
+  fi
+  load_env
+  local name="${DATAOPS_DEIDMAP_DB_NAME:-dataops_deid_map}" user="${DATAOPS_DEIDMAP_DB_USER:-dataops_deid}"
+  local pw="${DATAOPS_DEIDMAP_DB_PASSWORD//\'/\'\'}"
+  root_sql <<SQL
+CREATE DATABASE IF NOT EXISTS \`$name\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '$user'@'%' IDENTIFIED BY '$pw';
+ALTER USER '$user'@'%' IDENTIFIED BY '$pw';
+GRANT ALL PRIVILEGES ON \`$name\`.* TO '$user'@'%';
+FLUSH PRIVILEGES;
+SQL
+  echo "deid map account $user ready on schema $name"
 }
 
 case "${1:-}" in
   init) init ;;
+  init-deid-map) ensure_env; up; load_env; init_deid_map ;;
   up) ensure_env; up ;;
   down) docker stop "$CONTAINER" ;;
   status)

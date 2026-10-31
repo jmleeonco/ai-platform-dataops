@@ -38,6 +38,16 @@ while IFS=$'\t' read -r t n; do
   got="$(docker exec "$NAME" mariadb -uroot -p"$PW" -N -B -e "SELECT COUNT(*) FROM restore_check.\`$t\`")"
   if [[ "$got" == "$n" ]]; then echo "  $t: $got rows ok"; else echo "  $t: expected $n got $got"; MISMATCH=1; fi
 done < "$DIR/db/row_counts.tsv"
+MAP_DB="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("deid_map_db_name") or "")' "$DIR/manifest.json")"
+if [[ -n "$MAP_DB" ]]; then
+  echo "== pseudonym map DB $MAP_DB"
+  docker exec "$NAME" mariadb -uroot -p"$PW" -e "CREATE DATABASE restore_check_map CHARACTER SET utf8mb4"
+  gunzip -c "$DIR/db/$MAP_DB.sql.gz" | docker exec -i "$NAME" mariadb -uroot -p"$PW" restore_check_map
+  while IFS=$'\t' read -r t n; do
+    got="$(docker exec "$NAME" mariadb -uroot -p"$PW" -N -B -e "SELECT COUNT(*) FROM restore_check_map.\`$t\`")"
+    if [[ "$got" == "$n" ]]; then echo "  $t: $got rows ok"; else echo "  $t: expected $n got $got"; MISMATCH=1; fi
+  done < "$DIR/db/$MAP_DB.row_counts.tsv"
+fi
 
 echo "== repo bundle"
 git clone -q "$DIR/repo.bundle" "$TMP/repo" 2>/dev/null || git init -q "$TMP/repo"

@@ -20,7 +20,8 @@ from . import metadata
 from .local_send import journals
 from .plan import prefix_problems
 from .prepare import MANIFESTS
-from .records import AUTO_COLUMNS, COLUMN_DESC, TABLE_DESC, TABLES, build_records, instance_rows, transfer_rows
+from .records import (AUTO_COLUMNS, COLUMN_DESC, DEID_TABLES, TABLE_DESC, TABLES, build_records, deid_map_records,
+                      instance_rows, transfer_rows)
 from .runs import Run, list_runs
 from .util import now_iso
 
@@ -264,12 +265,13 @@ def _s10(md: dict) -> list[dict]:
                      subtitle=f"{h['modality']} · {h['series']}") for h in md["headers"]]
 
 
-def db_preview(run: Run, conn=None, db_error: str | None = None) -> dict:
+def db_preview(run: Run, conn=None, db_error: str | None = None, map_conn=None) -> dict:
     """Table 7 rows: every row registration would write, per table with the DB's own column names, and what
     registration would do with each row in the live DB (신규 / 같음 / 변경 / 충돌). Before the full conversion
     the pilot's files stand in for instances and transfer_results (same deterministic SOP UIDs)."""
     records = build_records(run, preview=True)
-    notes = {}
+    records.update(deid_map_records(run) or {})      # the map as saved: every file frozen so far
+    notes = {t: "가명 대응 DB (별도 schema)" for t in DEID_TABLES}
     planned = sum(r["instance_count"] or 0 for r in records["series"])
     if not records["instances"]:
         pilot = run.load(MANIFESTS["pilot"])
@@ -285,8 +287,9 @@ def db_preview(run: Run, conn=None, db_error: str | None = None) -> dict:
     for t in TABLES:
         rows = records[t]
         status = None
-        if conn is not None:
-            with conn.cursor() as cur:
+        c = map_conn if t in DEID_TABLES else conn
+        if c is not None:
+            with c.cursor() as cur:
                 status = dbmod.row_status(cur, t, rows)
         out, counts = [], Counter()
         for i, r in enumerate(rows):

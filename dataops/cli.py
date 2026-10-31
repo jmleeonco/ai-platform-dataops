@@ -9,7 +9,8 @@
   register RUN                       write the run's records to the management DB
   ingest DIR --dataset ... [--send-local] [--register]   plan + prepare (+ send + register) in one go
   runs | show RUN                    list runs / print a run summary
-  db-migrate | db-status             apply / show schema migrations
+  db-migrate | db-status             apply / show schema migrations (management DB and pseudonym map DB)
+  deid-map-save RUN|all              write original <-> pseudonym of pseudonymised runs to the map DB
   serve                              local HTML app (default http://127.0.0.1:8096)
   worker [--once]                    run queued browser jobs (analyze / pilot / publish)
   analyze DIR [--wait]               agent analysis -> report + plan (queued as a job; --wait runs it here)
@@ -79,7 +80,11 @@ def cmd_register(args, settings):
         status = dbmod.migration_status(conn)
         if status["pending"] or status["changed"]:
             raise RunError(f"DB schema가 최신이 아닙니다 ({status}) — `python -m dataops db-migrate` 먼저")
-        stats = dbmod.register_run(conn, run)
+        if settings.deid_map_configured:
+            with dbmod.connection(settings.deid_map_db) as map_conn:
+                stats = dbmod.register_run(conn, run, map_conn)
+        else:
+            stats = dbmod.register_run(conn, run)
     _print({"run": run.id, "registered": stats})
 
 
@@ -105,6 +110,7 @@ def main(argv=None) -> int:
     sub.add_parser("runs")
     sub.add_parser("db-migrate")
     sub.add_parser("db-status")
+    sub.add_parser("deid-map-save").add_argument("run", help="run id, or all")
     wk = sub.add_parser("worker")
     wk.add_argument("--once", action="store_true")
     an = sub.add_parser("analyze")
@@ -178,6 +184,25 @@ def main(argv=None) -> int:
                 if args.cmd == "db-migrate":
                     print("applied:", dbmod.migrate(conn) or "nothing (up to date)")
                 _print(dbmod.migration_status(conn) | {"counts": dbmod.table_counts(conn)})
+            if settings.deid_map_configured:
+                d = dbmod.DEIDMAP_MIGRATIONS_DIR
+                with dbmod.connection(settings.deid_map_db) as conn:
+                    if args.cmd == "db-migrate":
+                        print("deid map applied:", dbmod.migrate(conn, d) or "nothing (up to date)")
+                    _print({"deid_map_db": settings.deid_map_db["name"]} | dbmod.migration_status(conn, d)
+                           | {"counts": dbmod.table_counts(conn, dbmod.DEID_TABLES)})
+            else:
+                print("deid map DB: not configured (DATAOPS_DEIDMAP_DB_USER / _PASSWORD)")
+        elif args.cmd == "deid-map-save":
+            from .jobs import save_deid_map
+            from .runs import list_runs
+            ids = [r["run_id"] for r in list_runs(settings.runs_dir)] if args.run == "all" else [args.run]
+            for rid in ids:
+                run = Run(settings.runs_dir, rid)
+                with run.lock():
+                    stats = save_deid_map(settings, run, print)
+                if stats is not None:
+                    _print({"run": rid, "deid_map": stats})
         elif args.cmd == "worker":
             from .jobs import worker
             worker(settings, once=args.once)

@@ -12,9 +12,13 @@ import pydicom
 from . import deid
 from .runs import Run
 
-TABLES = ["datasets", "subjects", "studies", "series", "dataset_series", "ingest_runs", "instances",
-          "transfer_results", "deid_runs", "deid_subject_mappings", "deid_series_mappings", "deid_instance_mappings"]
-DEID_TABLES = TABLES[-4:]          # rows only for a pseudonymised run: the re-identification key, in clear
+# The management DB (public_dataops): pseudonymised values only.
+MANAGEMENT_TABLES = ["datasets", "subjects", "studies", "series", "dataset_series", "ingest_runs", "instances",
+                     "transfer_results"]
+# The pseudonymisation map DB (dataops_deid_map, its own schema and account): rows only for a pseudonymised run,
+# the re-identification key, in clear.
+DEID_TABLES = ["deid_runs", "deid_subject_mappings", "deid_series_mappings", "deid_instance_mappings"]
+TABLES = MANAGEMENT_TABLES + DEID_TABLES   # every table a registration writes, in either DB
 
 
 def subject_uuid(dataset_uuid: str, source_subject_key: str) -> str:
@@ -143,6 +147,22 @@ def deid_rows(run: Run, plan: dict, manifest: dict, active: list[dict], heads: d
         {"sop_uid": i["sop_uid"], "run_uuid": run_uuid, "original_sop_uid": i["source"].get("sop_uid"),
          "original_source_path": absolute(plan, i["source"]["rel"])} for i in manifest["instances"]]
     return out
+
+
+def deid_map_records(run: Run) -> dict | None:
+    """The map rows of a pseudonymised run as it stands: every subject and series of the plan (pseudonyms are
+    fixed at planning) and every file frozen so far (samples and the full conversion). None when not
+    pseudonymised."""
+    plan = run.load("plan.json") or {}
+    if not deid.enabled(plan) or not plan.get("series"):
+        return None
+    files = {}
+    for name in ("manifest-pilot.json", "manifest.json"):
+        for i in (run.load(name) or {}).get("instances", []):
+            files[i["sop_uid"]] = i
+    manifest = {"manifest_sha256": None, "instances": list(files.values())}
+    active = [s for s in plan["series"] if not s.get("excluded")]
+    return deid_rows(run, plan, manifest, active, outgoing_headers(run, plan, manifest, active))
 
 
 # --------------------------------------------------------------------------- outgoing per-series header values

@@ -16,16 +16,28 @@ def conn(test_db):
     c.close()
 
 
+@pytest.fixture
+def map_conn(test_map_db):
+    c = dbmod.connect(test_map_db)
+    dbmod.migrate(c, dbmod.DEIDMAP_MIGRATIONS_DIR)
+    yield c
+    c.close()
+
+
 def counts(conn):
     return {k: v for k, v in dbmod.table_counts(conn).items() if k != "schema_migrations"}
 
 
 def test_migrations_apply_once_and_detect_edits(conn, monkeypatch):
     st = dbmod.migration_status(conn)
-    assert st["pending"] == [] and st["current"] == "0004_legacy_fields_and_deid_maps"
+    assert st["pending"] == [] and st["current"] == "0005_deid_maps_to_own_db"
     assert dbmod.migrate(conn) == []
+    tables = {r["t"] for r in dbmod.query(conn, "SELECT TABLE_NAME t FROM information_schema.TABLES"
+                                                 " WHERE TABLE_SCHEMA=DATABASE()")}
+    assert not tables & set(dbmod.DEID_TABLES)          # the originals live in the map DB only
     files = dbmod.migration_files()
-    monkeypatch.setattr(dbmod, "migration_files", lambda: [(files[0][0], "0" * 64, files[0][2]), *files[1:]])
+    monkeypatch.setattr(dbmod, "migration_files",
+                        lambda directory=None: [(files[0][0], "0" * 64, files[0][2]), *files[1:]])
     with pytest.raises(dbmod.DbError, match="바뀌었습니다"):
         dbmod.migrate(conn)
 
@@ -103,9 +115,9 @@ def test_series_in_second_dataset_membership(conn, settings, tmp_path):
     assert len(rows) == 2 and counts(conn)["series"] == 1
 
 
-def test_deid_run_registers_its_maps_and_legacy_columns(conn, settings, mixed, tmp_path, monkeypatch):
-    """A pseudonymised run: the public tables hold only what leaves; the deid_* maps (oncolabdb enc_* tables)
-    hold every original next to it, so the source can be found from the DB alone."""
+def test_deid_run_registers_its_maps_and_legacy_columns(conn, map_conn, settings, mixed, tmp_path, monkeypatch):
+    """A pseudonymised run: the management DB holds only what leaves; the deid_* maps (oncolabdb enc_* tables),
+    in their own map DB, hold every original next to it, so the source can be found from the two DBs."""
     import pydicom
     from dataops import deid
     from dataops.inventory import read_dicom_header
@@ -118,8 +130,11 @@ def test_deid_run_registers_its_maps_and_legacy_columns(conn, settings, mixed, t
     assert not errors
     run.store_plan(plan, errors, "test")
     prepare(run)
-    dbmod.register_run(conn, run)
-    q = lambda sql: dbmod.query(conn, sql)                          # noqa: E731
+    with pytest.raises(dbmod.DbError, match="가명 대응 DB"):         # never a pseudonym without the way back
+        dbmod.register_run(conn, run)
+    assert counts(conn)["subjects"] == 0
+    dbmod.register_run(conn, run, map_conn)
+    q = lambda sql: dbmod.query(map_conn if "deid_" in sql else conn, sql)      # noqa: E731
     dicom = [s for s in plan["series"] if s["kind"] == "dicom"]
     subj = {r["original_patient_id"]: r for r in q("SELECT * FROM deid_subject_mappings")}
     assert set(subj) == {s["source_ids"]["patient_id"] for s in dicom} | {
@@ -144,15 +159,35 @@ def test_deid_run_registers_its_maps_and_legacy_columns(conn, settings, mixed, t
         q("SELECT patient_name, patient_id FROM subjects LIMIT 1")[0]["patient_id"]
 
 
-def test_public_run_has_no_deid_rows(conn, settings, mixed):
+def test_public_run_has_no_deid_rows(conn, map_conn, settings, mixed):
     run = make_run(settings, mixed)
     prepare(run)
-    dbmod.register_run(conn, run)
-    for t in ("deid_runs", "deid_subject_mappings", "deid_series_mappings", "deid_instance_mappings"):
-        assert dbmod.query(conn, f"SELECT COUNT(*) n FROM {t}")[0]["n"] == 0
+    dbmod.register_run(conn, run, map_conn)
+    for t in dbmod.DEID_TABLES:
+        assert dbmod.query(map_conn, f"SELECT COUNT(*) n FROM {t}")[0]["n"] == 0
 
 
-def test_every_existing_column_has_a_counterpart_or_a_reason(conn):
+def test_the_map_is_saved_when_pseudonymised_files_are_made(conn, map_conn, settings, mixed, tmp_path, monkeypatch):
+    """The map DB gets original <-> pseudonym as soon as the samples are frozen, before anything is sent or
+    registered; saving again changes nothing."""
+    from dataops import deid
+    from dataops.plan import validate_plan
+    monkeypatch.setenv("DATAOPS_DEID_KEY_FILE", str(tmp_path / "deid.key"))
+    run = make_run(settings, mixed)
+    plan = deid.enable(run.load("plan.json"))
+    plan["pilot"] = {"subjects": [plan["series"][0]["subject_key"]]}
+    plan, errors = validate_plan(plan, run.load("inventory.json"))
+    run.store_plan(plan, errors, "test")
+    m = prepare(run, "pilot")
+    first = dbmod.save_deid_map(map_conn, run)
+    assert first["deid_instance_mappings"]["inserted"] == len(m["instances"]) > 0
+    assert first["deid_subject_mappings"]["inserted"] == len({s["subject_key"] for s in plan["series"]})
+    again = dbmod.save_deid_map(map_conn, run)
+    assert all(v["inserted"] == v["updated"] == 0 for k, v in again.items() if k != "deid_runs")
+    assert counts(conn)["subjects"] == 0                    # nothing registered in the management DB yet
+
+
+def test_every_existing_column_has_a_counterpart_or_a_reason(conn, map_conn):
     """oncolabdb / scpdb (shape only, tests/data): every column of the tables a merge maps value by value is
     filled from a new-DB column or listed in NOT_MAPPED with the reason, and every new-DB column named in the
     mapping exists after the migrations."""
@@ -163,8 +198,8 @@ def test_every_existing_column_has_a_counterpart_or_a_reason(conn):
     snap = json.loads((Path(__file__).parent / "data" / "legacy_compared_columns.json").read_text(encoding="utf-8"))
     cov = legacy_db.column_coverage(snap)
     assert len(cov) == len(snap["columns"]) and [c["column"] for c in cov if c["state"] == "대응 없음"] == []
-    have = {(r["t"], r["c"]) for r in dbmod.query(
-        conn, "SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()")}
+    have = {(r["t"], r["c"]) for c in (conn, map_conn) for r in dbmod.query(
+        c, "SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()")}
     named = {tuple(m[0].split(" ")[0].split(".")) for m in legacy_db.MAPPING if re.fullmatch(r"\w+\.\w+", m[0].split(" ")[0])}
     assert named and named <= have, named - have
     assert all(m["state"] == "있음" for m in legacy_db.view(snap)["mapping"])

@@ -154,7 +154,7 @@ def test_db_pages_are_live(settings, prepared, test_db):
     assert state()["series"] != sig
     assert "changed" in client.get("/db/series").text
     r = client.get(f"/db/series/row?series_uid={uid}")
-    assert 'data-tables="series,dataset_series,deid_series_mappings,instances"' in r.text
+    assert 'data-tables="series,dataset_series,instances"' in r.text
     r = client.get("/db")
     assert 'data-exact="0"' in r.text and set(client.get("/db/state.json").json()["marks"]) >= {"series", "instances"}
     # the report's table 7 compares every planned row with the live DB

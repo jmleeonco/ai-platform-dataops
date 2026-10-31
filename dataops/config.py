@@ -68,6 +68,8 @@ INTERNAL_ROOTS = ("/mnt2/data/Onco_dataset", "/mnt2-v3-test/data/Onco_dataset")
 class Settings:
     runtime_dir: Path
     db: dict = field(default_factory=dict)
+    # The pseudonymisation map (original <-> pseudonym): its own schema and account, apart from the management DB.
+    deid_map_db: dict = field(default_factory=dict)
     legacy_db: dict = field(default_factory=dict)      # existing production DB, read for its shape only
     local_scp: LocalScp | None = None
     bind_host: str = "127.0.0.1"
@@ -96,6 +98,10 @@ class Settings:
     def db_configured(self) -> bool:
         return all(self.db.get(k) for k in ("host", "user", "password", "name"))
 
+    @property
+    def deid_map_configured(self) -> bool:
+        return all(self.deid_map_db.get(k) for k in ("host", "user", "password", "name"))
+
 
 def load_settings(env: dict | None = None) -> Settings:
     merged = _read_env_file(CONFIG_DIR / "env")
@@ -116,6 +122,10 @@ def load_settings(env: dict | None = None) -> Settings:
         runtime_dir=runtime,
         db={"host": get("DATAOPS_DB_HOST"), "port": int(get("DATAOPS_DB_PORT") or 3306),
             "name": get("DATAOPS_DB_NAME"), "user": get("DATAOPS_DB_USER"), "password": get("DATAOPS_DB_PASSWORD")},
+        deid_map_db={"host": get("DATAOPS_DEIDMAP_DB_HOST") or get("DATAOPS_DB_HOST"),
+                     "port": int(get("DATAOPS_DEIDMAP_DB_PORT") or get("DATAOPS_DB_PORT") or 3306),
+                     "name": get("DATAOPS_DEIDMAP_DB_NAME") or "dataops_deid_map",
+                     "user": get("DATAOPS_DEIDMAP_DB_USER"), "password": get("DATAOPS_DEIDMAP_DB_PASSWORD")},
         legacy_db={"host": get("DATAOPS_LEGACY_DB_HOST"), "port": int(get("DATAOPS_LEGACY_DB_PORT") or 3306),
                    "user": get("DATAOPS_LEGACY_DB_USER"), "password": get("DATAOPS_LEGACY_DB_PASSWORD"),
                    "schemas": tuple(x for x in (get("DATAOPS_LEGACY_DB_SCHEMAS") or "scpdb,oncolabdb")

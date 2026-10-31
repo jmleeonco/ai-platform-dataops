@@ -76,6 +76,16 @@ def dataset_file(tmp_path):
 
 @pytest.fixture
 def test_db():
+    yield from _disposable_schema()
+
+
+@pytest.fixture
+def test_map_db():
+    """A second disposable schema, standing in for the pseudonym map DB (its own schema in production)."""
+    yield from _disposable_schema()
+
+
+def _disposable_schema():
     """A disposable schema dataops_test_<random> on the configured dev DB; skipped when none is configured."""
     import pymysql
     base = load_settings()

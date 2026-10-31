@@ -2,6 +2,7 @@
 # Nightly backup of ai-platform-dataops to the NAS (CONTRACT §65 layout; user crontab 30 0 * * *).
 #
 #   <root>/ai-platform-dataops/<YYYY-MM-DD>/        db/public_dataops.sql.gz, db/row_counts.tsv,
+#                                                    db/dataops_deid_map.sql.gz (+ .row_counts.tsv),
 #                                                    runs/runs-metadata.tar.gz, repo.bundle, crontab.txt,
 #                                                    manifest.json (sizes, sha256, commit, duration, ok)
 #   <root>/ai-platform-dataops-files/<YYYY-MM-DD>/  rsync --link-dest snapshot of runtime/runs (artifacts)
@@ -20,6 +21,8 @@ RUNTIME="${DATAOPS_RUNTIME_DIR:-$REPO/runtime}"
 CONTAINER="${DATAOPS_DB_CONTAINER:-ai-platform-dataops-db}"
 DB_NAME="${DATAOPS_DB_NAME:-$(sed -n 's/^DATAOPS_DB_NAME=//p' "${DATAOPS_CONFIG_DIR:-$HOME/.config/ai-platform-dataops}/env" 2>/dev/null || true)}"
 DB_NAME="${DB_NAME:-public_dataops}"
+MAP_NAME="${DATAOPS_DEIDMAP_DB_NAME:-$(sed -n 's/^DATAOPS_DEIDMAP_DB_NAME=//p' "${DATAOPS_CONFIG_DIR:-$HOME/.config/ai-platform-dataops}/env" 2>/dev/null || true)}"
+MAP_NAME="${MAP_NAME:-dataops_deid_map}"
 TOOL=(python3 "$REPO/ops/backup/backup_tool.py")
 DAY="$(date +%F)"
 STARTED="$(date +%s)"
@@ -65,6 +68,21 @@ for t in $TABLES; do
 done
 docker exec "$CONTAINER" mariadb --version > "$WORK/db/server_version.txt"
 
+# 1b. Pseudonym map DB (original <-> pseudonym, its own schema): dumped the same way when it exists.
+MAP_DB=""
+if docker exec "$CONTAINER" sh -c "mariadb -uroot -p\"\$MARIADB_ROOT_PASSWORD\" -N -B -e \"SHOW DATABASES LIKE '$MAP_NAME'\"" | grep -qx "$MAP_NAME"; then
+  MAP_DB="$MAP_NAME"
+  docker exec "$CONTAINER" sh -c \
+    "mariadb-dump -uroot -p\"\$MARIADB_ROOT_PASSWORD\" --single-transaction --hex-blob '$MAP_DB'" \
+    | gzip -6 > "$WORK/db/$MAP_DB.sql.gz"
+  gzip -t "$WORK/db/$MAP_DB.sql.gz"
+  : > "$WORK/db/$MAP_DB.row_counts.tsv"
+  for t in $(docker exec "$CONTAINER" sh -c "mariadb -uroot -p\"\$MARIADB_ROOT_PASSWORD\" -N -B -e \"SELECT table_name FROM information_schema.tables WHERE table_schema='$MAP_DB' AND table_type='BASE TABLE' ORDER BY table_name\""); do
+    n="$(docker exec "$CONTAINER" sh -c "mariadb -uroot -p\"\$MARIADB_ROOT_PASSWORD\" -N -B -e 'SELECT COUNT(*) FROM \`$MAP_DB\`.\`$t\`'")"
+    printf '%s\t%s\n' "$t" "$n" >> "$WORK/db/$MAP_DB.row_counts.tsv"
+  done
+fi
+
 # 2. Run metadata (plans, inventories, manifests, UID maps, transfer journals, registrations).
 if [[ -d "$RUNTIME/runs" ]]; then
   tar -czf "$WORK/runs/runs-metadata.tar.gz" -C "$RUNTIME" --exclude='runs/*/artifacts' --exclude='*.lock' \
@@ -87,8 +105,8 @@ DIRTY="$(git -C "$REPO" status --porcelain | wc -l)"
 crontab -l 2>/dev/null | sed -n "/# >>> $SYSTEM/,/# <<< $SYSTEM/p" > "$WORK/crontab.txt" || true
 
 # 5. Manifest, then publish atomically by rename.
-EXTRA="$(printf '{"artifacts_snapshot": "%s", "artifacts_check": "%s", "uncommitted_files": %s, "db_name": "%s"}' \
-  "$FILES_BASE/$DAY" "$ART_CHECK" "$DIRTY" "$DB_NAME")"
+EXTRA="$(printf '{"artifacts_snapshot": "%s", "artifacts_check": "%s", "uncommitted_files": %s, "db_name": "%s", "deid_map_db_name": "%s"}' \
+  "$FILES_BASE/$DAY" "$ART_CHECK" "$DIRTY" "$DB_NAME" "$MAP_DB")"
 "${TOOL[@]}" manifest "$WORK" --started "$STARTED" --commit "$COMMIT" --ok 1 --extra "$EXTRA" >/dev/null
 rm -rf "$BASE/$DAY" "$FILES_BASE/$DAY"      # a same-day re-run replaces today's folders
 mv "$SNAP_WORK" "$FILES_BASE/$DAY"

@@ -95,6 +95,14 @@ def create_app(settings: Settings) -> FastAPI:
         except dbmod.DbError as e:
             return None, str(e)
 
+    def map_conn():
+        if not settings.deid_map_configured:
+            return None, "가명 대응 DB 설정 없음"
+        try:
+            return dbmod.connect(settings.deid_map_db), None
+        except dbmod.DbError as e:
+            return None, str(e)
+
     def get_run(run_id: str) -> Run:
         if not RUN_ID_RE.fullmatch(run_id):
             raise HTTPException(404)
@@ -200,13 +208,15 @@ def create_app(settings: Settings) -> FastAPI:
     def live_preview(run: Run) -> dict:
         """Table 7 with each row's state in the DB as of now (the report polls this)."""
         conn, err = db_conn()
+        mconn, _ = map_conn()
         try:
-            return db_preview(run, conn, err)
+            return db_preview(run, conn, err, mconn)
         except Exception as e:  # noqa: BLE001 - show without the DB state rather than fail
             return db_preview(run, None, f"DB 비교 실패: {e}")
         finally:
-            if conn:
-                conn.close()
+            for c in (conn, mconn):
+                if c:
+                    c.close()
 
     @app.get("/runs/{run_id}/records.json")
     def records_json(run_id: str):
@@ -385,7 +395,7 @@ def create_app(settings: Settings) -> FastAPI:
                     log_tail=_log_tail(settings.backup_root / settings.backup_system / "backup.log"))
 
     register_actions(app, settings, page, get_run)
-    register_db_views(app, settings, page, db_conn, _csv)
+    register_db_views(app, settings, page, db_conn, _csv, map_conn)
 
     @app.get("/healthz")
     def healthz():

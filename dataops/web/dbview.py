@@ -31,13 +31,17 @@ TABLE_DESC = {
     "transfer_results": "SOP별 전송 결과 (대상·상태·시도 횟수)",
     "external_mappings": "외부 시스템의 데이터셋 ID 매핑",
     "schema_migrations": "적용된 DB migration",
+    "deid_runs": "가명화한 run (가명화 방식·접두어) — 가명 대응 DB",
+    "deid_subject_mappings": "원본 PatientID ↔ 가명 PatientID — 가명 대응 DB",
+    "deid_series_mappings": "원본 Series/Study UID·경로 ↔ 보낸 Series UID — 가명 대응 DB",
+    "deid_instance_mappings": "원본 SOP UID·파일 경로 ↔ 보낸 SOP UID — 가명 대응 DB",
 }
 SOFT_FKS = {("series", "first_run_uuid"): ("ingest_runs", "run_uuid")}   # links without a DB constraint
 CHAIN = ["datasets", "subjects", "studies", "series", "instances", "transfer_results"]
 TEXTY = ("char", "varchar", "text", "tinytext", "mediumtext", "longtext", "json", "enum")
 
 
-def schema(conn) -> dict:
+def schema(conn, browsable: list[str] = dbmod.BROWSABLE) -> dict:
     """{table: {"columns": [...], "types": {col: data_type}, "pk": [...], "fks": {col: (table, col)},
     "children": [(child_table, child_col, col)]}} for the browsable tables."""
     cols = dbmod.query(conn, "SELECT TABLE_NAME t, COLUMN_NAME c, DATA_TYPE d, COLUMN_TYPE ct, IS_NULLABLE n,"
@@ -49,7 +53,7 @@ def schema(conn) -> dict:
     pks = dbmod.query(conn, "SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.KEY_COLUMN_USAGE"
                             " WHERE TABLE_SCHEMA=DATABASE() AND CONSTRAINT_NAME='PRIMARY' ORDER BY ORDINAL_POSITION")
     out = {t: {"columns": [], "types": {}, "column_info": [], "pk": [], "fks": {}, "children": []}
-           for t in dbmod.BROWSABLE}
+           for t in browsable}
     for r in cols:
         if r["t"] in out:
             out[r["t"]]["columns"].append(r["c"])
@@ -115,19 +119,35 @@ def _pretty(v):
     return None if v is None else str(v)
 
 
-def register_db_views(app, settings, page, db_conn, to_csv):
+def register_db_views(app, settings, page, db_conn, to_csv, map_conn=None):
+    """map_conn(): (connection, error) of the pseudonymisation map DB; its tables (dbmod.DEID_TABLES) are browsed
+    with the same pages, read from that DB."""
     def open_db():
         conn, err = db_conn()
         if conn is None:
             raise _NoDb(err)
         return conn
 
+    def is_map(table) -> bool:
+        return table in dbmod.DEID_TABLES
+
+    def open_for(table):
+        if not is_map(table):
+            return open_db()
+        conn, err = map_conn() if map_conn else (None, "가명 대응 DB 설정 없음")
+        if conn is None:
+            raise _NoDb(err)
+        return conn
+
+    def browsable(table) -> list[str]:
+        return dbmod.DEIDMAP_BROWSABLE if is_map(table) else dbmod.BROWSABLE
+
     @app.exception_handler(_NoDb)
     async def no_db(request: Request, exc: _NoDb):
         return page(request, "db.html", info=None, db_error=exc.message)
 
     def table_meta(conn, table) -> tuple[dict, dict]:
-        sch = schema(conn)
+        sch = schema(conn, browsable(table))
         if table not in sch:
             raise HTTPException(404)
         return sch, sch[table]
@@ -163,17 +183,28 @@ def register_db_views(app, settings, page, db_conn, to_csv):
 
     @app.get("/db/state.json")
     def db_state(t: str = "", exact: int = 0):
-        conn, err = db_conn()
-        if conn is None:
-            return JSONResponse({"error": err, "checked_at": now_iso()})
-        try:
-            sch = schema(conn)
-            tables = [x for x in t.split(",") if x in sch] if t else list(sch)
-            return {"marks": dbmod.change_marks(conn, tables, bool(exact)), "checked_at": now_iso()}
-        except Exception as e:  # noqa: BLE001 - the page shows it and keeps polling
-            return JSONResponse({"error": str(e)[:300], "checked_at": now_iso()})
-        finally:
-            conn.close()
+        asked = [x for x in t.split(",") if x]
+        marks = {}
+        for in_map in (False, True):
+            if in_map and not (map_conn and (not asked or any(is_map(x) for x in asked))):
+                continue
+            if not in_map and asked and all(is_map(x) for x in asked):
+                continue
+            conn, err = map_conn() if in_map else db_conn()
+            if conn is None:
+                if in_map and not asked:
+                    continue
+                return JSONResponse({"error": err, "checked_at": now_iso()})
+            try:
+                sch = schema(conn, dbmod.DEIDMAP_BROWSABLE if in_map else dbmod.BROWSABLE)
+                tables = [x for x in asked if x in sch and is_map(x) == in_map] if asked else \
+                    [x for x in sch if is_map(x) == in_map]
+                marks.update(dbmod.change_marks(conn, tables, bool(exact)))
+            except Exception as e:  # noqa: BLE001 - the page shows it and keeps polling
+                return JSONResponse({"error": str(e)[:300], "checked_at": now_iso()})
+            finally:
+                conn.close()
+        return {"marks": marks, "checked_at": now_iso()}
 
     @app.get("/db", response_class=HTMLResponse)
     def db_overview(request: Request):
@@ -184,13 +215,25 @@ def register_db_views(app, settings, page, db_conn, to_csv):
             lv = live(conn, list(sch), exact=False)          # the overview shows row counts only
         finally:
             conn.close()
+        deid_map, deid_map_error = None, None
+        mconn, deid_map_error = map_conn() if map_conn else (None, "가명 대응 DB 설정 없음")
+        if mconn is not None:
+            try:
+                d = dbmod.DEIDMAP_MIGRATIONS_DIR
+                deid_map = {"migrations": dbmod.migration_status(mconn, d),
+                            "counts": dbmod.table_counts(mconn, dbmod.DEID_TABLES), "tables": dbmod.DEID_TABLES}
+            except Exception as e:  # noqa: BLE001 - shown on the page
+                deid_map_error = str(e)[:300]
+            finally:
+                mconn.close()
         return page(request, "db.html", info=info, db_error=None, desc=TABLE_DESC, live=lv,
+                    deid_map=deid_map, deid_map_error=deid_map_error,
                     chain=[t for t in CHAIN if t in sch], others=[t for t in sch if t not in CHAIN])
 
     def select(request, table, q, sort, dir, p, n, limit=None):
-        if table not in dbmod.BROWSABLE:
+        if table not in browsable(table):
             raise HTTPException(404)
-        conn = open_db()
+        conn = open_for(table)
         try:
             sch, meta = table_meta(conn, table)
             where, args, filters = _where(meta, dict(request.query_params), q)
@@ -230,9 +273,9 @@ def register_db_views(app, settings, page, db_conn, to_csv):
 
     @app.get("/db/{table}/row", response_class=HTMLResponse)
     def db_row(request: Request, table: str):
-        if table not in dbmod.BROWSABLE:
+        if table not in browsable(table):
             raise HTTPException(404)
-        conn = open_db()
+        conn = open_for(table)
         try:
             sch, meta = table_meta(conn, table)
             key = {k: request.query_params.get(k) for k in meta["pk"]}

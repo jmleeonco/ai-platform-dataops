@@ -61,6 +61,18 @@ Migration 0004 (2026-10-31) makes a later merge column-to-column:
   names, birth dates and addresses are never read, so those columns stay empty. Public tables keep only what
   leaves (`instances.source_path` stays a keyed hash).
 
+**Pseudonym map DB (2026-11-01, owner).** Migration 0005 moved the four `deid_*` tables (empty then) out of
+`public_dataops` into their own schema **`dataops_deid_map`** with its own account **`dataops_deid`**
+(`sql/deid_map_migrations/`, `deploy/db.sh init-deid-map`, `DATAOPS_DEIDMAP_DB_*` in the env file; the password
+is only there). The app account has no rights on it and the map account none on the management schema, so
+the management DB holds pseudonyms only. Keys are the management DB's (`subject_uuid`, `series_uid`, `sop_uid`,
+`run_uuid`), with no cross-schema foreign keys. The map is written as soon as pseudonymised files exist (sample
+extraction, pilot, full freeze: `jobs.save_deid_map`, before any send), covers every subject and series of the
+plan and every file frozen so far, and is written again (idempotently, map first) at registration; registering a
+pseudonymised run without a map DB is refused. `python -m dataops deid-map-save RUN|all` writes it by hand;
+`db-migrate` / `db-status` cover both DBs. `/db` shows the map tables in their own section, read from the map DB.
+The nightly backup dumps it as `db/dataops_deid_map.sql.gz` (+ row counts) and `restore_check.sh` loads it.
+
 `/legacy` lists every column of the six tables a merge maps value by value (lab_datasets, lab_dataset_items,
 enc_pipeline_runs, enc_patient_mappings, enc_series_mappings, scpdb.dicom_instances; 170 columns on
 2026-10-31): 101 are filled from a new-DB column (`legacy_db.MAPPING`), 69 are LAB workflow, AI predictions,

@@ -23,6 +23,18 @@ migration {{ info.migrations.applied|join(', ') }}{% if info.migrations.pending 
 </section>
 
 <section>
+<h2>가명 대응 DB <span class="muted small">원본 ↔ 가명 · 관리 DB와 별도 schema·계정</span></h2>
+{% if deid_map %}
+<p class="muted small">schema <b class="mono">{{ settings.deid_map_db.name }}</b> @ {{ settings.deid_map_db.host }}:{{ settings.deid_map_db.port }} ·
+migration {{ deid_map.migrations.applied|join(', ') }}{% if deid_map.migrations.pending %} <span class="badge b-warn">pending {{ deid_map.migrations.pending|join(', ') }}</span>{% endif %} ·
+가명화한 run의 원본 PatientID·UID·경로를 그대로 보관합니다 (재식별 키). 가명 파일이 만들어질 때 저장되고, 어디로도 전송하지 않습니다.</p>
+<div class="chain">
+{% for t in deid_map.tables %}<a class="tbl" href="/db/{{ t }}"><b>{{ t }}</b><span class="n">{{ '{:,}'.format(deid_map.counts.get(t) or 0) }}행</span><span class="small muted">{{ desc.get(t, '') }}</span></a>{% endfor %}
+</div>
+{% else %}<p class="err">{{ deid_map_error }}</p>{% endif %}
+</section>
+
+<section>
 <h2>테이블</h2>
 <div class="table-wrap"><table class="std">
 <tr><th>테이블</th><th>설명</th><th>행 수</th><th>기본 키</th><th>참조 (→ 상위)</th><th>참조됨 (← 하위)</th></tr>
