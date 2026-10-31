@@ -23,7 +23,8 @@ import pydicom
 
 from .config import CONFIG_DIR
 
-PROFILE = "pseudonym-v1"
+# v2 (owner, 2026-11-01): only what is needed goes; the birth date is kept like the study dates.
+PROFILE = "pseudonym-v2"
 
 
 def secret_path() -> Path:
@@ -115,9 +116,10 @@ def uid(plan: dict, value: str) -> str:
 
 STANDARD_UID = "1.2.840.10008."          # SOP classes, transfer syntaxes, coding schemes: never replaced
 # Emptied (type 2) or removed: identifiers of the person, the visit and the institution (PS3.15 Basic Profile,
-# abridged). Person names (VR PN) are emptied wherever they occur.
+# abridged). Person names (VR PN) are emptied wherever they occur. Kept as they are (owner, 2026-11-01): dates and
+# times, birth date, age, sex, weight, device and station names.
 REMOVE = {
-    "PatientBirthDate", "PatientBirthTime", "OtherPatientIDs", "OtherPatientNames", "OtherPatientIDsSequence",
+    "OtherPatientIDs", "OtherPatientNames", "OtherPatientIDsSequence",
     "PatientBirthName", "PatientMotherBirthName", "PatientAddress", "PatientTelephoneNumbers", "IssuerOfPatientID",
     "MedicalRecordLocator", "AccessionNumber", "StudyID", "InstitutionName", "InstitutionAddress",
     "InstitutionalDepartmentName", "AdmissionID", "RequestAttributesSequence", "PatientComments",
@@ -163,7 +165,7 @@ def dicom(plan: dict, ds: pydicom.Dataset, out_patient_id: str) -> pydicom.Datas
     ds.PatientID = out_patient_id
     ds.PatientName = out_patient_id
     ds.PatientIdentityRemoved = "YES"
-    ds.DeidentificationMethod = f"{PROFILE}: keyed pseudonym, names/IDs removed, dates retained"
+    ds.DeidentificationMethod = f"{PROFILE}: keyed pseudonym, names/IDs removed, dates and birth date retained"
     ds.LongitudinalTemporalInformationModified = "UNMODIFIED"
     meta = getattr(ds, "file_meta", None)
     if meta is not None and "MediaStorageSOPInstanceUID" in meta:

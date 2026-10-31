@@ -106,10 +106,12 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    `deid.subjects`, given in keyed-hash order and never reused) in PatientID / PatientName /
    SeriesDescription and in the DB, ImageComments leaves out the source path, and the DB stores a keyed
    hash instead of source paths. Original DICOM exports are rewritten instead of copied: PatientID /
-   PatientName become `<prefix>_<pseudonym>`, person names, birth date, accession, institution and the
-   other identifiers in `deid.REMOVE` are emptied, private tags are dropped, every instance UID is replaced
-   by a keyed `2.25.` UID (consistently, so an RTSTRUCT still references its CT), and study/series dates are
-   kept. The new-analysis form decides it before the first sample extraction (자동 / 켬 / 끔, see 1). The
+   PatientName become `<prefix>_<pseudonym>`, person names (patient, physicians, operators), institution
+   name/address/department, address/telephone/other patient IDs, accession/study/order numbers and comments
+   (`deid.REMOVE`) are emptied, private tags are dropped, every instance UID is replaced by a keyed `2.25.` UID
+   (consistently, so an RTSTRUCT still references its CT). Kept as they are (owner, 2026-11-01, profile
+   `pseudonym-v2`): dates and times, birth date, age, sex, weight, device and station names. A new profile
+   changes the plan, so artifacts frozen under the old one are made again. The new-analysis form decides it before the first sample extraction (자동 / 켬 / 끔, see 1). The
    pages are for the owner: the left (source) column always shows the real values; only the right
    (outgoing) column follows the switch. The
    whole-dataset tables (8, 7, 6) are folded under "전체 목록"; 오류 rows of table 4 and plan errors appear
@@ -171,6 +173,19 @@ CLI equivalents: `analyze DIR [--wait]`, `pilot RUN`, `approve RUN --by NAME --c
 
 Space: a full AMOS freeze is roughly 40–60 GB of DICOM under `runtime/runs/<run>/artifacts` on
 `/drive`, and the nightly backup hard-links it into `ai-platform-dataops-files/<date>`.
+
+## Flaky NFS input (/mnt2)
+
+The 254 server behind `/mnt2` sometimes answers "No such file" for files that exist, for a few minutes, then
+recovers by itself; the 138 server exports the same data read-only at `/mnt2-v3-test`. Every read of an input
+file (directory listing, stat, DICOM/NIfTI header, hash, copy, conversion) goes through `dataops/nfs.py`: when the
+primary fails that way, the same path on the mirror is read (`DATAOPS_INPUT_MIRRORS`, default
+`/mnt2/data=/mnt2-v3-test/data`; empty turns it off); when neither answers, both are retried for about five minutes
+before the step fails. Plans, manifests and the DB keep the primary path; bytes read from the mirror are checked
+against the hashes taken at planning time like any other read. A directory that cannot be listed on either mount
+now stops the analysis instead of being skipped silently. Each fallback is logged as `[nfs] …` in the job log.
+The analysis agent (Claude CLI) reads the folder itself and is not redirected; the code's checks of its proposal
+(paths, headers) are.
 
 ## Local SCP target
 

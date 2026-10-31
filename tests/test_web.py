@@ -232,7 +232,8 @@ def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
     out_sops = {str(d.SOPInstanceUID) for d in out}
     for d in out:
         assert d.PatientID == d.PatientName == dicom["patient_id"] and d.PatientIdentityRemoved == "YES"
-        assert d.get("AccessionNumber") == "" and d.get("PatientBirthDate") == "" and d.get("InstitutionName") == ""
+        assert d.get("AccessionNumber") == "" and d.get("InstitutionName") == ""
+        assert d.PatientBirthDate == "19500101"            # kept (owner, 2026-11-01), like the study dates
         assert d.ReferringPhysicianName == "" and (0x0009, 0x1010) not in d
         assert d.StudyDate == "20200101" and str(d.SeriesInstanceUID) == dicom["series_uid"]
         assert d.file_meta.MediaStorageSOPInstanceUID == d.SOPInstanceUID

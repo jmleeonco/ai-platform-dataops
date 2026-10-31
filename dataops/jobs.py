@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import deid
+from . import deid, nfs
 from .config import Settings
 from .runs import Run, RunError, list_runs
 from .util import now_iso, read_json, write_json
@@ -40,7 +40,7 @@ def check_input_root(settings: Settings, path: str) -> Path:
         raise RunError(f"허용된 입력 위치({', '.join(map(str, roots))}) 밖의 폴더입니다")
     if p.name.lower() in ("backup", "backups") or any(part.startswith(".") for part in p.parts[1:]):
         raise RunError("backup/숨김 폴더는 분석하지 않습니다")
-    if not p.is_dir():
+    if not nfs.is_dir(p):
         raise RunError(f"폴더가 없습니다: {p}")
     return p
 

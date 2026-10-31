@@ -16,7 +16,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 
-from . import deid
+from . import deid, nfs
 from .legacy import n2d
 from .local_send import journals
 from .prepare import MANIFESTS, image_comments, pilot_series
@@ -51,7 +51,7 @@ def _plain(v):
 
 def read_nifti_header(path: Path) -> dict:
     try:
-        hdr = nib.load(str(path)).header
+        hdr = nfs.call(lambda p: nib.load(str(p)).header, path)
     except Exception as e:  # noqa: BLE001 - shown in the table, never fatal
         return {"error": f"{type(e).__name__}: {e}"[:200]}
     out = {}
@@ -79,7 +79,7 @@ def nifti_headers(run: Run, plan: dict, refresh: bool = False) -> dict:
             out[rel] = hit
             continue
         try:
-            st = (root / rel).stat()
+            st = nfs.stat(root / rel)
         except OSError as e:
             out[rel] = {"stamp": None, "size": None, "header": {"error": str(e)[:200]}}
             changed = True

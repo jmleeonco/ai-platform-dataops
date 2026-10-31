@@ -18,6 +18,7 @@ from pydicom.uid import ExplicitVRLittleEndian, PYDICOM_IMPLEMENTATION_UID
 from skimage.draw import polygon as fill_polygon
 from skimage.measure import approximate_polygon, find_contours
 
+from . import nfs
 from .legacy import n2d
 
 RTSTRUCT_VERSION = "dataops rtstruct 1"
@@ -42,7 +43,7 @@ def rtstruct_ids(image_series_uid: str, label_identity: str) -> tuple[str, str]:
 
 
 def canonical_label(path: Path, layout: str):
-    vol, reason = n2d.load_volume(path, layout)
+    vol, reason = n2d.load_volume(nfs.readable(path), layout)
     if vol is None:
         raise RtstructError(f"라벨 NIfTI를 읽을 수 없음: {reason}")
     values = vol.data.astype(np.float64) * vol.slope + vol.inter if (vol.slope, vol.inter) != (1.0, 0.0) \

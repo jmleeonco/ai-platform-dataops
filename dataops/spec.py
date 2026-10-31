@@ -17,6 +17,7 @@ import numpy as np
 
 from .agent import LABEL_KINDS, PAIRINGS, ROLES, SPLITS
 from .inventory import SKIP_DIR_NAMES, _dicom_record, read_dicom_header
+from . import nfs
 from .legacy import n2d
 from .plan import PREFIX_RE, dicom_series, validate_plan
 from .rtstruct import RTSTRUCT_VERSION
@@ -50,7 +51,7 @@ def _clean_rel(root: Path, rel: str) -> str:
     target = (root / rel).resolve() if rel != "." else root
     if not target.is_relative_to(root):
         raise SpecError(f"경로 {rel!r} 가 입력 폴더 밖을 가리킵니다")
-    if not target.exists():
+    if not nfs.exists(target):
         raise SpecError(f"경로 {rel!r} 가 없습니다")
     return rel
 
@@ -138,7 +139,7 @@ def check_proposal(root: Path, p: dict) -> dict:
 
 def header_geometry(path: Path, layout: str) -> dict:
     """Canonical (as written to DICOM) shape and LPS affine from the header only."""
-    img = nib.load(str(path))
+    img = nfs.call(lambda p: nib.load(str(p)), path)
     shape = list(img.shape)
     while len(shape) > 3 and shape[-1] == 1:
         shape.pop()
@@ -202,7 +203,7 @@ def _probe(item: tuple) -> dict:
     out = {"kind": file_kind(path), "size": size}
     if size is None:                          # not stat'ed by the walk (a symlink)
         try:
-            out["size"] = path.stat().st_size
+            out["size"] = nfs.stat(path).st_size
         except OSError as e:
             return {**out, "error": str(e)}
     if role == "ignore":
@@ -394,7 +395,7 @@ def build_spec_plan(root: Path, proposal: dict, run_id: str, dataset_uuid: str, 
         g = not_included[(top, reason)]
         g["files"] += 1
         try:
-            g["bytes"] += size if size is not None else (root / rel).stat().st_size
+            g["bytes"] += size if size is not None else nfs.stat(root / rel).st_size
         except OSError:
             pass
     left_out = [{"path": top, "reason": reason, **{k: v for k, v in g.items() if k != "reason"}}

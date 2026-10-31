@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pydicom
 
-from . import deid
+from . import deid, nfs
 from .inventory import read_dicom_header
 from .legacy import n2d
 from .plan import validate_plan
@@ -191,7 +191,7 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, wo
         source = {"kind": "dicom", "rel": rel, "sha256": src_sha}
         if deid.enabled(plan):
             source["sop_uid"] = str(ds.SOPInstanceUID)          # the original, for deid_instance_mappings
-            ds = deid.dicom(plan, pydicom.dcmread(src, force=True), s["patient_id"])
+            ds = deid.dicom(plan, nfs.call(pydicom.dcmread, src, force=True), s["patient_id"])
             if str(ds.SeriesInstanceUID) != s["series_uid"] or str(ds.StudyInstanceUID) != s["study_uid"]:
                 raise RunError(f"비식별 UID가 계획과 다릅니다: {rel}")
             dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
@@ -200,7 +200,7 @@ def _freeze_dicom(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, wo
             sha = sha256_file(dst)
             ds = pydicom.dcmread(dst, stop_before_pixels=True)
         elif str(ds.get("PatientID", "")) != s["patient_id"]:      # public: only the PatientID gets the prefix
-            ds = pydicom.dcmread(src, force=True)
+            ds = nfs.call(pydicom.dcmread, src, force=True)
             ds.PatientID = ds.PatientName = s["patient_id"]
             dst = sdir / f"{safe_name(str(ds.SOPInstanceUID), 64)}.dcm"
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +250,7 @@ def _convert_nifti(root: Path, s: dict, sdir: Path, run_dir: Path, plan: dict, p
     else:
         src_sha = _pin(pins, root, rel)
     if plan.get("adapter") == "agent-spec":
-        vol, reason = n2d.load_volume(src, conv["layout"])
+        vol, reason = n2d.load_volume(nfs.readable(src), conv["layout"])
         if vol is None:
             raise RunError(f"NIfTI를 읽을 수 없습니다: {rel} ({reason})")
         comments = image_comments(plan, s)

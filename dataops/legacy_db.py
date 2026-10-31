@@ -152,7 +152,7 @@ NOT_MAPPED = {
     "split_key": "LAB 시리즈 분할 기능", "split_value": "LAB 시리즈 분할 기능", "split_run_id": "LAB 시리즈 분할 기능",
     "from_stage": "기존 파이프라인 내부 단계", "publish_mode": "기존 파이프라인 내부 설정",
     "dest_working_label": "기존 파이프라인 작업 폴더",
-    "PatientBirthDate": "보내는 DICOM에서 비움 (가명화) / 공개 데이터는 원본에 없음",
+    "PatientBirthDate": "새 DB에 열 없음 — 보내는 DICOM에는 원본 그대로 (가명화 v2) / 공개 데이터는 원본에 없음",
     "AccessionNumber": "보내는 DICOM에서 비움", "ReferringPhysicianName": "보내는 DICOM에서 비움",
     "InstancePath": "Central의 저장 위치 — 수신 확인 때 transfer_results.verification_json에 저장",
     "Tag": "Central 운영 필드", "ImportedDateTime": "Central SCP가 수신 시각을 채움",

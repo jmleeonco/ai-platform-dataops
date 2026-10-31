@@ -59,6 +59,11 @@ def now_iso() -> str:
 
 
 def sha256_file(path: Path) -> str:
+    from . import nfs
+    return nfs.call(_sha256, path)
+
+
+def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -69,7 +74,8 @@ def sha256_file(path: Path) -> str:
 def copy_hashed(src: Path, dst: Path) -> str:
     """Copy bytes and return the sha256 of what was written (read back from dst)."""
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dst)
+    from . import nfs
+    nfs.call(shutil.copyfile, src, dst)
     return sha256_file(dst)
 
 

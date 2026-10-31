@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pydicom
 
+from . import nfs
 from .legacy import n2d
 from .util import now_iso, pmap
 
@@ -61,11 +62,15 @@ def header_metadata(ds, tags) -> dict:
     return out
 
 
+def _dicom_header(path: Path):
+    with open(path, "rb") as f:
+        head = f.read(132)
+    return pydicom.dcmread(path, stop_before_pixels=True, force=head[128:132] != b"DICM")
+
+
 def read_dicom_header(path: Path):
     try:
-        with open(path, "rb") as f:
-            head = f.read(132)
-        ds = pydicom.dcmread(path, stop_before_pixels=True, force=head[128:132] != b"DICM")
+        ds = nfs.call(_dicom_header, path)
     except Exception:  # noqa: BLE001 - anything unreadable is simply not DICOM
         return None
     if "SOPClassUID" not in ds or "SOPInstanceUID" not in ds:
@@ -94,7 +99,7 @@ def _dicom_record(ds) -> dict:
 
 def _lstat(path: Path):
     try:
-        return path.lstat()
+        return nfs.lstat(path)
     except OSError:
         return None
 
@@ -105,8 +110,9 @@ def walk(root: Path):
     each). stat is None for a symlink or an entry that vanished; the caller stats those itself."""
     def visit(here: Path):
         try:
-            names = sorted(os.listdir(here))
-        except OSError:
+            names = sorted(nfs.listdir(here))
+        except PermissionError:               # reported like a skipped directory; an NFS outage raises instead
+            yield None, here.relative_to(root).as_posix(), None
             return
         paths = [here / n for n in names]
         stats = pmap(_lstat, paths, WALK_WORKERS)
@@ -135,7 +141,7 @@ def walk(root: Path):
 
 def inventory(root: Path) -> dict:
     root = root.resolve()
-    if not root.is_dir():
+    if not nfs.is_dir(root):
         raise ValueError(f"input directory not found: {root}")
     files, skipped_dirs, probe = [], [], []
     counts = Counter()
@@ -152,7 +158,7 @@ def inventory(root: Path) -> dict:
                 files.append(rec)
                 continue
         try:
-            rec["size"] = st.st_size if st is not None else path.stat().st_size
+            rec["size"] = st.st_size if st is not None else nfs.stat(path).st_size
         except OSError as e:
             rec.update(kind="unreadable", reason=str(e))
         if rec["kind"] == "other":

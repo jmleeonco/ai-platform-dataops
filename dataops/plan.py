@@ -222,6 +222,8 @@ def validate_plan(plan: dict, inv: dict) -> tuple[dict, list[str]]:
     prefix = plan["dataset"]["patient_id_prefix"]
     errors += prefix_problems(prefix, plan["dataset"]["commercial_use"])
     deid.number(plan)
+    if deid.enabled(plan):
+        plan["deid"]["profile"] = deid.PROFILE      # a new profile changes the plan, so older artifacts are not reused
     inv_files = {f["rel"]: f for f in inv["files"]}
     subjects, studies = {}, {}
     all_by_key = {s["series_key"]: s for s in plan["series"]}

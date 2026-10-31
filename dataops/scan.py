@@ -15,6 +15,7 @@ import nibabel as nib
 import numpy as np
 
 from .inventory import SERIES_TAGS, header_metadata, read_dicom_header, walk
+from . import nfs
 from .legacy import n2d
 from .util import now_iso
 
@@ -49,7 +50,7 @@ def file_kind(path: Path) -> str:
 
 def nifti_header(path: Path) -> dict:
     try:
-        img = nib.load(str(path))
+        img = nfs.call(lambda p: nib.load(str(p)), path)
         hdr = img.header
         out = {"shape": [int(x) for x in img.shape], "zooms": [round(float(z), 4) for z in hdr.get_zooms()],
                "dtype": str(hdr.get_data_dtype()), "sform_code": int(hdr["sform_code"]),
@@ -68,7 +69,7 @@ def scan(root: Path, time_budget_s: float = TIME_BUDGET_S) -> dict:
     root = root.resolve()
     deadline = time.monotonic() + time_budget_s
     stopped = False
-    if not root.is_dir():
+    if not nfs.is_dir(root):
         raise ValueError(f"입력 폴더가 없습니다: {root}")
     dirs: dict[str, dict] = {}
     skipped_dirs, docs, errors = [], [], []
@@ -90,7 +91,7 @@ def scan(root: Path, time_budget_s: float = TIME_BUDGET_S) -> dict:
             d["_stat"] += 1
         elif d["_stat"] < STAT_PER_DIR:
             try:
-                size = path.stat().st_size
+                size = nfs.stat(path).st_size
                 d["_stat"] += 1
             except OSError as e:
                 errors.append({"rel": rel, "error": str(e)[:200]})
@@ -142,9 +143,9 @@ def list_files(root: Path, rel_dir: str, sizes: bool = False) -> list:
     """Every file under root/rel_dir (or the file itself), relative to root, with the inventory's skip rules.
     sizes=True gives (rel, size) pairs, size None when walk could not stat the entry (a symlink)."""
     base = (root / rel_dir).resolve() if rel_dir not in ("", ".") else root
-    if base.is_file():
+    if nfs.is_file(base):
         rel = base.relative_to(root).as_posix()
-        return [(rel, base.stat().st_size)] if sizes else [rel]
+        return [(rel, nfs.stat(base).st_size)] if sizes else [rel]
     out = []
     for path, skipped, st in walk(base):
         if skipped is None and path is not None:
