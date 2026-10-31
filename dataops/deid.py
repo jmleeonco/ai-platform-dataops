@@ -25,6 +25,7 @@ from .config import CONFIG_DIR
 
 # v2 (owner, 2026-11-01): only what is needed goes; the birth date is kept like the study dates.
 PROFILE = "pseudonym-v2"
+METHOD = f"{PROFILE}: keyed pseudonym, names/IDs removed, dates kept"   # VR LO: at most 64 characters
 
 
 def secret_path() -> Path:
@@ -165,7 +166,7 @@ def dicom(plan: dict, ds: pydicom.Dataset, out_patient_id: str) -> pydicom.Datas
     ds.PatientID = out_patient_id
     ds.PatientName = out_patient_id
     ds.PatientIdentityRemoved = "YES"
-    ds.DeidentificationMethod = f"{PROFILE}: keyed pseudonym, names/IDs removed, dates and birth date retained"
+    ds.DeidentificationMethod = METHOD
     ds.LongitudinalTemporalInformationModified = "UNMODIFIED"
     meta = getattr(ds, "file_meta", None)
     if meta is not None and "MediaStorageSOPInstanceUID" in meta:
