@@ -16,7 +16,7 @@ from . import deid
 from .inventory import read_dicom_header
 from .metadata import HEADERS_FILE, KIND_LABEL, TAG_SOURCE, read_nifti_header
 from .prepare import pilot_series
-from .records import absolute, build_records, instance_rows, series_source_path
+from .records import SERIES_COLUMNS, absolute, build_records, head_values, instance_rows, series_source_path
 from .runs import Run
 
 CUT = 300
@@ -156,9 +156,50 @@ DB_KEEPS = {("subjects", "source_subject_key"), ("subjects", "patient_id"), ("st
             ("instances", "source_relative_path"), ("instances", "source_path"), ("series", "source_path")}
 
 
+DEID_LABEL = "가명 대응표: 원본을 그대로 보관 (이 서버의 DB에만, 전송 안 함)"
+# DB columns filled from a DICOM attribute of the outgoing file: the same attribute of the source is the left value.
+DB_TAG = {**{("series", col): tag for col, tag, _ in SERIES_COLUMNS},
+          ("subjects", "patient_sex"): "PatientSex", ("subjects", "patient_age"): "PatientAge",
+          ("subjects", "patient_weight"): "PatientWeight", ("subjects", "patient_ethnicity"): "EthnicGroup",
+          ("instances", "slice_location"): "SliceLocation", ("instances", "instance_number"): "InstanceNumber",
+          ("instances", "sop_class_uid"): "SOPClassUID", ("series", "series_number"): "SeriesNumber"}
+
+
+def _source_tags(c: dict) -> dict:
+    """{DICOM keyword: (where, value)} of the source for the DB_TAG columns: the original DICOM file, or for a
+    NIfTI-converted series the header field the value is computed from."""
+    if c["s"]["kind"] == "dicom" and c.get("src_ds") is not None:
+        ds = c["src_ds"]
+        h = head_values(ds)
+        for kw in ("PatientSex", "PatientAge", "PatientWeight", "EthnicGroup", "SliceLocation", "InstanceNumber",
+                   "SeriesNumber"):
+            if kw in ds and ds.get(kw) not in (None, ""):
+                h[kw] = ds.get(kw)
+        return {k: ("원본 DICOM " + k, v) for k, v in h.items()}
+    return _nifti_sources(c) if c["s"]["kind"] == "nifti" else {}
+
+
+def _same_value(a, b) -> bool:
+    """Equal as text, or as numbers (a DECIMAL column keeps 2.0 for the source's "2")."""
+    if _text(a) == _text(b):
+        return True
+
+    def nums(v):
+        parts = v if isinstance(v, (list, tuple, pydicom.multival.MultiValue)) else str(v).split("\\")
+        return [float(x) for x in parts]
+    try:
+        fa, fb = nums(a), nums(b)
+    except (TypeError, ValueError):
+        return False
+    return len(fa) == len(fb) and all(abs(x - y) < 1e-6 for x, y in zip(fa, fb))
+
+
 def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
     """One DB row, column by column: the source value it comes from and the value registration writes."""
     s = c["s"]
+    if "_src_tags" not in c:
+        c["_src_tags"] = _source_tags(c)
+    tags = c["_src_tags"]
     src_val = {"대상자 키": s["subject_key"], "원본 경로": c["rel"], "원본 파일 내용": "(파일 바이트)",
                "Modality 근거": s.get("modality_basis"), "데이터셋 이름": c["dataset_name"],
                "원본 전체 경로": c["abs"], "입력 폴더": c["input_root"], "변환된 파일 (이 서버)": c.get("artifact"),
@@ -167,6 +208,13 @@ def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
     for col, v in rec.items():
         label = DB_SOURCE.get((table, col))
         sv = src_val.get(label) if label else None
+        kw = DB_TAG.get((table, col))
+        if kw and kw in tags:
+            label, sv = tags[kw]
+            action = "빈 값" if v in (None, "") else "원본 그대로" if _same_value(sv, v) else \
+                "새 UID" if kw.endswith("UID") else "형식 변환" if s["kind"] == "dicom" else "계산"
+            rows.append(_row("DB", col, label, sv, v, action, kw in IDENTIFYING and s["kind"] == "dicom"))
+            continue
         if v in (None, ""):
             action = "빈 값"
         elif col == "metadata_json":
@@ -177,6 +225,13 @@ def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
             action = "생성"
         rows.append(_row("DB", col, label or "—", sv, v, action, (table, col) in DB_KEEPS and s["kind"] == "dicom"))
     return rows
+
+
+def _deid_map_rows(rec: dict) -> list[dict]:
+    """A pseudonymisation-map row: its original_* columns keep the source value on purpose (the key to find the
+    original again); they stay in the management DB on this server and are never sent."""
+    return [_row("DB", col, "원본 (재식별용 보관)", v, v, "원본 보관") if col.startswith("original_") else
+            _row("DB", col, "—", None, v, "생성") for col, v in rec.items()]
 
 
 def _dataset_rows(rec: dict, input_root: str) -> list[dict]:
@@ -243,6 +298,10 @@ def sample_view(run: Run) -> dict:
                 rec = one(table, key, value)
                 if rec:
                     db.append({"table": table, "label": "", "rows": _db_rows(table, rec, c)})
+                if table == "subjects" and rec and recs.get("deid_subject_mappings"):
+                    m = one("deid_subject_mappings", "subject_uuid", rec["subject_uuid"])
+                    if m:
+                        db.append({"table": "deid_subject_mappings", "label": DEID_LABEL, "rows": _deid_map_rows(m)})
             if recs["ingest_runs"]:
                 c_run = {**c, "abs": series_source_path(plan, s)}
                 db.append({"table": "ingest_runs", "label": "이 등록 실행 (모든 샘플 공통)",
@@ -251,8 +310,18 @@ def sample_view(run: Run) -> dict:
                                 ("dataset_series", "series_uid", one("dataset_series", "series_uid", s["series_uid"])),
                                 ("instances", "series_uid", first_rows.get(s["series_uid"]) if inst else None)):
             if rec:
+                ci = c
+                if table == "instances" and s["kind"] == "dicom":     # the first file's own source file
+                    ci = {**c, "src_ds": read_dicom_header(Path(c["abs"]))}
+                    ci.pop("_src_tags", None)
                 db.append({"table": table, "label": label + (" · 첫 파일 (파일마다 1행)" if table == "instances" else ""),
-                           "rows": _db_rows(table, rec, c)})
+                           "rows": _db_rows(table, rec, ci)})
+            if rec and table in ("series", "instances"):
+                dt = "deid_series_mappings" if table == "series" else "deid_instance_mappings"
+                m = one(dt, "series_uid" if table == "series" else "sop_uid",
+                        rec["series_uid"] if table == "series" else rec["sop_uid"]) if recs.get(dt) else None
+                if m:
+                    db.append({"table": dt, "label": f"{label} · {DEID_LABEL}", "rows": _deid_map_rows(m)})
     sent = {}
     if pilot and not stale:
         from .local_send import journals

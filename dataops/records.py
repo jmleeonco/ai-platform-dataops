@@ -135,10 +135,10 @@ def deid_rows(run: Run, plan: dict, manifest: dict, active: list[dict], heads: d
             "internal_hash": deid.mac(plan, "series:" + (orig or s["series_key"]))[:32], "modality": s["modality"],
             "original_series_uid": orig, "original_study_uid": src.get("study_uid") if orig else None,
             "original_source_path": series_source_path(plan, s),
-            "original_acq_date": _text(m.get("AcquisitionDate") or m.get("SeriesDate"), 32),
-            "original_acq_time": _text(m.get("AcquisitionTime") or m.get("SeriesTime"), 32),
-            "out_acq_date": _text(h.get("AcquisitionDate") or h.get("SeriesDate"), 32),
-            "out_acq_time": _text(h.get("AcquisitionTime") or h.get("SeriesTime"), 32)})
+            # the same attribute on both sides: AcquisitionDate/Time when the source has it, else SeriesDate/Time
+            **{f"{side}_acq_{part}": _text(src_of.get(f"Acquisition{part.title()}") if f"Acquisition{part.title()}" in m
+                                           else src_of.get(f"Series{part.title()}"), 32)
+               for side, src_of in (("original", m), ("out", h)) for part in ("date", "time")}})
     out["deid_instance_mappings"] = [
         {"sop_uid": i["sop_uid"], "run_uuid": run_uuid, "original_sop_uid": i["source"].get("sop_uid"),
          "original_source_path": absolute(plan, i["source"]["rel"])} for i in manifest["instances"]]
@@ -210,8 +210,12 @@ def series_columns(s: dict, h: dict) -> dict:
 
 @lru_cache(maxsize=4096)
 def _read_head(path: str, mtime_ns: int) -> dict:
+    return head_values(pydicom.dcmread(path, stop_before_pixels=True))
+
+
+def head_values(ds) -> dict:
+    """The series-level values the DB keeps (HEAD_TAGS, ROI names, referenced series) of one DICOM dataset."""
     from .inventory import _jsonable
-    ds = pydicom.dcmread(path, stop_before_pixels=True)
     h = {t: _jsonable(ds.get(t)) for t in HEAD_TAGS if t in ds}
     if "StructureSetROISequence" in ds:
         h["RoiNames"] = [str(r.get("ROIName", "")) for r in ds.StructureSetROISequence]

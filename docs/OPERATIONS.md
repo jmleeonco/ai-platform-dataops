@@ -90,7 +90,10 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    the real source value on the left and the value that really goes out on the right: **DICOM 메타데이터**
    (every top-level element of the first converted file of each series) and **DB** (the rows registration
    writes: dataset, subject, study, each series and its link, the first instance of each series), with what
-   was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`.
+   was done (생성, 새 UID 생성, 계산, 그대로, 버림, 빈 값) — `dataops/compare.py`. DB columns read from the outgoing
+   DICOM (series header columns, patient sex/age, slice location) show the same attribute of the source file (or the
+   NIfTI header field it is computed from) on the left; a pseudonymised run also shows its `deid_*` map rows next
+   to the row they map, whose `original_*` columns keep the source value on purpose (this server's DB only).
    Identifying DICOM attributes or DB columns that leave unchanged are flagged "식별 정보 그대로".
    **Naming** follows the company rule (Notion "04-1. Data prefix 규칙", "Track P"): the prefix is
    `<source>_<region>[_<modality>][_<sub>]_<PUB|NC|IO>` (A-Z/0-9/_, 3–20 characters; the tier agrees with

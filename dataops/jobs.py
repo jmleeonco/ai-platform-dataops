@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import deid
 from .config import Settings
-from .runs import Run, RunError
+from .runs import Run, RunError, list_runs
 from .util import now_iso, read_json, write_json
 
 KINDS = ("analyze", "sample", "pilot", "publish")
@@ -115,11 +115,20 @@ def worker(settings: Settings, once: bool = False, poll_s: float = 2.0) -> None:
         raise RunError("다른 worker가 이미 실행 중입니다") from None
     lock.write(str(os.getpid()))
     lock.flush()
-    for j in list_jobs(settings, limit=10_000):
+    jobs = list_jobs(settings, limit=10_000)
+    for j in jobs:
         if j["status"] == "running":
             j.update(status="failed", finished_at=now_iso(), error="worker가 작업 중에 중지됨 — 다시 실행하세요")
             write_json(_path(settings, j["id"]), j)
             _release_run_lock(settings, j["run_id"])
+    # a run left "analysing" by an interrupted worker would otherwise say so forever
+    waiting = {j["run_id"] for j in jobs if j["status"] == "queued"}
+    for r in list_runs(settings.runs_dir):
+        if r.get("status") == "ANALYZING" and r["run_id"] not in waiting:
+            try:
+                Run(settings.runs_dir, r["run_id"]).set_status("ANALYSIS_FAILED", "분석 작업이 중간에 중지됨 — 다시 분석하세요")
+            except RunError:
+                pass
     while True:
         queued = sorted((j for j in list_jobs(settings, limit=10_000) if j["status"] == "queued"),
                         key=lambda j: j["created_at"])

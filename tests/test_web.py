@@ -243,6 +243,18 @@ def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):
     assert rows["PatientID"]["src"] == source_pid and rows["PatientID"]["out"] == dicom["patient_id"]
     assert rows["AccessionNumber"]["src"] == "ACC123" and not rows["AccessionNumber"]["out"]
     assert rows["StudyDate"]["src"] == rows["StudyDate"]["out"] == "20200101"
+    # DB side: columns read from the outgoing DICOM show the same attribute of the source on the left, and the
+    # pseudonymisation maps (originals kept on purpose) sit next to the rows they map
+    db = {t["table"]: {r["item"]: r for r in t["rows"]} for t in sample_view(run)["cases"][0]["db"]}
+    assert db["series"]["frame_of_reference_uid"]["from"] == "원본 DICOM FrameOfReferenceUID"
+    assert db["series"]["frame_of_reference_uid"]["action"] == "새 UID"
+    assert db["series"]["sop_class_uid"]["action"] == "원본 그대로"
+    assert db["deid_subject_mappings"]["original_patient_id"]["src"] == source_pid
+    assert db["deid_subject_mappings"]["pseudonym_patient_id"]["out"] == dicom["patient_id"]
+    assert db["deid_series_mappings"]["original_series_uid"]["out"] == source_series
+    # every element of the pseudonymised copy has a known origin (no "출처 미정" error in table 4)
+    from dataops import metadata
+    assert not metadata.build(run)["unknown_tags"]
     client = TestClient(create_app(settings))
     page = client.get(f"/runs/{run.id}").text
     assert source_pid in page and dicom["patient_id"] in page

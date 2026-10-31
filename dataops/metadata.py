@@ -595,7 +595,8 @@ def build(run: Run, refresh: bool = False) -> dict:
         except Exception:  # noqa: BLE001
             continue
         headers_view.append({"modality": ds.get("Modality"), "series": c["s"]["series_key"],
-                             "tags": [_tag_row(el) for el in ds if el.keyword != "PixelData"]})
+                             "tags": [_tag_row(el, c["s"]["kind"], deid.enabled(plan))
+                                      for el in ds if el.keyword != "PixelData"]})
     return {"ready": True, "plan": plan, "rows": rows, "fields": fields, "headers": headers_view,
             "dicom": {"tags": tags, "rows": dicom_rows}, "records": records,
             "unknown_tags": sorted({t["keyword"] for h in headers_view for t in h["tags"] if t["source"] == "?"}),
@@ -609,7 +610,28 @@ def _verdict(ok: int, bad: list, none: str) -> str:
     return f"일치 {ok}" if ok else none
 
 
-def _tag_row(el) -> dict:
+# Written into a copy of an original DICOM file (prepare.py / deid.dicom); every other element is the source's own.
+DICOM_COPY_SOURCE = {
+    "PatientID": ("접두어", "<prefix>_<원본 PatientID 또는 가명 번호>"),
+    "PatientName": ("접두어", "PatientID와 같은 값"),
+    "PatientIdentityRemoved": ("비식별", "가명화 표시 YES"),
+    "DeidentificationMethod": ("비식별", "가명화 방식"),
+    "LongitudinalTemporalInformationModified": ("비식별", "날짜 유지 표시 UNMODIFIED"),
+}
+
+
+def _copy_source(el, pseudonymised: bool) -> tuple[str, str]:
+    """Origin of an element in an original DICOM file that is copied (public) or pseudonymised (internal)."""
+    if el.keyword in DICOM_COPY_SOURCE:
+        return DICOM_COPY_SOURCE[el.keyword]
+    if pseudonymised and (el.keyword in deid.REMOVE or el.VR == "PN"):
+        return "비식별", "비식별로 비움"
+    if pseudonymised and el.VR == "UI" and not str(el.value).startswith(deid.STANDARD_UID):
+        return "UID", "원본 UID에서 키 기반 2.25 UID로 교체 (참조 관계 유지)"
+    return "원본", "원본 DICOM 그대로"
+
+
+def _tag_row(el, kind: str = "nifti", pseudonymised: bool = False) -> dict:
     if el.VR == "SQ":
         value = f"시퀀스 {len(el.value)}개 항목"
         if el.keyword == "StructureSetROISequence":
@@ -617,6 +639,9 @@ def _tag_row(el) -> dict:
     else:
         value = str(el.value) if el.value not in (None, "") else ""
         value = value if len(value) <= 300 else value[:300] + " …"
-    kind, why = TAG_SOURCE.get(el.keyword, ("?", "출처 미정"))
+    if kind == "dicom":
+        kind, why = _copy_source(el, pseudonymised)
+    else:
+        kind, why = TAG_SOURCE.get(el.keyword, ("?", "출처 미정"))
     return {"tag": f"({el.tag.group:04X},{el.tag.element:04X})", "keyword": el.keyword, "vr": el.VR,
             "value": value, "source": kind, "why": why}

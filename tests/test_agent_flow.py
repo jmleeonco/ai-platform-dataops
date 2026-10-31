@@ -413,3 +413,17 @@ def test_deid_switch_pseudonymises_what_leaves(tmp_path, monkeypatch, challenge)
     assert all(r["check"] in (None, "일치") for r in md["dicom"]["rows"])
     again = deid.enable(run.load("plan.json"))                          # same folder, same pseudonyms
     assert deid.subject(again, case["subject_key"]) == pseudo
+
+
+def test_worker_restart_fails_an_interrupted_analysis(settings):
+    """A worker stopped mid-analysis leaves a running job; on restart the job and its run both say failed."""
+    from dataops.jobs import submit, worker
+    from dataops.runs import Run
+    stuck = Run.create(settings.runs_dir, "00000000-0000-5000-8000-000000000001", "/data/a")
+    stuck.set_status("ANALYZING", "분석 요청")
+    job = submit(settings, "analyze", stuck.id, {"input_root": "/data/a"})
+    path = settings.jobs_dir / f"{job['id']}.json"
+    path.write_text(json.dumps({**job, "status": "running"}), encoding="utf-8")
+    worker(settings, once=True)
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "failed"
+    assert Run(settings.runs_dir, stuck.id).meta["status"] == "ANALYSIS_FAILED"
