@@ -20,6 +20,8 @@
 <section class="job-active">
 <h2>{{ job.kind }} {{ status(job.status) }}</h2>
 {% if job.error %}<p class="err">{{ job.error }}</p>{% endif %}
+<div id="jobprog" class="prog"{{ ' hidden' if not progress }}><div class="bar"><span style="width: {{ (progress.pct or 0) if progress else 0 }}%"></span></div>
+<p class="small"><b id="jobprog-pct">{{ (progress.pct ~ '%') if progress and progress.pct is not none else '' }}</b> <span id="jobprog-text">{{ progress.text if progress else '' }}</span></p></div>
 <pre id="joblog">{% for l in job_log %}{{ l }}
 {% endfor %}</pre>
 </section>

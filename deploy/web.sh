@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local HTML app + job worker (user processes, no sudo).
-#   deploy/web.sh start|stop|restart|status|logs
+#   deploy/web.sh start|stop|restart|restart-web|status|logs
 # Binds DATAOPS_BIND_HOST:DATAOPS_PORT (default 127.0.0.1:8096). The worker runs browser jobs (analysis,
 # pilot, publication) one at a time. Not restarted automatically after a reboot: run `deploy/web.sh start`
 # again (and `deploy/db.sh up` if the container is not running).
@@ -33,6 +33,7 @@ case "${1:-}" in
   start) start_one web "$PY" -m dataops serve; start_one worker "$PY" -m dataops worker ;;
   stop) stop_one web; stop_one worker ;;
   restart) "$0" stop; "$0" start ;;
+  restart-web) stop_one web; start_one web "$PY" -m dataops serve ;;   # page changes; a running job keeps going
   status) rc=0; for n in web worker; do if running $n; then echo "$n running pid $(cat "$(pidf $n)")"; else echo "$n not running"; rc=1; fi; done; exit $rc ;;
   logs) for n in web worker; do echo "== $n"; tail -30 "$STATE/$n.log" 2>/dev/null || true; done ;;
   *) sed -n '2,6p' "$0"; exit 2 ;;

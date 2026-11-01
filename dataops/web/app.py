@@ -26,6 +26,7 @@ from .. import db as dbmod
 from ..compare import sample_view
 from ..config import Settings
 from ..jobs import active_job, deid_allowed, job_log, list_jobs
+from ..progress import job_progress
 from ..local_send import journals
 from ..metadata import build as build_metadata
 from ..report import INDEX_COLUMNS, TITLES, dataset_index, db_preview, dicom_columns, source_columns
@@ -155,6 +156,7 @@ def create_app(settings: Settings) -> FastAPI:
                     registration=run.load("registration.json"), summary=_summary(plan),
                     subjects=sorted({x["subject_key"] for x in plan.get("series", []) if not x.get("excluded")}),
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
+                    progress=job_progress(run.dir, active, settings.jobs_dir) if active else None,
                     editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
                     db_sec=secs.get(7), sample=sample_view(run, internal) if plan.get("series") else {"ready": False},
                     internal=internal,
@@ -250,7 +252,8 @@ def create_app(settings: Settings) -> FastAPI:
         job = active_job(settings, run.id)
         return {"status": run.meta["status"], "updated_at": run.meta["updated_at"],
                 "job": {"id": job["id"], "kind": job["kind"], "status": job["status"],
-                        "log": job_log(settings, job["id"], 8)} if job else None}
+                        "log": job_log(settings, job["id"], 8),
+                        "progress": job_progress(run.dir, job, settings.jobs_dir)} if job else None}
 
     @app.get("/jobs", response_class=HTMLResponse)
     def jobs_page(request: Request):
