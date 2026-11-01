@@ -18,4 +18,7 @@ def test_progress_reads_conversion_then_sending(tmp_path):
         {"manifest_sha256": "m", "instances": {"0": {"status": "accepted"}, "1": {"status": "sending"}}}))
     p = job_progress(run, job, jobs)
     assert p["phase"] == "send" and p["pct"] == 25.0 and "수신 기록 1개" in p["text"]
+    (run / "transfers" / "central_TESTSCP_192.0.2.1_4002.json").write_text(json.dumps(
+        {"manifest_sha256": "m", "instances": {f"{i}": {"status": "accepted"} for i in range(4)}}))
+    assert job_progress(run, job, jobs)["phase"] == "register"
     assert job_progress(run, {**job, "status": "done"}, jobs) is None

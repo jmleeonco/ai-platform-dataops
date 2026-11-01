@@ -64,6 +64,8 @@ def job_progress(run_dir: Path, job: dict, jobs_dir: Path) -> dict | None:
         j = json.loads(journal.read_text(encoding="utf-8"))
         if j.get("manifest_sha256") == man.get("manifest_sha256"):
             received = sum(1 for v in j["instances"].values() if v.get("status") in ("accepted", "warning"))
+    if received >= files:
+        return {"phase": "register", "pct": 100.0, "text": f"전송 완료 · 파일 {files:,}개 수신 · 관리 DB 등록 중", "target": target}
     b, conns = _acked(m.group(1), int(m.group(2)))
     now, key = time.monotonic(), str(run_dir)
     rate = None
