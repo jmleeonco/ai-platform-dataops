@@ -55,6 +55,12 @@ def on_nfs_input(path) -> bool:
     return any(p == x or p.startswith(x + "/") for pair in mirrors() for x in pair)
 
 
+def _transient(e: OSError) -> bool:
+    """A lookup failure the NFS gives during an outage. Some readers (nibabel) raise FileNotFoundError without an
+    errno, so the class counts as ENOENT."""
+    return e.errno in TRANSIENT or (e.errno is None and isinstance(e, FileNotFoundError))
+
+
 def call(fn, path, *args, **kwargs):
     """fn(path, ...); when the NFS answers as if the file were gone: fn(mirror copy, ...), and if neither
     answers, both again after waits (an outage of either server). A file still missing on both after the
@@ -62,13 +68,13 @@ def call(fn, path, *args, **kwargs):
     try:
         return fn(path, *args, **kwargs)
     except OSError as e:
-        if e.errno not in TRANSIENT or not on_nfs_input(path):
+        if not _transient(e) or not on_nfs_input(path):
             raise
         first = e
     alt = mirror(path)
     for wait in (0, *WAITS):
         if wait:
-            _note(f"{path}: {first.strerror}; retrying in {wait}s")
+            _note(f"{path}: {first.strerror or first}; retrying in {wait}s")
             time.sleep(wait)
         for where in ((path, alt) if wait else (alt,)):
             if where is None:
@@ -76,11 +82,11 @@ def call(fn, path, *args, **kwargs):
             try:
                 out = fn(where, *args, **kwargs)
             except OSError as e:
-                if e.errno not in TRANSIENT:
+                if not _transient(e):
                     raise
                 continue
             if where != path:
-                _note(f"{path}: {first.strerror} on the primary, read from {where}")
+                _note(f"{path}: {first.strerror or first} on the primary, read from {where}")
             return out
     raise first
 

@@ -68,3 +68,14 @@ def test_local_files_fail_at_once(tmp_path, monkeypatch):
     monkeypatch.setattr(nfs, "WAITS", (60,))          # would hang if a local path were waited for
     with pytest.raises(FileNotFoundError):
         sha256_file(tmp_path / "missing.bin")
+
+
+def test_a_reader_error_without_errno_still_uses_the_mirror(mounts):
+    """nibabel raises FileNotFoundError("No such file or no access: ...") with no errno."""
+    primary, mirror = mounts
+
+    def nib_like(p):
+        if str(p).startswith(str(primary)):
+            raise FileNotFoundError(f"No such file or no access: '{p}'")
+        return open(p).read()
+    assert nfs.call(nib_like, primary / "ds" / "sub" / "a.txt") == "hello"
