@@ -110,10 +110,11 @@ def _nifti_sources(c: dict) -> dict:
     return out
 
 
-def _row(group, item, src_from, src, out, action, ident=False) -> dict:
+def _row(group, item, src_from, src, out, action, ident=False, same=None) -> dict:
     src, out = _text(src), _text(out)
     return {"group": group, "item": item, "from": src_from, "src": src, "out": out, "action": action,
-            "changed": src != out,      # a prefixed source ID (<prefix>_<PatientID>) still carries it
+            "changed": not same if same is not None else src != out,
+            # a prefixed source ID (<prefix>_<PatientID>) still carries it
             "flag": "식별 정보 그대로" if ident and out and src and (src == out or src in out) else None}
 
 
@@ -211,9 +212,10 @@ def _db_rows(table: str, rec: dict, c: dict) -> list[dict]:
         kw = DB_TAG.get((table, col))
         if kw and kw in tags:
             label, sv = tags[kw]
-            action = "빈 값" if v in (None, "") else "원본 그대로" if _same_value(sv, v) else \
+            same = _same_value(sv, v)
+            action = "빈 값" if v in (None, "") else "원본 그대로" if same else \
                 "새 UID" if kw.endswith("UID") else "형식 변환" if s["kind"] == "dicom" else "계산"
-            rows.append(_row("DB", col, label, sv, v, action, kw in IDENTIFYING and s["kind"] == "dicom"))
+            rows.append(_row("DB", col, label, sv, v, action, kw in IDENTIFYING and s["kind"] == "dicom", same))
             continue
         if v in (None, ""):
             action = "빈 값"

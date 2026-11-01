@@ -110,7 +110,7 @@ table.cmp-t tr.side th { text-align: center; color: var(--ink); font-size: 13px;
 table.cmp-t tr.side th.src { background: var(--chip); }
 table.cmp-t tr.side th.out { background: var(--chip); border-left: 3px solid var(--accent); }
 table.cmp-t td.out { border-left: 3px solid var(--accent); }
-table.cmp-t td.changed { font-weight: 600; }
+table.cmp-t td.changed { font-weight: 600; color: var(--bad); }
 table.cmp-t tr.flag td { background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .cmp-wrap:not(.all) tr.minor { display: none; }
 
