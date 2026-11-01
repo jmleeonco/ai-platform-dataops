@@ -167,9 +167,11 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    source, with the agent's reason) — and publication is refused while a file the plan read is unclassified or
    an active series is missing from the full manifest. The run page shows this table under section 2
    ("폴더 전체 파일 처리 내역"). Refused unless `DATAOPS_CENTRAL_HOST/PORT/CALLED_AE` are set **and**
-   `DATAOPS_CENTRAL_ENABLED=true`; the target is not set (owner, 2026-10-28 and 2026-10-31: no send to
-   Central, not even a test), so an approval is recorded and publication waits. The algorithm is tested
-   against a loopback SCP only (`tests/test_agent_flow.py`).
+   `DATAOPS_CENTRAL_ENABLED=true`. Since 2026-11-02 (owner: "보내도 돼") the env file sets Central to
+   `ONCOPACS@10.101.1.4:4002`, calling AE `DATAOPS` (C-ECHO and CT/MR/RTSTRUCT storage contexts checked first);
+   an approval in the web then starts the publish job. Tests still use a loopback SCP (`tests/test_agent_flow.py`).
+   A send journals its results every 15 s, so the run page moves during a long send; from a shell,
+   `python3 ops/transfer_progress.py RUN [--watch 30]` shows conversion and sent bytes without touching the job.
 
 CLI equivalents: `analyze DIR [--wait]`, `pilot RUN`, `approve RUN --by NAME --confirm NAME`,
 `publish RUN [--dry-run]`, `worker [--once]`.

@@ -365,7 +365,8 @@ def _send_one(assoc, it: SendItem) -> None:
         it.status, it.detail = "failed", f"status 0x{code:04X} {comment}".strip()
 
 
-def send_items(dest: Destination, items: list) -> None:
+def send_items(dest: Destination, items: list, progress=None) -> None:
+    """`progress(item)`, when given, is called after every C-STORE (e.g. to journal a long send as it goes)."""
     logging.getLogger("pynetdicom").setLevel(logging.CRITICAL)
     by_sop = defaultdict(list)
     for it in items:
@@ -393,6 +394,8 @@ def send_items(dest: Destination, items: list) -> None:
                     if not assoc.is_established:
                         break
                     _send_one(assoc, it)
+                    if progress:
+                        progress(it)
             finally:
                 if assoc.is_established:
                     assoc.release()

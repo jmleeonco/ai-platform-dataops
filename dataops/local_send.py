@@ -7,6 +7,7 @@ scope "pilot" sends manifest-pilot.json (trial before approval), scope "full" se
 from __future__ import annotations
 
 import os
+import time
 from collections import Counter
 
 from .config import LocalScp
@@ -78,12 +79,27 @@ def send_with_journal(run: Run, scope: str, target_key: str, target: dict, dest,
                              i["transfer_syntax"] or str(sender.ImplicitVRLittleEndian), i["series_uid"])
              for i in todo]
     started = now_iso()
-    if items:
-        sender.send_items(dest, items)
-    for it in items:
+    last = [time.monotonic()]
+
+    def record(it):
         rec = journal["instances"][it.sop_uid]
         rec.update(status=STATUS_MAP.get(it.status, "failed"), detail=it.detail, attempts=rec["attempts"] + 1,
                    updated_at=now_iso())
+
+    def progress(it):                       # a long send shows on the run page as it goes (journal every 15 s)
+        if it.status == "pending":
+            return
+        record(it)
+        it.journaled = True
+        if time.monotonic() - last[0] >= 15:
+            journal["updated_at"] = now_iso()
+            run.save(jname, journal)
+            last[0] = time.monotonic()
+    if items:
+        sender.send_items(dest, items, progress)
+    for it in items:
+        if not getattr(it, "journaled", False) or it.status == "pending":
+            record(it)
     counts = Counter(journal["instances"][i["sop_uid"]]["status"] for i in manifest["instances"])
     journal["sessions"].append({"started_at": started, "finished_at": now_iso(), "sent": len(items),
                                 "result": dict(Counter(STATUS_MAP.get(i.status, "failed") for i in items))})
