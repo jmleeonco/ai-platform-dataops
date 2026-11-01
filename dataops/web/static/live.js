@@ -12,7 +12,7 @@
         var p = s.job.progress, box = document.getElementById("jobprog");
         if (box && p) {
           box.hidden = false;
-          box.querySelector(".bar span").style.width = (p.pct || 0) + "%";
+          box.querySelector("progress").value = p.pct || 0;
           document.getElementById("jobprog-pct").textContent = p.pct == null ? "" : p.pct + "%";
           document.getElementById("jobprog-text").textContent = p.text;
         }

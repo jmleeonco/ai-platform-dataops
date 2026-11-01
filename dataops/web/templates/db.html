@@ -56,5 +56,5 @@ migration {{ deid_map.migrations.applied|join(', ') }}{% if deid_map.migrations.
 {% endfor %}
 {% endif %}
 </div>
-<script src="/static/dblive.js"></script>
+<script src="/static/dblive.js?v={{ static_v }}"></script>
 {% endblock %}

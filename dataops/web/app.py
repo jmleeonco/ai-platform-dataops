@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import functools
+import hashlib
 import io
 import json
 import re
@@ -69,7 +70,9 @@ def create_app(settings: Settings) -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=50_000)
     tpl = Jinja2Templates(directory=HERE / "templates")
     tpl.env.filters.update(short=_short, jsonfmt=_jsonfmt)
-    tpl.env.globals.update(version=__version__)
+    # static files carry a content stamp in their URL, so a browser never keeps an old script or stylesheet
+    static_v = hashlib.sha256(b"".join(p.read_bytes() for p in sorted((HERE / "static").iterdir()) if p.is_file())).hexdigest()[:10]
+    tpl.env.globals.update(version=__version__, static_v=static_v)
 
     @app.middleware("http")
     async def headers(request: Request, call_next):
@@ -80,6 +83,8 @@ def create_app(settings: Settings) -> FastAPI:
             resp.set_cookie(CSRF_COOKIE, request.state.csrf, httponly=True, samesite="strict", path="/")
         resp.headers["Content-Security-Policy"] = CSP
         resp.headers["X-Content-Type-Options"] = "nosniff"
+        if request.url.path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "no-cache"
         resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
 

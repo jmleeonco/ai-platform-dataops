@@ -124,5 +124,8 @@ table.cmp-t tr.tbl th { background: var(--chip); color: var(--ink); text-align: 
 form.deid-bar { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 #sample-pick { min-width: 260px; }
 .case-name { font-size: 15px; margin: 4px 0 0; }
-.prog .bar { height: 10px; border-radius: 5px; background: var(--chip); overflow: hidden; margin: 6px 0 2px; }
-.prog .bar span { display: block; height: 100%; background: var(--accent); transition: width .5s; }
+.prog progress { width: 100%; height: 10px; margin: 6px 0 2px; appearance: none; border: none; border-radius: 5px;
+  background: var(--chip); overflow: hidden; accent-color: var(--accent); }
+.prog progress::-webkit-progress-bar { background: var(--chip); }
+.prog progress::-webkit-progress-value { background: var(--accent); }
+.prog progress::-moz-progress-bar { background: var(--accent); }

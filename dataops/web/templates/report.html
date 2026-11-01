@@ -10,5 +10,5 @@
 <nav class="toc">{% for no, t in titles.items() %}<a href="#s{{ no }}">{{ no }} {{ t }}</a>{% endfor %}</nav>
 {% for sec in report.sections %}{% if sec.src %}{{ json_section(sec, run) }}{% elif sec.no == 7 %}{{ db_section(sec, run) }}{% else %}{{ std_section(sec) }}{% endif %}{% endfor %}
 {% endif %}
-<script src="/static/jtable.js"></script>
+<script src="/static/jtable.js?v={{ static_v }}"></script>
 {% endblock %}

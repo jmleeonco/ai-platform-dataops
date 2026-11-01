@@ -28,5 +28,5 @@
 {% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs < 3 %}<a href="{{ link(p=i) }}">{{ i }}</a>{% endif %}{% endfor %}</p>{% endif %}
 </section>
 </div>
-<script src="/static/dblive.js"></script>
+<script src="/static/dblive.js?v={{ static_v }}"></script>
 {% endblock %}

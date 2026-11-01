@@ -40,7 +40,7 @@
     <p class="muted">슬라이스는 ImagePositionPatient를 법선 방향으로 정렬했습니다(없으면 InstanceNumber).</p>
   </div>
 </div>
-<script src="/static/viewer.js"></script>
+<script src="/static/viewer.js?v={{ static_v }}"></script>
 {% elif rs_instances %}<p>RTSTRUCT 시리즈입니다. 참조 영상 페이지에서 윤곽을 겹쳐 볼 수 있습니다.</p>
 {% else %}<p class="muted">prepare 전이거나 인스턴스가 없습니다.</p>{% endif %}
 </section>
