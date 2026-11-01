@@ -25,7 +25,7 @@ from .. import __version__
 from .. import db as dbmod
 from ..compare import sample_view
 from ..config import Settings
-from ..jobs import active_job, job_log, list_jobs
+from ..jobs import active_job, deid_allowed, job_log, list_jobs
 from ..local_send import journals
 from ..metadata import build as build_metadata
 from ..report import INDEX_COLUMNS, TITLES, dataset_index, db_preview, dicom_columns, source_columns
@@ -139,6 +139,7 @@ def create_app(settings: Settings) -> FastAPI:
         """Two actions (Local SCP, approval → Central) and three tables: extracted values, DB rows, DICOM values."""
         run = get_run(run_id)
         meta, plan = run.meta, run.load("plan.json", {}) or {}
+        internal = deid_allowed(settings, meta["input_root"])
         pilot = run.load("manifest-pilot.json")
         jobs = list_jobs(settings, run.id, limit=1)
         job = jobs[0] if jobs else None
@@ -155,7 +156,8 @@ def create_app(settings: Settings) -> FastAPI:
                     subjects=sorted({x["subject_key"] for x in plan.get("series", []) if not x.get("excluded")}),
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
                     editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
-                    db_sec=secs.get(7), sample=sample_view(run) if plan.get("series") else {"ready": False},
+                    db_sec=secs.get(7), sample=sample_view(run, internal) if plan.get("series") else {"ready": False},
+                    internal=internal,
                     header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]],
                     cover=coverage(run, plan, run.load("manifest.json")) if plan.get("series") else None)
 

@@ -62,7 +62,8 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    `/mnt2/data/Public_dataset`; on this host also `/mnt2/data/Onco_dataset` and its read-only copy
    `/mnt2-v3-test/data/Onco_dataset`; backup/hidden folders refused). Pseudonymisation is chosen by location
    ("자동", the default): on for a folder under `DATAOPS_INTERNAL_ROOTS` (default the two Onco_dataset roots:
-   hospital and in-house data), off for public data, which keep their published case IDs; 켬 / 끔 override it. Job `analyze`:
+   hospital and in-house data). Public data are never pseudonymised (owner, 2026-11-01): they keep their published
+   case IDs, the run page has no switch for them and flags nothing in them as identifying. Job `analyze`:
    `scan` (directory overview + NIfTI headers, ~1 min for AMOS 62 GB) → analysis agent → `spec`
    check → plan. Nothing is converted or sent.
    NFS inputs are read in parallel: each directory is listed once and stat'ed with 64 threads, header probes
@@ -101,8 +102,9 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    commercial use: PUB = Y, NC = N, IO = internal only), and PatientID = PatientName = `<prefix>_<source ID>`
    for NIfTI and original DICOM alike (only those two tags change in a DICOM copy). A prefix that breaks the
    rule is a plan error, and a run whose commercial use is still U cannot be approved.
-   **Pseudonymisation** (`dataops/deid.py`) is off by default — public data are de-identified already —
-   and switched per run by the button under the title (a plan field, so part of what is approved). On, the
+   **Pseudonymisation** (`dataops/deid.py`) applies to internal data only — public data are de-identified
+   already and cannot be switched on — and is switched per internal run by the button under the title (a plan
+   field, so part of what is approved). On, the
    subject key becomes a pseudonym number (PatientID = `<prefix>_0001`, …; numbers are kept in the plan's
    `deid.subjects`, given in keyed-hash order and never reused) in PatientID / PatientName /
    SeriesDescription and in the DB, ImageComments leaves out the source path, and the DB stores a keyed

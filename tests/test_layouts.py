@@ -83,6 +83,24 @@ def test_pseudonymisation_follows_location(tmp_path, monkeypatch, data):
     assert not (analyse(s, data, deid_on=False).load("plan.json").get("deid") or {}).get("enabled")
     s2 = settings_for(tmp_path, monkeypatch, MASKS_PROPOSAL)
     assert not (analyse(s2, data).load("plan.json").get("deid") or {}).get("enabled")   # public: off
+    assert not (analyse(s2, data, deid_on=True).load("plan.json").get("deid") or {}).get("enabled")  # and never on
+
+
+def test_public_runs_cannot_be_pseudonymised_and_flag_nothing(tmp_path, monkeypatch, data):
+    from fastapi.testclient import TestClient
+    from dataops.compare import sample_view
+    from dataops.web.app import create_app
+    s = settings_for(tmp_path, monkeypatch, MASKS_PROPOSAL)
+    run = analyse(s, data)
+    client = TestClient(create_app(s))
+    page = client.get(f"/runs/{run.id}")
+    assert "가명화 <b class=\"muted\">안 함</b>" in page.text and "비식별 켜기" not in page.text
+    token = page.text.split('name="csrf" value="')[1].split('"')[0]
+    r = client.post(f"/runs/{run.id}/deid", data={"csrf": token, "on": "1"}, follow_redirects=False)
+    assert r.status_code == 303 and "err=" in r.headers["location"]
+    assert not (Run(s.runs_dir, run.id).load("plan.json").get("deid") or {}).get("enabled")
+    view = sample_view(Run(s.runs_dir, run.id), internal=False)
+    assert all(not c["flags"] for c in view["cases"])
 
 
 def test_every_file_of_the_folder_is_accounted_for(tmp_path, monkeypatch, data):

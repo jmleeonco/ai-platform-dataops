@@ -242,10 +242,11 @@ def _dataset_rows(rec: dict, input_root: str) -> list[dict]:
             for k, v in rec.items()]
 
 
-def sample_view(run: Run) -> dict:
+def sample_view(run: Run, internal: bool = True) -> dict:
     """{"cases": [{"subject_key", "dicom": [series with rows], "db": [{"table", "label", "rows"}], "flags"}]}:
     per sample subject, what the DICOM files carry (one entry per series) and what the DB gets (one entry per
-    row: dataset, subject, study, each series and its link, the first instance of each series)."""
+    row: dataset, subject, study, each series and its link, the first instance of each series). Public data
+    (internal=False) are published de-identified: nothing in them is flagged as identifying."""
     plan = run.load("plan.json") or {}
     if not plan.get("series"):
         return {"ready": False}
@@ -338,6 +339,12 @@ def sample_view(run: Run) -> dict:
     for case in cases.values():
         n = sent.get(case["subject_key"])
         case["sent"] = f"수신 {n[0]}/{n[1]}" if n and n[0] else None
+        if not internal:
+            for rows in [se["rows"] for se in case["dicom"]] + [t["rows"] for t in case["db"]]:
+                for r in rows:
+                    r["flag"] = None
+            for se in case["dicom"]:
+                se["flags"] = 0
         case["flags"] = sum(se["flags"] for se in case["dicom"]) + sum(
             1 for t in case["db"] for r in t["rows"] if r["flag"])
         out.append(case)

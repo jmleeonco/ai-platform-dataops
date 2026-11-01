@@ -84,14 +84,21 @@ def is_internal(settings: Settings, root: Path) -> bool:
     return any(root == Path(r).resolve() or root.is_relative_to(Path(r).resolve()) for r in settings.internal_roots)
 
 
+def deid_allowed(settings: Settings, input_root: str) -> bool:
+    """Only internal data are pseudonymised. Public data are published de-identified already and keep their
+    published case IDs (owner, 2026-11-01: "public 데이터는 전혀 가명화할 필요가 없어")."""
+    return is_internal(settings, Path(input_root).resolve())
+
+
 def start_analysis(settings: Settings, input_root: str, by: str = "", deid_on: bool | None = None) -> tuple[Run, dict]:
     """deid_on: pseudonymise from the start, so even the first sample extraction carries no identifiers.
-    None decides by location: on for internal data (DATAOPS_INTERNAL_ROOTS), off for public data, which are
-    de-identified already and keep their published case IDs."""
+    None decides by location: on for internal data (DATAOPS_INTERNAL_ROOTS). Public data are never pseudonymised."""
     root = check_input_root(settings, input_root)
     auto = deid_on is None
-    if auto:
-        deid_on = is_internal(settings, root)
+    if not is_internal(settings, root):
+        deid_on = False
+    elif auto:
+        deid_on = True
     run = Run.create(settings.runs_dir, dataset_uuid_for(str(root)), str(root))
     why = (" · 비식별 켜짐" if deid_on else "") + (" (내부 데이터 위치라 자동)" if auto and deid_on else "")
     run.set_status("ANALYZING", f"분석 요청{f' ({by})' if by else ''}{why}")
@@ -204,7 +211,8 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     log("spec: checking the proposal and building the plan (NIfTI headers only)")
     plan, inv = build_spec_plan(root, out["proposal"], run.id, run.meta["dataset_uuid"], out["meta"], log)
     run.save("inventory.json", inv)
-    if job["params"].get("deid") or deid.enabled(run.load("plan.json") or {}):    # kept on a re-analysis too
+    if (job["params"].get("deid") or deid.enabled(run.load("plan.json") or {})) \
+            and deid_allowed(settings, str(root)):                                  # kept on a re-analysis too
         deid.enable(plan)
     plan, errors = validate_plan(plan, inv)
     meta = run.store_plan(plan, errors, f"분석 완료 (에이전트 {out['meta'].get('model')}, ${out['meta'].get('cost_usd')})")

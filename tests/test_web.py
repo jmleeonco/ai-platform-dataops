@@ -1,3 +1,4 @@
+import dataclasses
 import io
 import json
 import re
@@ -190,9 +191,12 @@ def test_sample_view_flags_identifiers_passed_through(settings, mixed):
     assert {r["item"].split(" ")[0] for r in case["dicom"][0]["rows"] if r["flag"]} >= {"PatientID", "StudyDate"}
     assert {(t["table"], r["item"]) for t in case["db"] for r in t["rows"] if r["flag"]} >= {
         ("subjects", "source_subject_key"), ("studies", "study_date")}
-    page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text
+    internal = dataclasses.replace(settings, internal_roots=(str(mixed),))   # flags and the switch: internal data only
+    page = TestClient(create_app(internal)).get(f"/runs/{run.id}").text
     assert "식별 정보 그대로" in page and "원본 (실제 값)" in page
-    assert "DICOM 파일에 들어갈 값" in page and "DB에 들어갈 값" in page and "비식별 켜기" in page   # off by default
+    assert "DICOM 파일에 들어갈 값" in page and "DB에 들어갈 값" in page and "비식별 켜기" in page
+    page = TestClient(create_app(settings)).get(f"/runs/{run.id}").text           # public: nothing flagged
+    assert "식별 정보 그대로" not in page and "비식별 켜기" not in page
 
 
 def test_deid_rewrites_original_dicom(settings, mixed, tmp_path, monkeypatch):

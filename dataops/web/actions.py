@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import deid
 from ..config import Settings
-from ..jobs import active_job, check_input_root, start_analysis, submit
+from ..jobs import active_job, check_input_root, deid_allowed, start_analysis, submit
 from ..plan import PREFIX_RE, validate_plan
 from ..publish import approve, central_ready
 from ..runs import EDITABLE, Run, RunError
@@ -256,6 +256,8 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
             editable(run)
             plan = run.load("plan.json")
             on = form.get("on") == "1"
+            if on and not deid_allowed(settings, run.meta["input_root"]):
+                raise RunError("공공 데이터는 가명화하지 않습니다 (내부 데이터 위치만)")
             (deid.enable if on else deid.disable)(plan)
             errors = save_plan(run, plan, f"비식별 {'켬' if on else '끔'} (웹)")
             if not errors and (plan.get("pilot") or {}).get("subjects"):

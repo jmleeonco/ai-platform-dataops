@@ -5,12 +5,14 @@
 {% block body %}
 <h1>{{ plan.dataset.name if plan and plan.dataset else '분석 중인 폴더' }} {{ status(meta.status) }}</h1>
 <p class="muted mono small">{{ meta.input_root }} · run {{ run.id }}</p>
-{% if plan and plan.series %}{% set deid_on = (plan.deid or {}).enabled %}
+{% if plan and plan.series and not internal %}
+<p class="inline deid-bar"><span>가명화 <b class="muted">안 함</b></span> <span class="muted small">공공 데이터는 공개될 때 이미 비식별되어 있어 공개 케이스 ID를 그대로 씁니다.</span></p>
+{% elif plan and plan.series %}{% set deid_on = (plan.deid or {}).enabled %}
 <form method="post" action="/runs/{{ run.id }}/deid" class="inline deid-bar">
   {{ csrf_field(csrf) }}<input type="hidden" name="on" value="{{ '0' if deid_on else '1' }}">
   <span>비식별 <b class="{{ 'b-ok' if deid_on else 'muted' }}">{{ '켜짐' if deid_on else '꺼짐' }}</b></span>
   <button type="submit" {{ 'disabled' if not editable }}>{{ '비식별 끄기' if deid_on else '비식별 켜기' }}</button>
-  <span class="muted small">{{ '대상자 키를 가명으로, 원본 경로를 해시로 바꿔서 내보냅니다.' if deid_on else '공개 데이터는 끈 채로 둡니다. 내부 데이터일 때만 켜세요.' }}</span>
+  <span class="muted small">{{ '대상자 키를 가명으로, 원본 경로를 해시로 바꿔서 내보냅니다.' if deid_on else '내부 데이터는 켜 두세요. 끄면 원본 ID·UID가 그대로 나갑니다.' }}</span>
 </form>{% endif %}
 
 <div id="live" data-run="{{ run.id }}" data-status="{{ meta.status }}" data-active="{{ '1' if active else '' }}"></div>
@@ -111,7 +113,7 @@
 {% else %}
 {% if not sample.extracted %}<p class="notice">{{ '샘플 이후 plan이 바뀌었습니다.' if sample.stale else '아직 샘플을 추출하지 않았습니다.' }} 아래 "설정 · 기록"의 "샘플 추출"을 누르면 오른쪽 값이 채워집니다.</p>{% endif %}
 <div class="cmp-wrap" id="cmp-wrap">
-<p class="small"><label><input type="checkbox" id="cmp-all"> 빈 값·고정값 행도 보기</label> · <span class="b-bad"><b>빨간 글씨</b></span>: 원본과 달라지는 값 · <span class="badge b-bad">식별 정보 그대로</span> 행: 식별 정보가 바뀌지 않고 나감</p>
+<p class="small"><label><input type="checkbox" id="cmp-all"> 빈 값·고정값 행도 보기</label> · <span class="b-bad"><b>빨간 글씨</b></span>: 원본과 달라지는 값 {% if internal %} · <span class="badge b-bad">식별 정보 그대로</span> 행: 식별 정보가 바뀌지 않고 나감{% endif %}</p>
 {% for case in sample.cases %}{% set ci = loop.index %}
 <div class="case" id="case-{{ ci }}">
 <p class="case-name">샘플 {{ ci }} · <b class="mono">{{ case.subject_key }}</b>{% if case.flags %} <span class="badge b-bad">식별 정보 {{ case.flags }}건이 그대로 나감</span>{% endif %}</p>
