@@ -113,6 +113,9 @@ def main(argv=None) -> int:
     sub.add_parser("deid-map-save").add_argument("run", help="run id, or all")
     sub.add_parser("import-legacy", help="copy the existing DB's LAB datasets and enc maps (values only)") \
         .add_argument("--dry-run", action="store_true")
+    dp = sub.add_parser("import-deploy", help="register /mnt/deploy/data training bundles (files, DB, Central C-FIND)")
+    dp.add_argument("--dry-run", action="store_true")
+    dp.add_argument("--rescan", action="store_true", help="read the bundle folders again instead of the cache")
     wk = sub.add_parser("worker")
     wk.add_argument("--once", action="store_true")
     an = sub.add_parser("analyze")
@@ -200,6 +203,11 @@ def main(argv=None) -> int:
             if not settings.db_configured:
                 raise RunError("DB 설정 없음")
             _print(run_import(settings, dry_run=args.dry_run))
+        elif args.cmd == "import-deploy":
+            from .deploy_import import run_import as run_deploy_import
+            if not settings.db_configured:
+                raise RunError("DB 설정 없음")
+            _print(run_deploy_import(settings, rescan=args.rescan, dry_run=args.dry_run))
         elif args.cmd == "deid-map-save":
             from .jobs import save_deid_map
             from .runs import list_runs
