@@ -29,7 +29,7 @@
 <td>{{ r.description or '' }}</td><td class="num">{{ r.instance_count }}</td>
 <td>{{ r.meta.Manufacturer or '' }} {{ r.meta.ManufacturerModelName or '' }}</td>
 <td>{{ r.meta.SliceThickness or '' }}{% if r.meta.PixelSpacing %} / {{ r.meta.PixelSpacing|join('×') }}{% endif %}</td>
-<td>{{ 'DICOM' if r.source_kind == 'dicom' else 'NIfTI→DICOM' }}</td>
+<td>{{ {'dicom': 'DICOM', 'oncolabdb': '기존 DB'}.get(r.source_kind, 'NIfTI→DICOM') }}</td>
 <td>{% if r.run_label %}<a class="mono" href="/runs/{{ r.run_label }}">{{ r.run_label }}</a>{% endif %}</td></tr>
 {% endfor %}
 </table></div>

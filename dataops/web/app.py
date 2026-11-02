@@ -453,7 +453,9 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
                     SELECT d.*, (SELECT COUNT(*) FROM subjects s WHERE s.dataset_uuid=d.dataset_uuid) AS n_subjects,
                            (SELECT COUNT(*) FROM dataset_series m WHERE m.dataset_uuid=d.dataset_uuid) AS n_series,
                            (SELECT COALESCE(SUM(se.instance_count),0) FROM dataset_series m JOIN series se
-                              ON se.series_uid=m.series_uid WHERE m.dataset_uuid=d.dataset_uuid) AS n_instances
+                              ON se.series_uid=m.series_uid WHERE m.dataset_uuid=d.dataset_uuid) AS n_instances,
+                           (SELECT x.target_dataset_id FROM external_mappings x WHERE x.dataset_uuid=d.dataset_uuid
+                              AND x.target_system='oncolabdb.lab_datasets') AS legacy_id
                     FROM datasets d ORDER BY d.created_at DESC""")
             finally:
                 conn.close()

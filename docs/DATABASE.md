@@ -103,9 +103,29 @@ required; source_type defaults local; `(dataset_id,series_instance_uid)` unique.
 
 The page `/legacy` (`dataops/legacy_db.py`) shows the existing DB's shape and this mapping: with
 `DATAOPS_LEGACY_DB_*` set (a SELECT-only account) "구조 다시 읽기" reads information_schema (tables, columns,
-indexes, FKs) and VERSION() in a read-only session into `runtime/legacy_schema.json` — never a row of a
-production table — and marks each mapped column 있음 / 열 없음 / 테이블 없음. Without it the page shows the
+indexes, FKs) and VERSION() in a read-only session into `runtime/legacy_schema.json` — no table rows — and marks each mapped column 있음 / 열 없음 / 테이블 없음. Without it the page shows the
 2026-10-27 observations above.
 
 This future adapter is NOT implemented. Direct writes to production scpdb are never part
 of export. Existing Central receiver registers incoming DICOM normally.
+
+## Import from oncolabdb (implemented 2026-11-03)
+Owner: fill the new DBs with what the existing DB already holds, values only (nothing looked up in files yet).
+`python -m dataops import-legacy [--dry-run]` (`dataops/legacy_import.py`) reads, in a READ ONLY session and with
+its five SELECTs only, `lab_datasets`, `lab_dataset_items`, `enc_pipeline_runs`, `enc_patient_mappings` and
+`enc_series_mappings`, and upserts:
+
+| existing | new | how |
+|---|---|---|
+| lab_datasets | datasets + external_mappings (`oncolabdb.lab_datasets`, id) | dataset_uuid = uuid5(URL, `urn:ai-platform-dataops:oncolabdb.lab_datasets:<id>`); commercial_use available/not_available → Y/N; no prefix |
+| lab_dataset_items (dataset, patient_id) | subjects | key = PatientID; sex/age/weight/ethnicity/name = first non-empty value |
+| lab_dataset_items study | studies | first dataset/patient wins when one study UID appears under several; date only if 8 digits |
+| lab_dataset_items series | series (`source_kind=oncolabdb`) | the per-series columns of migration 0004 1:1; roi_names "A, B" → JSON list; study_path, source_type, item id in metadata_json.oncolabdb |
+| lab_dataset_items | dataset_series | every (dataset, series) |
+| enc_pipeline_runs | deid_runs (`profile=oncolabdb-enc`) | dataset_uuid from lab_dataset_id (nil UUID when none); the other run columns in summary_json |
+| enc_patient_mappings | deid_subject_mappings | subject_uuid(dataset, pseudonym) — the same key as subjects |
+| enc_series_mappings | deid_series_mappings | series_uid as stored (all of them are LAB series UIDs, i.e. what was sent); first run wins |
+
+Left out: UIDs over 64 characters (4 series; 8 referenced UIDs emptied), LAB workflow columns (`legacy_db.NOT_MAPPED`),
+file-level rows (scpdb) and ingest_runs. Rows this system registered from its own runs are never overwritten; a
+LAB series that is ours only gains the dataset link. Re-running updates the copied rows; it never deletes.

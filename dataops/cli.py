@@ -111,6 +111,8 @@ def main(argv=None) -> int:
     sub.add_parser("db-migrate")
     sub.add_parser("db-status")
     sub.add_parser("deid-map-save").add_argument("run", help="run id, or all")
+    sub.add_parser("import-legacy", help="copy the existing DB's LAB datasets and enc maps (values only)") \
+        .add_argument("--dry-run", action="store_true")
     wk = sub.add_parser("worker")
     wk.add_argument("--once", action="store_true")
     an = sub.add_parser("analyze")
@@ -193,6 +195,11 @@ def main(argv=None) -> int:
                            | {"counts": dbmod.table_counts(conn, dbmod.DEID_TABLES)})
             else:
                 print("deid map DB: not configured (DATAOPS_DEIDMAP_DB_USER / _PASSWORD)")
+        elif args.cmd == "import-legacy":
+            from .legacy_import import run_import
+            if not settings.db_configured:
+                raise RunError("DB 설정 없음")
+            _print(run_import(settings, dry_run=args.dry_run))
         elif args.cmd == "deid-map-save":
             from .jobs import save_deid_map
             from .runs import list_runs
