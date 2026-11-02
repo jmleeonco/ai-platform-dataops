@@ -26,13 +26,16 @@ def test_bundles_become_datasets_from_their_files_the_db_and_central(tmp_path, m
 
     b4 = root / "ListOnly"                                                       # only a list-shaped dataset.json
     b4.mkdir()
-    (b4 / "dataset.json").write_text(json.dumps([{"patient_id": "L1", "image": "nifti/x.nii.gz"}]))
+    (b4 / "dataset.json").write_text(json.dumps([{"patient_id": "L1", "image": "nifti/x.nii.gz"},
+                                                  {"patient_id": "", "patient_name": "L2"}]))
     (root / di.HISTORY).write_text(json.dumps({"model_name": "JsonOnly", "version": "0.0.1", "memo": "old"}) + "\n"
                                    + json.dumps({"model_name": "JsonOnly", "version": "0.0.1", "memo": "from history"}))
     assert di.bundles() == [b2, b4, b1]
     assert di.bundle_info(b2) == {"memo": "from history", "deployed_at": None, "list": "train_valid_dict.json"}
     assert di.json_entries(b4) == [{"split": "전체", "patient_id": "L1", "patient_name": None, "image_uid": None,
-                                    "rtss_uids": []}]
+                                    "rtss_uids": []},
+                                   {"split": "전체", "patient_id": "L2", "patient_name": "L2", "image_uid": None,
+                                    "rtss_uids": []}]                          # no patient_id: the name stands in
     scans = {str(b.relative_to(root)): di.scan_folder(b, tmp_path / "cache") for b in (b1, b2)}
     s1 = scans["Organ/1.0.0"]
     assert len(s1["series"]) == 2 and s1["stats"] == {"DICOM 아님/읽기 실패": 1}

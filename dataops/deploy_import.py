@@ -65,7 +65,7 @@ def json_entries(bundle: Path) -> list[dict]:
             rt = e.get("rtss_series_instance_uid")
             rt = rt if isinstance(rt, list) else [rt] if rt else []
             img = e.get("dicom_series_instance_uid")
-            out.append({"split": split, "patient_id": e.get("patient_id") or e.get("patientId"),
+            out.append({"split": split, "patient_id": e.get("patient_id") or e.get("patientId") or e.get("patient_name"),
                         "patient_name": e.get("patient_name"),
                         "image_uid": img if isinstance(img, str) and DICOM_UID.fullmatch(img) else None,
                         "rtss_uids": [u for u in rt if isinstance(u, str) and DICOM_UID.fullmatch(u)]})

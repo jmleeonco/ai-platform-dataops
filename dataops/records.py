@@ -197,7 +197,7 @@ SERIES_COLUMNS = [
 def _text(v, n: int):
     if v in (None, "", []):
         return None
-    v = "\\".join(str(x) for x in v) if isinstance(v, (list, tuple)) else str(v)
+    v = "\\".join(str(x) for x in v) if isinstance(v, (list, tuple, pydicom.multival.MultiValue)) else str(v)
     return v[:n]
 
 
