@@ -239,8 +239,8 @@ def main(argv=None) -> int:
         elif args.cmd == "serve":
             import uvicorn
             from .web.app import create_app
-            uvicorn.run(create_app(settings), host=args.host or settings.bind_host, port=args.port or settings.port,
-                        log_level="info")
+            uvicorn.run(create_app(settings, warm_views=True), host=args.host or settings.bind_host,
+                        port=args.port or settings.port, log_level="info")
     except (RunError, dbmod.DbError, ValueError) as e:
         print(f"오류: {e}", file=sys.stderr)
         return 2

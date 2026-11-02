@@ -175,6 +175,10 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    The **Central** page (`/central`) lists every run that has sent to Central — from each run's journal (receiver
    answers, send times, approver) plus what the management DB holds (dataset, prefix, licence, subjects,
    series by modality, bytes, registration). Only what this system sent; Central also holds data from elsewhere.
+   The run page's derived views (report, sample comparison, coverage) are kept in the web process and re-derived
+   only when a file of the run changes; a background loop refreshes them within ~30 s of a job ending, so even
+   a full run (AMOS, ~10^5 files, ~12 s to derive) opens at once. Just after `restart-web` the first open of a
+   big run may still wait for that derivation.
 
 CLI equivalents: `analyze DIR [--wait]`, `pilot RUN`, `approve RUN --by NAME --confirm NAME`,
 `publish RUN [--dry-run]`, `worker [--once]`.

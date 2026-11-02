@@ -9,6 +9,7 @@ import functools
 import hashlib
 import io
 import json
+import os
 import re
 import secrets
 import threading
@@ -70,7 +71,25 @@ PREVIEW_TTL = 60        # seconds one DB-state reading of table 7 is reused
 PREVIEW_ROWS = 2000     # table 7 rows sent to the browser per table
 
 
-def create_app(settings: Settings) -> FastAPI:
+def run_fingerprint(run_dir: Path) -> tuple:
+    """(name, mtime, size) of every file directly in a run folder and in transfers/: what its views derive from.
+    run.json's own bytes too, since two quick saves can share an mtime tick (every plan/status change saves it)."""
+    try:
+        out = [("run.json", (run_dir / "run.json").read_bytes())]
+    except OSError:
+        out = []
+    for d in (run_dir, run_dir / "transfers"):
+        try:
+            for e in os.scandir(d):
+                if e.is_file():
+                    st = e.stat()
+                    out.append((d.name + "/" + e.name, st.st_mtime_ns, st.st_size))
+        except OSError:
+            pass
+    return tuple(sorted(out, key=lambda x: x[0]))
+
+
+def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
     app = FastAPI(title="AI Platform DataOps", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.add_middleware(GZipMiddleware, minimum_size=50_000)
@@ -123,6 +142,55 @@ def create_app(settings: Settings) -> FastAPI:
             raise HTTPException(404)
         return run
 
+    # ------------------------------------------------------------------ derived views
+    view_cache: dict[tuple[str, str], tuple[tuple, object]] = {}
+    view_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+
+    def run_view(run: Run, what: str, fn):
+        """A view derived from a run's files (report, sample comparison, coverage), recomputed only when one of the
+        run's own files changed: a full run (~10^5 files) takes ~10 s to derive, and the run page needs all three."""
+        with view_locks[run.id]:
+            fp = run_fingerprint(run.dir)
+            hit = view_cache.get((run.id, what))
+            if hit and hit[0] == fp:
+                return hit[1]
+            out = fn()
+            view_cache[(run.id, what)] = (fp, out)
+            return out
+
+    def warm(run: Run) -> None:
+        """Derive a run's views ahead of the next page load (startup, and whenever a polled run changed)."""
+        try:
+            plan = run.load("plan.json") or {}
+            if not plan.get("series"):
+                return
+            internal = deid_allowed(settings, run.meta["input_root"])
+            run_view(run, "report", lambda: build_report(run, settings))
+            run_view(run, "sample", lambda: sample_view(run, internal))
+            run_view(run, "cover", lambda: coverage(run, plan, run.load("manifest.json")))
+        except Exception:  # noqa: BLE001 - only a head start: the page derives (and reports) it itself
+            pass
+
+    def warm_later(run: Run) -> None:
+        hit = view_cache.get((run.id, "cover"))
+        if (hit is None or hit[0] != run_fingerprint(run.dir)) and not view_locks[run.id].locked():
+            threading.Thread(target=warm, args=(run,), daemon=True).start()
+
+    def warm_loop() -> None:
+        """Keep every run's views current, newest run first: a changed run is re-derived within ~30 s of its job
+        ending, so a click on it rarely waits."""
+        while True:
+            for d in sorted(settings.runs_dir.iterdir(), reverse=True) if settings.runs_dir.is_dir() else []:
+                if RUN_ID_RE.fullmatch(d.name) and (d / "run.json").exists():
+                    run = Run(settings.runs_dir, d.name)
+                    hit = view_cache.get((run.id, "cover"))
+                    if (hit is None or hit[0] != run_fingerprint(run.dir)) and not active_job(settings, run.id):
+                        warm(run)                # not while a job keeps rewriting it (a send journals every 15 s)
+            time.sleep(30)
+
+    if warm_views:
+        threading.Thread(target=warm_loop, daemon=True).start()
+
     # ------------------------------------------------------------------ dashboard
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -158,7 +226,7 @@ def create_app(settings: Settings) -> FastAPI:
         active = active_job(settings, run.id)
         editable = (meta["status"] in EDITABLE and meta["status"] not in ("ANALYZING", "ANALYSIS_FAILED")
                     and not active)
-        report = build_report(run, settings) if plan.get("series") else None
+        report = run_view(run, "report", lambda: build_report(run, settings)) if plan.get("series") else None
         secs = {s["no"]: s for s in (report or {}).get("sections", []) if s["no"] != 10}
         return page(request, "run.html", run=run, meta=meta, plan=plan, pilot=pilot,
                     pilot_stale=bool(pilot and pilot.get("plan_sha256") != meta.get("plan_sha256")),
@@ -169,19 +237,24 @@ def create_app(settings: Settings) -> FastAPI:
                     job=job, job_log=job_log(settings, job["id"], 15) if job else [], active=active,
                     progress=job_progress(run.dir, active, settings.jobs_dir) if active else None,
                     editable=editable, central=central_ready(settings.central), split_names=SPLIT_NAMES,
-                    db_sec=secs.get(7), sample=sample_view(run, internal) if plan.get("series") else {"ready": False},
+                    db_sec=secs.get(7),
+                    sample=run_view(run, "sample", lambda: sample_view(run, internal)) if plan.get("series")
+                    else {"ready": False},
                     internal=internal,
                     header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]],
-                    cover=coverage(run, plan, run.load("manifest.json")) if plan.get("series") else None)
+                    cover=run_view(run, "cover", lambda: coverage(run, plan, run.load("manifest.json")))
+                    if plan.get("series") else None)
 
     @app.get("/runs/{run_id}/report", response_class=HTMLResponse)
     def report_page(request: Request, run_id: str, refresh: bool = False):
         run = get_run(run_id)
-        return page(request, "report.html", run=run, report=build_report(run, settings, refresh), titles=TITLES)
+        report = build_report(run, settings, True) if refresh else run_view(run, "report", lambda: build_report(run, settings))
+        return page(request, "report.html", run=run, report=report, titles=TITLES)
 
     @app.get("/runs/{run_id}/report.json")
     def report_json(run_id: str):
-        return build_report(get_run(run_id), settings)
+        run = get_run(run_id)
+        return run_view(run, "report", lambda: build_report(run, settings))
 
     @app.get("/runs/{run_id}/metadata")
     def metadata_redirect(run_id: str):
@@ -284,6 +357,8 @@ def create_app(settings: Settings) -> FastAPI:
     def run_state(run_id: str):
         run = get_run(run_id)
         job = active_job(settings, run.id)
+        if not job and warm_views:
+            warm_later(run)                    # the page reloads when the job ends: have its views ready
         return {"status": run.meta["status"], "updated_at": run.meta["updated_at"],
                 "job": {"id": job["id"], "kind": job["kind"], "status": job["status"],
                         "log": job_log(settings, job["id"], 8),

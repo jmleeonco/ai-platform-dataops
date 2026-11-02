@@ -295,3 +295,14 @@ def test_legacy_fit_uses_value_limits():
     assert compat("char(36)", "int(11) NOT NULL", "datasets.dataset_uuid", "external_mappings로 연결")[0] == "ID 대응"
     assert compat("enum('Y','N','U')", "varchar(32)", "datasets.commercial_use", "값 변환 후 내보내기") == (
         "값 변환", "새 값 Y/N/U → 기존 값 형식으로 바꿔야 함")
+
+
+def test_run_views_are_reused_until_a_run_file_changes(settings, prepared):
+    from dataops.web.app import run_fingerprint
+    fp = run_fingerprint(prepared.dir)
+    assert fp == run_fingerprint(prepared.dir)
+    client = TestClient(create_app(settings))
+    first = client.get(f"/runs/{prepared.id}").text
+    assert client.get(f"/runs/{prepared.id}").text == first           # served from the cache
+    prepared.set_status(prepared.meta["status"], "test note")         # any change to the run's files
+    assert run_fingerprint(prepared.dir) != fp
