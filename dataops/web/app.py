@@ -11,6 +11,8 @@ import io
 import json
 import re
 import secrets
+import threading
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -62,6 +64,10 @@ def _jsonfmt(v, limit=400):
     else:
         s = str(v)
     return s if len(s) <= limit else s[:limit] + " …"
+
+
+PREVIEW_TTL = 60        # seconds one DB-state reading of table 7 is reused
+PREVIEW_ROWS = 2000     # table 7 rows sent to the browser per table
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -214,8 +220,23 @@ def create_app(settings: Settings) -> FastAPI:
                     [[t["dataset"]] + [r.get(c["key"]) for c in t["columns"]] for r in t["rows"]],
                     f"{which}-{run.id}.csv")
 
+    preview_cache: dict[str, tuple[float, float, dict]] = {}       # run id -> (read at, seconds it took, result)
+    preview_lock = threading.Lock()
+
     def live_preview(run: Run) -> dict:
-        """Table 7 with each row's state in the DB as of now (the report polls this)."""
+        """Table 7 with each row's state in the DB as of now (the report polls this). A full run has ~10^5 rows per
+        big table and takes tens of seconds, so one reading serves every request for PREVIEW_TTL seconds, or five
+        times as long as it took to read."""
+        with preview_lock:
+            hit = preview_cache.get(run.id)
+            if hit and time.monotonic() - hit[0] < max(PREVIEW_TTL, 5 * hit[1]):
+                return hit[2]
+            t0 = time.monotonic()
+            out = _live_preview(run)
+            preview_cache[run.id] = (time.monotonic(), time.monotonic() - t0, out)
+            return out
+
+    def _live_preview(run: Run) -> dict:
         conn, err = db_conn()
         mconn, _ = map_conn()
         try:
@@ -232,7 +253,15 @@ def create_app(settings: Settings) -> FastAPI:
         run = get_run(run_id)
         if not (run.load("plan.json") or {}).get("series"):
             raise HTTPException(404)
-        return live_preview(run)
+        out = live_preview(run)
+        tables = {}
+        for t, v in out["tables"].items():       # the browser gets the first rows; the CSV has them all
+            n = len(v["rows"])
+            if n > PREVIEW_ROWS:
+                v = {**v, "rows": v["rows"][:PREVIEW_ROWS],
+                     "note": "; ".join(filter(None, [v.get("note"), f"화면에는 처음 {PREVIEW_ROWS:,}행 (전체 {n:,}행은 CSV)"]))}
+            tables[t] = v
+        return {**out, "tables": tables}
 
     @app.get("/runs/{run_id}/records/{table}.csv")
     def records_csv(run_id: str, table: str):

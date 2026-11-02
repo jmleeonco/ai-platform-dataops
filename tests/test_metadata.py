@@ -13,6 +13,7 @@ from test_pipeline import make_run
 from dataops import report
 from dataops.metadata import FIELD_KEYS, FIELDS, HEADERS_FILE, TAG_KEYS, build
 from dataops.records import COLUMN_DESC, TABLES
+from dataops.web import app as webapp
 from dataops.web.app import _cell, create_app
 
 
@@ -93,6 +94,12 @@ def test_report_has_the_same_shape_for_every_dataset(tmp_path, monkeypatch, chal
     lines = list(csv.reader(io.StringIO(client.get(f"/runs/{agent_run.id}/records/subjects.csv").text.lstrip("\ufeff"))))
     assert lines[0] == list(COLUMN_DESC["subjects"]) + ["DB 상태", "차이 컬럼"]
     assert client.get(f"/runs/{agent_run.id}/records/mysql.csv").status_code == 404
+    n = len(rec["tables"]["instances"]["rows"])
+    monkeypatch.setattr(webapp, "PREVIEW_ROWS", 1)                   # a big run: the browser gets the first rows
+    capped = client.get(f"/runs/{agent_run.id}/records.json").json()["tables"]["instances"]
+    assert len(capped["rows"]) == 1 and f"전체 {n:,}행은 CSV" in capped["note"]
+    lines = list(csv.reader(io.StringIO(client.get(f"/runs/{agent_run.id}/records/instances.csv").text.lstrip("\ufeff"))))
+    assert len(lines) == 1 + n
     lines = list(csv.reader(io.StringIO(client.get("/reports.csv").text.lstrip("\ufeff"))))
     assert lines[0] == report.INDEX_COLUMNS and len(lines) == 3
 

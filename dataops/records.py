@@ -291,9 +291,10 @@ def series_source_path(plan: dict, s: dict) -> str | None:
 def instance_rows(run: Run, manifest: dict, plan: dict | None = None) -> list[dict]:
     """instances rows for a frozen manifest (the full one at registration; the pilot one as a preview)."""
     plan = plan if plan is not None else (run.load("plan.json") or {})
+    run_uuid = run.meta["run_uuid"]             # once: run.meta reads run.json on every access
     return [{"sop_uid": inst["sop_uid"], "series_uid": inst["series_uid"], "sop_class_uid": inst["sop_class_uid"],
              "artifact_sha256": inst["sha256"], "artifact_relative_path": f"{run.id}/{inst['path']}",
-             "prepared_run_uuid": run.meta["run_uuid"], "instance_number": inst["instance_number"],
+             "prepared_run_uuid": run_uuid, "instance_number": inst["instance_number"],
              "slice_location": inst.get("slice_location"),
              "size_bytes": inst["size"], "transfer_syntax_uid": inst["transfer_syntax"] or None,
              "source_relative_path": deid.path(plan, inst["source"]["rel"]),
@@ -305,12 +306,12 @@ def instance_rows(run: Run, manifest: dict, plan: dict | None = None) -> list[di
 def transfer_rows(run: Run, frozen: set) -> list[dict]:
     """transfer_results rows: every journal entry for a frozen SOP (any target, pilot or full send)."""
     from .local_send import journals  # local import: avoids a cycle at module load
-    out = []
+    out, run_uuid = [], run.meta["run_uuid"] if frozen else None
     for j in journals(run) if frozen else []:
         for sop, rec in sorted(j["instances"].items()):
             if sop not in frozen:            # e.g. a pilot frozen from an earlier plan revision
                 continue
-            out.append({"run_uuid": run.meta["run_uuid"], "target_key": j["target_key"], "sop_uid": sop,
+            out.append({"run_uuid": run_uuid, "target_key": j["target_key"], "sop_uid": sop,
                         "target_snapshot": j["target"], "status": rec["status"], "attempts": rec.get("attempts", 0),
                         "response_code": None, "verification_json": None, "error_message": rec.get("detail") or None})
     return out
