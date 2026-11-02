@@ -132,13 +132,14 @@ LAB series that is ours only gains the dataset link. Re-running updates the copi
 
 ## Deploy bundles from /mnt/deploy/data (2026-11-03)
 `python -m dataops import-deploy [--dry-run] [--rescan]` (`dataops/deploy_import.py`): every folder with a
-`train_valid_dict.json` (`<model>/<version>/`, or `<model>/`) becomes a dataset `deploy/<model>/<version>`
-(uuid5 of the path; description = latest deploy_info memo + train/valid counts; licence unknown). Its series are
+`train_valid_dict.json` — or only a list-shaped `dataset.json` — (`<model>/<version>/`, or `<model>/`) becomes a
+dataset `deploy/<model>/<version>` (uuid5 of the path; description = latest deploy_info memo, else the latest
+`deploy_history.jsonl` memo for that model/version, + train/valid counts; licence unknown). Its series are
 every DICOM series in the bundle's `dicom/` folder (each file read without pixels; image series and RTSTRUCT with
 ROI names / referenced series; `source_kind=deploy`), plus the UIDs its json names that the folder lacks:
 already in the DB → linked; otherwise a read-only series-level C-FIND on Central (`dataops/central_find.py`,
 `source_kind=central-find`, no ROI names). Patients from the DICOM headers, as they are (not pseudonymised,
 owner). A json-only bundle (no UIDs, no files) keeps its patients only. Non-DICOM ids in the json (UUIDs) are
-ignored. Scans and C-FIND answers are cached in `runtime/deploy_scan/`. Rows registered by this system's runs or the
+ignored. Scans and C-FIND answers are cached in `runtime/deploy_scan/`; a bundle whose `dicom/` lists the same files (names, sampled sizes) as one already read reuses that scan (TotalBone/Muscle/SoftTissue/Vessels and HNN/Neck 1.9.1–2.0.0 are copies). Rows registered by this system's runs or the
 existing-DB import are never overwritten — they gain the bundle link. The train/valid split per series is not
 stored (no column yet); the dataset description has the counts.

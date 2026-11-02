@@ -1,7 +1,7 @@
 """Register the model training bundles of /mnt/deploy/data in the management DB (owner 2026-11-03).
 
 A bundle is a model version folder (<model>/<version>/ or <model>/) with train_valid_dict.json (the train/valid
-lists) and usually a dicom/ folder holding the DICOM it was built from. Each bundle becomes one dataset; its
+lists; a folder with only a list-shaped dataset.json counts too) and usually a dicom/ folder holding the DICOM it was built from. Each bundle becomes one dataset; its
 series are every DICOM series found in its dicom/ folder (one header per file, no pixels; image series and
 RTSTRUCT alike, with ROI names and the referenced series), plus the series its json names by UID that the folder
 does not hold — those come from the DB when already registered, else from a read-only C-FIND on Central. Patients
@@ -33,14 +33,19 @@ ROOT = Path("/mnt/deploy/data")
 SOURCE_KIND, FOUND_KIND = "deploy", "central-find"   # series.source_kind: read from a bundle file / found on Central
 DICOM_UID = re.compile(r"[0-9]+(\.[0-9]+)+")
 SCAN_TAGS = ["SeriesInstanceUID", "Modality"]
+LISTS = ("train_valid_dict.json", "dataset.json")   # the bundle's case list, first found
+HISTORY = "deploy_history.jsonl"                     # at ROOT: one line per deploy (memo for bundles without deploy_info)
 LISTINGS = "listings.json"                         # dicom/ file-name fingerprint -> the scan cache that read it
 
 
 def bundles(root: Path | None = None) -> list[Path]:
-    """Folders with a train_valid_dict.json: <model>/<version>/ or <model>/."""
+    """Folders with a case list (LISTS): <model>/<version>/ or <model>/."""
     root = root or ROOT
-    found = {p.parent for p in root.glob("*/*/train_valid_dict.json")} | {p.parent for p in root.glob("*/train_valid_dict.json")}
-    return sorted(found)
+    return sorted({p.parent for name in LISTS for pat in ("*/*/", "*/") for p in root.glob(pat + name)})
+
+
+def list_file(bundle: Path) -> Path:
+    return next(bundle / n for n in LISTS if (bundle / n).is_file())
 
 
 def dataset_uuid(rel: str) -> str:
@@ -49,8 +54,9 @@ def dataset_uuid(rel: str) -> str:
 
 # ------------------------------------------------------------------------------------------------ the json
 def json_entries(bundle: Path) -> list[dict]:
-    """[{split, patient_id, patient_name, image_uid, rtss_uids}] from train_valid_dict.json (DICOM-shaped UIDs only)."""
-    d = json.loads((bundle / "train_valid_dict.json").read_text(encoding="utf-8"))
+    """[{split, patient_id, patient_name, image_uid, rtss_uids}] from the case list (DICOM-shaped UIDs only)."""
+    d = json.loads(list_file(bundle).read_text(encoding="utf-8"))
+    d = {"전체": d} if isinstance(d, list) else d
     out = []
     for split, items in d.items() if isinstance(d, dict) else []:
         for e in items if isinstance(items, list) else []:
@@ -66,11 +72,30 @@ def json_entries(bundle: Path) -> list[dict]:
     return out
 
 
-def bundle_info(bundle: Path) -> dict:
+def bundle_info(bundle: Path, root: Path | None = None) -> dict:
+    root = root or ROOT
     info = read_json(bundle / "deploy_info.json") or {}
     deploys = info.get("deploys") or ([info] if info.get("memo") else [])
+    if not deploys:                                   # the last deploy_history.jsonl line for this model/version
+        rel = bundle.relative_to(root).parts
+        deploys = [d for d in _history(root) if (d.get("model_name"), d.get("version")) == (rel[0], "/".join(rel[1:]))
+                   and d.get("memo")]
     last = deploys[-1] if deploys else {}
-    return {"memo": last.get("memo"), "deployed_at": last.get("deployed_at")}
+    return {"memo": last.get("memo"), "deployed_at": last.get("deployed_at"), "list": list_file(bundle).name}
+
+
+def _history(root: Path) -> list[dict]:
+    try:
+        lines = (root / HISTORY).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return [d for d in out if isinstance(d, dict)]
 
 
 # ------------------------------------------------------------------------------------------------ the folder
@@ -176,7 +201,7 @@ def build_rows(entries_by_bundle: dict, scans: dict, found: dict, existing: dict
     for rel, (info, entries) in entries_by_bundle.items():
         du = dataset_uuid(rel)
         splits = Counter(e["split"] for e in entries)
-        desc = " · ".join(filter(None, [info.get("memo"), "train_valid_dict.json: " + ", ".join(
+        desc = " · ".join(filter(None, [info.get("memo"), info.get("list", LISTS[0]) + ": " + ", ".join(
             f"{k} {v}" for k, v in splits.items())]))
         rows["datasets"].append({"dataset_uuid": du, "name": f"deploy/{rel}", "description": desc,
                                  "source_url": str(ROOT / rel), "license": None, "commercial_use": "U"})
