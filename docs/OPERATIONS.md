@@ -172,6 +172,9 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
    an approval in the web then starts the publish job. Tests still use a loopback SCP (`tests/test_agent_flow.py`).
    A send journals its results every 15 s, so the run page moves during a long send; from a shell,
    `python3 ops/transfer_progress.py RUN [--watch 30]` shows conversion and sent bytes without touching the job.
+   The **Central** page (`/central`) lists every run that has sent to Central — from each run's journal (receiver
+   answers, send times, approver) plus what the management DB holds (dataset, prefix, licence, subjects,
+   series by modality, bytes, registration). Only what this system sent; Central also holds data from elsewhere.
 
 CLI equivalents: `analyze DIR [--wait]`, `pilot RUN`, `approve RUN --by NAME --confirm NAME`,
 `publish RUN [--dry-run]`, `worker [--once]`.

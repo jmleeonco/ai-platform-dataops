@@ -18,7 +18,7 @@ from dataops.jobs import check_input_root, list_jobs, run_job, start_analysis, w
 from dataops.local_send import journals, send_local
 from dataops.plan import validate_plan
 from dataops.prepare import prepare, verify_artifacts
-from dataops.publish import approve, central_ready, publish_central
+from dataops.publish import approve, central_history, central_ready, publish_central
 from dataops.records import build_records
 from dataops.runs import Run, RunError
 from dataops.spec import SpecError, check_proposal
@@ -247,6 +247,13 @@ def test_central_publication_needs_config_and_approval(tmp_path, monkeypatch, ch
         sops = {i["sop_uid"] for i in m["instances"]}
         assert all(t["sop_uid"] in sops for t in rec["transfer_results"])
         assert verify_artifacts(run, m) == []
+        h = central_history(settings.runs_dir)                  # the Central page: from the run's own files
+        assert [(x["run_id"], x["counts"], x["approved_by"]) for x in h] == \
+            [(run.id, {"accepted": len(m["instances"])}, "검토자")]
+        from fastapi.testclient import TestClient
+        from dataops.web.app import create_app
+        page = TestClient(create_app(settings)).get("/central").text
+        assert run.id in page and "미등록" in page and "DB 설정 없음" in page
     finally:
         central.close()
 

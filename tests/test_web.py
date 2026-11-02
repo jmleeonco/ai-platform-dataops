@@ -105,6 +105,7 @@ def test_registered_run_compares_equal(settings, prepared, test_db):
     r = client.get(f"/datasets/{DATASET['dataset_uuid']}?modality=CT")
     assert r.status_code == 200 and "NIfTI→DICOM" in r.text
     assert client.get("/db/instances").status_code == 200
+    assert "아직 Central로 보낸 실행이 없습니다" in client.get("/central").text   # local sends are not listed
 
 
 def test_db_browser_follows_links_and_stays_read_only(settings, prepared, test_db):

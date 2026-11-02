@@ -146,3 +146,26 @@ def publish_central(run: Run, settings: Settings, dry_run: bool = False) -> dict
         new = f"CENTRAL_{r['outcome']}"
         run.set_status(new, f"central → {c.key}: {r['counts']}")
         return {**r, "status": new}
+
+
+def central_history(runs_dir) -> list[dict]:
+    """Every run that has sent to Central, newest first, from its own files: the Central journal (what the
+    receiver answered per file and when) and run.json (approval, status). The management DB adds what it holds."""
+    from collections import Counter
+    from pathlib import Path
+    out = []
+    for jp in sorted(Path(runs_dir).glob("*/transfers/central_*.json")):
+        run = Run(Path(runs_dir), jp.parent.parent.name)
+        j, meta = run.load(f"transfers/{jp.name}"), run.load("run.json")
+        if not j or not meta:
+            continue
+        sessions = j.get("sessions") or []
+        approval = meta.get("approval") or {}
+        out.append({"run_id": run.id, "status": meta["status"], "target_key": j["target_key"],
+                    "counts": dict(Counter(v.get("status") for v in j["instances"].values())),
+                    "files": len(j["instances"]), "started_at": sessions[0].get("started_at") if sessions else None,
+                    "finished_at": sessions[-1].get("finished_at") if sessions else None, "sessions": len(sessions),
+                    "approved_by": approval.get("approved_by"), "approved_at": approval.get("approved_at"),
+                    "registered_at": ((run.load("registration.json") or {}).get("last") or {}).get("at"),
+                    "dataset_uuid": meta.get("dataset_uuid"), "input_root": meta.get("input_root")})
+    return sorted(out, key=lambda r: r["finished_at"] or r["started_at"] or "", reverse=True)

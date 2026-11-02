@@ -35,7 +35,7 @@ from ..metadata import build as build_metadata
 from ..report import INDEX_COLUMNS, TITLES, dataset_index, db_preview, dicom_columns, source_columns
 from ..report import build as build_report
 from ..prepare import MANIFESTS
-from ..publish import central_ready, coverage
+from ..publish import central_history, central_ready, coverage
 from ..records import TABLES
 from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
@@ -383,6 +383,42 @@ def create_app(settings: Settings) -> FastAPI:
             finally:
                 conn.close()
         return page(request, "datasets.html", rows=rows, db_error=err)
+
+    @app.get("/central", response_class=HTMLResponse)
+    def central_page(request: Request):
+        """What this system has sent to Central: one row per run (its journal), with what the management DB holds."""
+        sends = central_history(settings.runs_dir)
+        conn, err = db_conn()
+        held, mods = {}, defaultdict(list)
+        if conn:
+            try:
+                base = (" FROM transfer_results t JOIN ingest_runs r ON r.run_uuid=t.run_uuid"
+                        " JOIN instances i ON i.sop_uid=t.sop_uid JOIN series se ON se.series_uid=i.series_uid"
+                        " WHERE t.target_key LIKE 'central:%%'")
+                for r in dbmod.query(conn, "SELECT r.run_label, t.target_key, d.dataset_uuid, d.name, d.patient_id_prefix,"
+                                           " d.license, d.commercial_use, COUNT(*) AS n_files,"
+                                           " SUM(t.status IN ('accepted','warning')) AS n_ok, SUM(i.size_bytes) AS bytes,"
+                                           " COUNT(DISTINCT se.series_uid) AS n_series,"
+                                           " COUNT(DISTINCT se.study_uid) AS n_studies,"
+                                           " (SELECT COUNT(*) FROM subjects s WHERE s.dataset_uuid=d.dataset_uuid)"
+                                           " AS n_subjects" + base.replace(" WHERE", " JOIN datasets d ON"
+                                           " d.dataset_uuid=r.dataset_uuid WHERE") +
+                                           " GROUP BY r.run_uuid, t.target_key"):
+                    for k in ("n_files", "n_ok", "bytes", "n_series", "n_studies", "n_subjects"):
+                        r[k] = int(r[k] or 0)                        # SUM/COUNT come back as Decimal
+                    held[(r["run_label"], r["target_key"])] = r
+                for r in dbmod.query(conn, "SELECT r.run_label, t.target_key, se.modality,"
+                                           " COUNT(DISTINCT se.series_uid) AS n" + base +
+                                           " GROUP BY r.run_uuid, t.target_key, se.modality ORDER BY n DESC"):
+                    mods[(r["run_label"], r["target_key"])].append(r)
+            finally:
+                conn.close()
+        for s in sends:
+            if (s["run_id"], s["target_key"]) not in held:      # not registered yet: the name from the plan
+                s["name"] = ((get_run(s["run_id"]).load("plan.json") or {}).get("dataset") or {}).get("name")
+        totals = {k: sum(r[k] for r in held.values()) for k in ("n_files", "n_ok", "bytes", "n_series", "n_studies")}
+        return page(request, "central.html", sends=sends, held=held, mods=mods, totals=totals, db_error=err,
+                    central=central_ready(settings.central))
 
     @app.get("/datasets/{dataset_uuid}", response_class=HTMLResponse)
     def dataset_page(request: Request, dataset_uuid: str, modality: str | None = None, q: str | None = None,

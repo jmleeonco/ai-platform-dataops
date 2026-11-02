@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status %}
+{% macro when(t) %}{{ t[:16]|replace('T', ' ') if t else '-' }}{% endmacro %}
+{% block title %}Central 업로드{% endblock %}
+{% block body %}
+<h1>Central 업로드</h1>
+<p>대상 <span class="mono">{{ central[1] }}</span>
+  {% if central[0] %}<span class="badge b-ok">사용 가능</span>{% else %}<span class="badge b-bad">사용 안 함</span>{% endif %}
+  · 이 시스템이 승인된 실행으로 보낸 것만 보입니다. Central에는 다른 경로로 들어온 데이터도 있습니다.</p>
+{% if db_error %}<p class="err">관리 DB: {{ db_error }} — 전송 기록(실행 폴더)만 표시합니다.</p>{% endif %}
+<section>
+{% if held %}<p class="muted">관리 DB 기준 합계: 시리즈 {{ '{:,}'.format(totals.n_series) }} · 파일 {{ '{:,}'.format(totals.n_files) }}
+  (수신 {{ '{:,}'.format(totals.n_ok) }}) · {{ '%.2f'|format(totals.bytes / 1e9) }} GB</p>{% endif %}
+<div class="table-wrap"><table>
+<tr><th>데이터셋</th><th>PatientID 접두어</th><th>라이선스 / 상업적</th><th class="num">대상자</th><th class="num">스터디</th>
+  <th>시리즈</th><th class="num">파일</th><th class="num">용량</th><th>수신 결과</th><th>전송</th><th>승인</th><th>관리 DB</th><th>실행</th></tr>
+{% for s in sends %}{% set d = held.get((s.run_id, s.target_key)) %}
+<tr>
+  <td>{% if d %}<a href="/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a>{% else %}{{ s.name or '-' }}{% endif %}</td>
+  <td class="mono">{{ d.patient_id_prefix if d else '-' }}</td>
+  <td>{% if d %}{{ d.license or '-' }} / {{ d.commercial_use }}{% else %}-{% endif %}</td>
+  <td class="num">{{ '{:,}'.format(d.n_subjects) if d else '-' }}</td>
+  <td class="num">{{ '{:,}'.format(d.n_studies) if d else '-' }}</td>
+  <td>{% if d %}{{ '{:,}'.format(d.n_series) }}{% for m in mods.get((s.run_id, s.target_key), []) %} <span class="badge">{{ m.modality }} {{ '{:,}'.format(m.n) }}</span>{% endfor %}{% else %}-{% endif %}</td>
+  <td class="num">{{ '{:,}'.format(s.files) }}</td>
+  <td class="num">{{ '%.2f GB'|format(d.bytes / 1e9) if d and d.bytes else '-' }}</td>
+  <td>{% for k, v in s.counts.items() %}{{ status(k) }} {{ '{:,}'.format(v) }} {% endfor %}</td>
+  <td>{{ when(s.started_at) }} ~ {{ when(s.finished_at)[11:] if s.finished_at and s.started_at and s.finished_at[:10] == s.started_at[:10] else when(s.finished_at) }}
+    {% if s.sessions > 1 %}<span class="muted small">({{ s.sessions }}회)</span>{% endif %}<br>{{ status(s.status) }}</td>
+  <td>{{ s.approved_by or '-' }}<br><span class="muted small">{{ when(s.approved_at) }}</span></td>
+  <td>{% if s.registered_at %}<span class="badge b-ok">등록</span><br><span class="muted small">{{ when(s.registered_at) }}</span>{% else %}<span class="badge b-warn">미등록</span>{% endif %}</td>
+  <td><a class="mono" href="/runs/{{ s.run_id }}">{{ s.run_id }}</a></td>
+</tr>
+{% else %}<tr><td colspan="13" class="muted">아직 Central로 보낸 실행이 없습니다.</td></tr>{% endfor %}
+</table></div>
+</section>
+{% endblock %}
