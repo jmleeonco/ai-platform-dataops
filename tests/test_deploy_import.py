@@ -1,4 +1,5 @@
 import json
+import shutil
 
 import pydicom
 
@@ -29,6 +30,10 @@ def test_bundles_become_datasets_from_their_files_the_db_and_central(tmp_path, m
     assert len(s1["series"]) == 2 and s1["stats"] == {"DICOM 아님/읽기 실패": 1}
     assert s1["series"][ct1]["files"] == len(files) and s1["series"][ct1]["dir"] == "dicom/P001/ct"
     assert di.scan_folder(b1, tmp_path / "cache") == s1                       # cached
+    b3 = root / "Copy" / "1.0.0"
+    shutil.copytree(b1 / "dicom", b3 / "dicom")
+    s3 = di.scan_folder(b3, tmp_path / "cache", log=lambda m: None)
+    assert s3["same_as"] == str(b1 / "dicom") and s3["series"] == s1["series"]   # a copy is not read again
 
     found = {"1.9.9": di.central_series({"StudyInstanceUID": "1.8", "PatientID": "SYN_P001", "Modality": "RTSTRUCT",
                                          "SeriesNumber": "2", "NumberOfSeriesRelatedInstances": "1"})}

@@ -8,13 +8,16 @@ does not hold — those come from the DB when already registered, else from a re
 come from the DICOM headers (json-only bundles: from the json). Not pseudonymised (owner: "모두 가명화 필요없어").
 
 /mnt/deploy is read only. Each bundle's folder scan is cached under runtime/deploy_scan/ so a re-run reads only new
-bundles. Series and studies this system or the existing-DB import registered are never overwritten; they only
+bundles; a bundle whose dicom/ folder lists the same files (names, and sizes of a sample) as one already read reuses
+that scan instead of reading them again (several bundles are copies of one another). Series and studies this system or the existing-DB import registered are never overwritten; they only
 gain the bundle link.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import random
 import re
 import uuid
 from collections import Counter
@@ -30,6 +33,7 @@ ROOT = Path("/mnt/deploy/data")
 SOURCE_KIND, FOUND_KIND = "deploy", "central-find"   # series.source_kind: read from a bundle file / found on Central
 DICOM_UID = re.compile(r"[0-9]+(\.[0-9]+)+")
 SCAN_TAGS = ["SeriesInstanceUID", "Modality"]
+LISTINGS = "listings.json"                         # dicom/ file-name fingerprint -> the scan cache that read it
 
 
 def bundles(root: Path | None = None) -> list[Path]:
@@ -77,7 +81,7 @@ def _read(path: str):
         return path, None
 
 
-def scan_folder(bundle: Path, cache_dir: Path, log=print, workers: int = 16) -> dict:
+def scan_folder(bundle: Path, cache_dir: Path, log=print, workers: int = 48) -> dict:
     """{series_uid: {...}} for every DICOM series under bundle/dicom, cached per bundle."""
     key = re.sub(r"[^A-Za-z0-9_.-]", "_", str(bundle.relative_to(bundle.anchor)))
     cache = cache_dir / f"{key}.json"
@@ -89,6 +93,14 @@ def scan_folder(bundle: Path, cache_dir: Path, log=print, workers: int = 16) -> 
     stats = Counter()
     if folder.is_dir():
         paths = [os.path.join(d, f) for d, _, fs in os.walk(folder) for f in sorted(fs)]
+        listing = hashlib.sha256("\n".join(sorted(os.path.relpath(x, folder) for x in paths)).encode()).hexdigest()
+        index = read_json(cache_dir / LISTINGS) or {}
+        same = index.get(listing)
+        if same and (twin := read_json(cache_dir / same)) and _same_sizes(Path(twin["folder"]), folder, paths):
+            log(f"  {len(paths):,}개 파일: {twin['folder']} 와 같은 구성 — 그 결과를 씀")
+            out = {**twin, "scanned_at": now_iso(), "folder": str(folder), "same_as": twin["folder"]}
+            write_json(cache, out)
+            return out
         log(f"  {len(paths):,}개 파일 읽는 중")
         with ThreadPoolExecutor(workers) as pool:
             for i, (path, ds) in enumerate(pool.map(_read, paths), 1):
@@ -115,7 +127,20 @@ def scan_folder(bundle: Path, cache_dir: Path, log=print, workers: int = 16) -> 
                     log(f"  {i:,}/{len(paths):,}")
     out = {"scanned_at": now_iso(), "folder": str(folder), "series": series, "stats": dict(stats)}
     write_json(cache, out)
+    if series:
+        index = read_json(cache_dir / LISTINGS) or {}
+        index.setdefault(listing, cache.name)
+        write_json(cache_dir / LISTINGS, index)
     return out
+
+
+def _same_sizes(a: Path, b: Path, paths: list[str], sample: int = 200) -> bool:
+    """The same relative files under a and b have the same sizes, for a random sample of them."""
+    try:
+        return all(os.path.getsize(a / os.path.relpath(x, b)) == os.path.getsize(x)
+                   for x in random.sample(paths, min(sample, len(paths))))
+    except OSError:
+        return False
 
 
 # ------------------------------------------------------------------------------------------------ the rows
