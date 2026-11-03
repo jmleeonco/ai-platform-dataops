@@ -136,3 +136,12 @@ form.deid-bar { padding: 8px 12px; border: 1px solid var(--line); border-radius:
 a.badge { text-decoration: none; color: inherit; } a.badge.on { background: var(--accent); color: #fff; }
 .rois { max-width: 360px; white-space: normal; font-size: 12px; }
 .pre-wrap { white-space: pre-wrap; }
+/* /browse: one flat table with a filter row */
+.inline-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.inline-row input.wide { flex: 1 1 360px; min-width: 0; }
+.colpick { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0; }
+.colpick label { white-space: nowrap; font-size: 13px; }
+table.browse tr.filters th { padding: 2px 4px; }
+table.browse tr.filters input, table.browse tr.filters select { width: 100%; min-width: 64px; font-size: 12px; padding: 2px 4px; }
+.hidden-submit { position: absolute; left: -9999px; }
+table.browse th { white-space: nowrap; }

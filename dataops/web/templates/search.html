@@ -7,6 +7,7 @@
 <form class="inline" method="get" action="/search">
   <input name="q" value="{{ q }}" placeholder="PatientID · 환자 이름 · Series/Study UID 앞부분 · 시리즈 설명 · ROI 이름" size="60" autofocus>
   <button>검색</button>
+  <a href="/browse{% if q %}?q={{ q|urlencode }}{% endif %}">표로 보기 →</a>
 </form>
 <p class="muted">두 글자 이상. 종류마다 처음 {{ limit }}개까지 보여 줍니다. UID는 앞부분으로 찾습니다.</p>
 </section>

@@ -65,6 +65,13 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
   RTSTRUCT points at and the RTSTRUCT pointing at an image, the other series of the study, transfers.
 - `/search?q=`: datasets, ROI names (structure-set and dataset counts), RTSTRUCT, patients (one row per
   PatientID with every dataset that has them) and series (UID prefix or description).
+- `/browse` (nav "표", `dataops/web/browse.py`): the DB as one flat table. 시리즈 단위 = a row per series of a
+  dataset (dataset, origin, split, patient, study, modality, description, files, ROI names, source, UIDs …);
+  환자 단위 = a row per patient of a dataset (own or via linked series, series count, modalities, splits).
+  One search box (every word must be in some text column), a filter under each column (text: contains,
+  `=exact`, `!exclude`, `-` empty; numbers: `>10`, `<=3`, `5`; dropdowns for modality / split / origin /
+  source), header sort, a column picker, 50–500 rows a page, CSV of the filtered rows (up to 200,000).
+  Column expressions are fixed in code; values are bound parameters. Row counts are cached for 60 s.
 
 Source values are shown as they are. Migration 0007 indexes `series.referenced_series_uid` and
 `subjects.patient_id` for these lookups.

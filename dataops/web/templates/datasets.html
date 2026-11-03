@@ -22,7 +22,7 @@
   <input name="q" value="{{ q }}" placeholder="이름 일부">
   {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
   <button>찾기</button>
-  <a href="/search">환자·시리즈·ROI 검색 →</a>
+  <a href="/search">환자·시리즈·ROI 검색 →</a> <a href="/browse">표로 보기 →</a>
 </form>
 <div class="table-wrap"><table>
 <tr><th>이름</th><th>출처</th><th>라이선스</th><th>상업적 이용</th><th>PatientID 접두어</th><th class="num" title="이 데이터셋이 등록한 환자와, 연결된 시리즈의 환자 (PatientID 기준)">환자</th><th class="num">시리즈</th><th class="num">RTSTRUCT</th><th class="num">train / valid</th><th class="num">DICOM 파일</th><th>등록일</th></tr>

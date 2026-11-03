@@ -344,3 +344,18 @@ def test_catalogue_pages_follow_datasets_series_and_search(settings, prepared, t
     assert "deploy/Organ/1.0.0" in client.get("/search?q=SYN_X").text
     assert client.get("/series/not-a-uid").status_code == 404
     assert client.get(f"/search?q={XSS}").text.count(XSS) == 0
+    # the flat table: one search box, a filter per column, a column picker, CSV
+    r = client.get("/browse?q=spleen")
+    assert r.status_code == 200 and "/series/1.9.7" in r.text and "Liver, Spleen" in r.text
+    r = client.get("/browse?f_modality=RTSTRUCT&f_split=train&c=dataset&c=split&c=series_uid")
+    assert "deploy/Organ/1.0.0" in r.text and "1.9.7" in r.text and r.text.count("<th class=") == 3
+    assert "1.9.7" not in client.get("/browse?f_modality=RTSTRUCT&f_split=valid").text
+    assert "/series/1.9.7" not in client.get("/browse?f_files=%3E1&f_modality=RTSTRUCT").text
+    assert "숫자 조건" in client.get("/browse?f_files=abc").text
+    r = client.get("/browse?view=patients&f_patient_id=%3DSYN_X")
+    assert r.status_code == 200 and "SYN_X" in r.text and "시리즈 연결" in r.text
+    assert client.get("/browse?sort=d.name;DROP&dir=x").status_code == 200   # unknown sort falls back
+    r = client.get("/browse.csv?q=spleen")
+    assert r.status_code == 200 and "Liver, Spleen" in r.text and "deploy/Organ/1.0.0" in r.text
+    assert client.get("/browse?view=nope").status_code == 404
+    assert client.get(f"/browse?q={XSS}&f_dataset={XSS}").text.count(XSS) == 0

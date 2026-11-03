@@ -17,7 +17,7 @@
   <dt>시리즈 출처</dt><dd>{% for k in kinds %}<span class="badge">{{ source_kinds.get(k.source_kind, 'NIfTI→DICOM') }} {{ "{:,}".format(k.n) }}</span> {% endfor %}</dd>
   <dt>전송 결과</dt><dd>{% for d in delivery %}<div><span class="mono">{{ d.target_key }}</span> {{ status(d.status) }} {{ d.n }}</div>{% else %}<span class="muted">없음</span>{% endfor %}</dd>
 </dl>
-{% if modality or split or q %}<p><a href="?">필터 해제</a></p>{% endif %}
+<p>{% if modality or split or q %}<a href="?">필터 해제</a> · {% endif %}<a href="/browse?f_dataset=%3D{{ ds.name|urlencode }}">이 데이터셋을 표로 보기 →</a></p>
 </section>
 <section>
 <form class="inline" method="get">

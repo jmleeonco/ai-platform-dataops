@@ -42,6 +42,7 @@ from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
 from ..util import RUN_ID_RE, valid_uid
 from .actions import CSRF_COOKIE, SPLIT_NAMES, register_actions
+from .browse import register_browse_views
 from .catalog import register_catalog_views
 from .dbview import register_db_views
 
@@ -489,6 +490,7 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
     register_actions(app, settings, page, get_run)
     register_db_views(app, settings, page, db_conn, _csv, map_conn)
     register_catalog_views(app, page, db_conn)
+    register_browse_views(app, page, db_conn, _csv)
 
     @app.get("/healthz")
     def healthz():
