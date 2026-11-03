@@ -30,7 +30,7 @@ def counts(conn):
 
 def test_migrations_apply_once_and_detect_edits(conn, monkeypatch):
     st = dbmod.migration_status(conn)
-    assert st["pending"] == [] and st["current"] == "0005_deid_maps_to_own_db"
+    assert st["pending"] == [] and st["current"] == "0006_dataset_series_split"
     assert dbmod.migrate(conn) == []
     tables = {r["t"] for r in dbmod.query(conn, "SELECT TABLE_NAME t FROM information_schema.TABLES"
                                                  " WHERE TABLE_SCHEMA=DATABASE()")}
