@@ -176,7 +176,7 @@ def _series_row(uid: str, s: dict, kind: str, bundle_rel: str) -> dict:
            "instance_count": s.get("files") or 0, "source_kind": kind,
            "modality_basis": "DICOM Modality (배포 묶음 파일)" if kind == SOURCE_KIND else "Central C-FIND Modality",
            "metadata_json": {"deploy": {"bundle": bundle_rel, "dir": s.get("dir")}} if kind == SOURCE_KIND
-           else {"central_find": {"bundle": bundle_rel}},
+           else {"central_find": {"bundle": bundle_rel, **({"rtstruct": "C-GET"} if s.get("rtss_get") else {})}},
            **series_columns({}, h)}
     return row
 
@@ -206,6 +206,19 @@ def build_rows(entries_by_bundle: dict, scans: dict, found: dict, existing: dict
         rows["datasets"].append({"dataset_uuid": du, "name": f"deploy/{rel}", "description": desc,
                                  "source_url": str(ROOT / rel), "license": None, "commercial_use": "U"})
         links, stat = set(), Counter()
+        uid_split, pid_split, series_pid = {}, {}, {}   # the json's split per UID / per patient; a series' patient
+        for e in entries:
+            if e["split"] == "전체":                    # a plain list: no split
+                continue
+            for u in ([e["image_uid"]] if e["image_uid"] else []) + e["rtss_uids"]:
+                uid_split.setdefault(u, set()).add(e["split"])
+            if e["patient_id"]:
+                pid_split.setdefault(str(e["patient_id"]), set()).add(e["split"])
+
+        def split_of(u):
+            """The json's split for a UID it names; else the patient's, when the patient is in one split only."""
+            sp = uid_split.get(u) or (p if len(p := pid_split.get(series_pid.get(u), set())) == 1 else None)
+            return ",".join(sorted(sp))[:32] if sp else None
 
         def subject(pid, name=None, h=None):
             su = subject_uuid(du, pid)
@@ -219,6 +232,8 @@ def build_rows(entries_by_bundle: dict, scans: dict, found: dict, existing: dict
 
         def add(uid, s, kind):
             links.add(uid)
+            if s.get("PatientID"):
+                series_pid[uid] = str(s["PatientID"])
             if uid in series_seen:
                 stat["이미 DB에 있는 시리즈 (연결만)"] += 1
                 return
@@ -252,15 +267,17 @@ def build_rows(entries_by_bundle: dict, scans: dict, found: dict, existing: dict
                 if e["patient_id"]:
                     subject(str(e["patient_id"]), e.get("patient_name"))
             stat["시리즈 없이 환자만 (json에 UID·폴더 없음)"] = len({e["patient_id"] for e in entries if e["patient_id"]})
-        rows["dataset_series"] += [{"dataset_uuid": du, "series_uid": u} for u in sorted(links)]
-        report[rel] = {"entries": len(entries), "series": len(links), **stat}
+        ds_rows = [{"dataset_uuid": du, "series_uid": u, "split": split_of(u)} for u in sorted(links)]
+        rows["dataset_series"] += ds_rows
+        report[rel] = {"entries": len(entries), "series": len(links), **stat,
+                       "split": dict(Counter(r["split"] or "없음" for r in ds_rows))}
     rows["subjects"] = list(subj_rows.values())
     return rows, report
 
 
 def run_import(settings, rescan: bool = False, dry_run: bool = False, log=print) -> dict:
     from . import db as dbmod
-    from .central_find import SeriesFinder
+    from .central_find import SeriesFinder, StructureSetGetter
     from .legacy_import import upsert
     cache_dir = settings.runtime_dir / "deploy_scan"
     if rescan and cache_dir.is_dir():
@@ -296,6 +313,23 @@ def run_import(settings, rescan: bool = False, dry_run: bool = False, log=print)
                         write_json(found_file, found)
             write_json(found_file, found)
         found = {u: central_series(m) for u, m in found.items() if m}
+        rtss_file = cache_dir / "central_rtss.json"    # RTSTRUCT only on Central: C-GET for its ROI names
+        rtss = read_json(rtss_file) or {}
+        todo = [u for u, m in found.items() if m.get("Modality") == "RTSTRUCT" and u not in rtss]
+        if todo:
+            log(f"Central C-GET RTSTRUCT {len(todo):,}개 시리즈 (ROI 이름)")
+            with StructureSetGetter(settings.central) as g:
+                for i, u in enumerate(todo, 1):
+                    got = g.get(found[u]["StudyInstanceUID"], u)
+                    rtss[u] = head_values(got[0]) if got else None
+                    if i % 100 == 0:
+                        log(f"  {i:,}/{len(todo):,}")
+                        write_json(rtss_file, rtss)
+            write_json(rtss_file, rtss)
+        for u, h in rtss.items():
+            if h and u in found:
+                found[u]["head"] = {**found[u]["head"], **h}
+                found[u]["rtss_get"] = True
         rows, report = build_rows(entries, scans, found, existing)
         summary = {t: len(r) for t, r in rows.items()}
         if not dry_run:
@@ -308,5 +342,6 @@ def run_import(settings, rescan: bool = False, dry_run: bool = False, log=print)
             except Exception:
                 conn.rollback()
                 raise
-    return {"rows": summary, "central_find": {"asked": len(ask), "found": sum(1 for u in ask if u in found)},
+    return {"rows": summary, "central_find": {"asked": len(ask), "found": sum(1 for u in ask if u in found),
+                                              "rtstruct_get": sum(1 for h in rtss.values() if h)},
             "bundles": report}

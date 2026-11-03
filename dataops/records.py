@@ -359,7 +359,8 @@ COLUMN_DESC = {
         "series_number": "SeriesNumber", "instance_count": "DICOM 파일 수", "source_kind": "원본 형식 nifti / rtstruct / dicom",
         "modality_basis": "modality를 정한 근거", "needs_review": "검토 필요 1/0", "first_run_uuid": "처음 등록한 실행",
         "source_path": "원본 전체 경로 (변환한 파일, DICOM이면 파일들이 있는 폴더)", **SERIES_COLUMN_DESC},
-    "dataset_series": {"dataset_uuid": "→ datasets", "series_uid": "→ series"},
+    "dataset_series": {"dataset_uuid": "→ datasets", "series_uid": "→ series",
+                       "split": "데이터셋 안의 구분 train / valid … (목록에 있을 때)"},
     "ingest_runs": {
         "run_uuid": "실행 UUID", "run_label": "실행 ID (run 폴더 이름)", "dataset_uuid": "→ datasets",
         "revision": "plan revision", "manifest_sha256": "전체 변환 manifest 해시 (변환 뒤)", "status": "실행 상태",

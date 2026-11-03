@@ -61,6 +61,10 @@ def test_bundles_become_datasets_from_their_files_the_db_and_central(tmp_path, m
     org = di.dataset_uuid("Organ/1.0.0")
     assert {x["series_uid"] for x in rows["dataset_series"] if x["dataset_uuid"] == org} == {ct1, "1.9.9", *s1["series"]}
     assert {s["patient_id"] for s in rows["subjects"]} == {"SYN_P001", "SYN_P002", "7"}
+    split = {x["series_uid"]: x["split"] for x in rows["dataset_series"] if x["dataset_uuid"] == org}
+    p2 = next(u for u, s in s1["series"].items() if s["PatientID"] == "SYN_P002")
+    assert (split[ct1], split["1.9.9"], split[p2]) == ("train", "train", "valid")   # by UID; P002's by patient
+    assert report["Organ/1.0.0"]["split"] == {"train": 2, "valid": 1}
 
     rows2, report2 = di.build_rows(entries, scans, found, {"series": {ct1}, "studies": {series[ct1]["study_uid"]}})
     assert ct1 not in {s["series_uid"] for s in rows2["series"]}                # already registered: link only

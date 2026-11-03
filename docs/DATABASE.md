@@ -141,5 +141,4 @@ already in the DB → linked; otherwise a read-only series-level C-FIND on Centr
 `source_kind=central-find`, no ROI names). Patients from the DICOM headers, as they are (not pseudonymised,
 owner). A json-only bundle (no UIDs, no files) keeps its patients only. Non-DICOM ids in the json (UUIDs) are
 ignored. Scans and C-FIND answers are cached in `runtime/deploy_scan/`; a bundle whose `dicom/` lists the same files (names, sampled sizes) as one already read reuses that scan (TotalBone/Muscle/SoftTissue/Vessels and HNN/Neck 1.9.1–2.0.0 are copies). Rows registered by this system's runs or the
-existing-DB import are never overwritten — they gain the bundle link. The train/valid split per series is not
-stored (no column yet); the dataset description has the counts.
+existing-DB import are never overwritten — they gain the bundle link. `dataset_series.split` (migration 0006) keeps the json's split for each series: by UID when the json names it, else by its patient when that patient is in one split only (NULL otherwise). RTSTRUCT that only Central holds are read by C-GET (RTSTRUCT only, in memory, `StructureSetGetter`; cached in `runtime/deploy_scan/central_rtss.json`) for their ROI names and referenced series (owner 2026-11-03).

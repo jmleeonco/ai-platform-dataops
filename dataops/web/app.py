@@ -521,7 +521,7 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
                     " WHERE " + " AND ".join(where))
             total = dbmod.query(conn, "SELECT COUNT(*) AS n" + base, args)[0]["n"]
             rows = dbmod.query(conn, "SELECT sj.patient_id, sj.source_subject_key, st.study_uid, st.study_date,"
-                                     " se.series_uid, se.modality, se.description, se.instance_count, se.source_kind,"
+                                     " se.series_uid, se.modality, se.description, se.instance_count, se.source_kind, m.split,"
                                      " se.needs_review, se.modality_basis, se.first_run_uuid, se.metadata_json, "
                                      " (SELECT r.run_label FROM ingest_runs r WHERE r.run_uuid=se.first_run_uuid)"
                                      " AS run_label" + base + " ORDER BY sj.patient_id, st.study_uid, se.series_number"
