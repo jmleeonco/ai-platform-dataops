@@ -53,6 +53,22 @@ the tables the page shows rows of; the overview polls row counts only) and re-re
 differs from the one the page was drawn with, so a registration, update or delete shows up without a
 reload. Polling pauses while the tab is hidden or after "일시 정지".
 
+## Catalogue pages (read-only, 2026-11-03)
+
+`dataops/web/catalog.py` shows the management DB as a catalogue of every dataset, whatever its origin
+(이 시스템 = own runs, 기존 DB = `import-legacy`, 배포 묶음 = `import-deploy`).
+- `/datasets`: totals, origin filter and name filter. Per dataset: patients (its own plus those of its linked
+  series, by PatientID), series, RTSTRUCT, train/valid, DICOM files. Counts are cached for 60 s.
+- `/datasets/<uuid>`: filters by modality / split / text (PatientID, description, UID, ROI name), the source
+  of each series, ROI names under each RTSTRUCT.
+- `/series/<uid>`: patient, study, every dataset holding the series (with its split), ROI names, the image an
+  RTSTRUCT points at and the RTSTRUCT pointing at an image, the other series of the study, transfers.
+- `/search?q=`: datasets, ROI names (structure-set and dataset counts), RTSTRUCT, patients (one row per
+  PatientID with every dataset that has them) and series (UID prefix or description).
+
+Source values are shown as they are. Migration 0007 indexes `series.referenced_series_uid` and
+`subjects.patient_id` for these lookups.
+
 ## Browser flow (owner decision 2026-10-28)
 
 `deploy/web.sh start` runs the web app and one **worker** (jobs run one at a time; logs in

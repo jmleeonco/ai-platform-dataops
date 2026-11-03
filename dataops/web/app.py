@@ -42,6 +42,7 @@ from ..rtstruct import read_overlay
 from ..runs import EDITABLE, Run, RunError, list_runs
 from ..util import RUN_ID_RE, valid_uid
 from .actions import CSRF_COOKIE, SPLIT_NAMES, register_actions
+from .catalog import register_catalog_views
 from .dbview import register_db_views
 
 HERE = Path(__file__).resolve().parent
@@ -443,24 +444,6 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
         return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
     # ------------------------------------------------------------------ DB browsing
-    @app.get("/datasets", response_class=HTMLResponse)
-    def datasets(request: Request):
-        conn, err = db_conn()
-        rows = []
-        if conn:
-            try:
-                rows = dbmod.query(conn, """
-                    SELECT d.*, (SELECT COUNT(*) FROM subjects s WHERE s.dataset_uuid=d.dataset_uuid) AS n_subjects,
-                           (SELECT COUNT(*) FROM dataset_series m WHERE m.dataset_uuid=d.dataset_uuid) AS n_series,
-                           (SELECT COALESCE(SUM(se.instance_count),0) FROM dataset_series m JOIN series se
-                              ON se.series_uid=m.series_uid WHERE m.dataset_uuid=d.dataset_uuid) AS n_instances,
-                           (SELECT x.target_dataset_id FROM external_mappings x WHERE x.dataset_uuid=d.dataset_uuid
-                              AND x.target_system='oncolabdb.lab_datasets') AS legacy_id
-                    FROM datasets d ORDER BY d.created_at DESC""")
-            finally:
-                conn.close()
-        return page(request, "datasets.html", rows=rows, db_error=err)
-
     @app.get("/central", response_class=HTMLResponse)
     def central_page(request: Request):
         """What this system has sent to Central: one row per run (its journal), with what the management DB holds."""
@@ -497,49 +480,6 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
         return page(request, "central.html", sends=sends, held=held, mods=mods, totals=totals, db_error=err,
                     central=central_ready(settings.central))
 
-    @app.get("/datasets/{dataset_uuid}", response_class=HTMLResponse)
-    def dataset_page(request: Request, dataset_uuid: str, modality: str | None = None, q: str | None = None,
-                     p: int = Query(1, ge=1)):
-        if not UUID_RE.fullmatch(dataset_uuid):
-            raise HTTPException(404)
-        conn, err = db_conn()
-        if conn is None:
-            return page(request, "datasets.html", rows=[], db_error=err)
-        try:
-            ds = dbmod.query(conn, "SELECT * FROM datasets WHERE dataset_uuid=%s", (dataset_uuid,))
-            if not ds:
-                raise HTTPException(404)
-            where, args = ["m.dataset_uuid=%s"], [dataset_uuid]
-            if modality:
-                where.append("se.modality=%s")
-                args.append(modality)
-            if q:
-                where.append("(sj.patient_id LIKE %s OR se.description LIKE %s OR se.series_uid LIKE %s)")
-                args += [f"%{q}%"] * 3
-            base = (" FROM dataset_series m JOIN series se ON se.series_uid=m.series_uid"
-                    " JOIN studies st ON st.study_uid=se.study_uid JOIN subjects sj ON sj.subject_uuid=st.subject_uuid"
-                    " WHERE " + " AND ".join(where))
-            total = dbmod.query(conn, "SELECT COUNT(*) AS n" + base, args)[0]["n"]
-            rows = dbmod.query(conn, "SELECT sj.patient_id, sj.source_subject_key, st.study_uid, st.study_date,"
-                                     " se.series_uid, se.modality, se.description, se.instance_count, se.source_kind, m.split,"
-                                     " se.needs_review, se.modality_basis, se.first_run_uuid, se.metadata_json, "
-                                     " (SELECT r.run_label FROM ingest_runs r WHERE r.run_uuid=se.first_run_uuid)"
-                                     " AS run_label" + base + " ORDER BY sj.patient_id, st.study_uid, se.series_number"
-                                     f" LIMIT {PAGE} OFFSET %s", [*args, (p - 1) * PAGE])
-            modalities = dbmod.query(conn, "SELECT se.modality, COUNT(*) AS n FROM dataset_series m JOIN series se"
-                                           " ON se.series_uid=m.series_uid WHERE m.dataset_uuid=%s"
-                                           " GROUP BY se.modality ORDER BY n DESC", (dataset_uuid,))
-            delivery = dbmod.query(conn, "SELECT t.target_key, t.status, COUNT(*) AS n FROM transfer_results t"
-                                         " JOIN instances i ON i.sop_uid=t.sop_uid JOIN dataset_series m"
-                                         " ON m.series_uid=i.series_uid WHERE m.dataset_uuid=%s"
-                                         " GROUP BY t.target_key, t.status", (dataset_uuid,))
-        finally:
-            conn.close()
-        for r in rows:
-            r["meta"] = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
-        return page(request, "dataset.html", ds=ds[0], rows=rows, total=total, p=p, pages=max(1, -(-total // PAGE)),
-                    modality=modality or "", q=q or "", modalities=modalities, delivery=delivery)
-
     # ------------------------------------------------------------------ backups
     @app.get("/backups", response_class=HTMLResponse)
     def backups(request: Request):
@@ -548,6 +488,7 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
 
     register_actions(app, settings, page, get_run)
     register_db_views(app, settings, page, db_conn, _csv, map_conn)
+    register_catalog_views(app, page, db_conn)
 
     @app.get("/healthz")
     def healthz():

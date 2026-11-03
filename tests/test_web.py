@@ -306,3 +306,41 @@ def test_run_views_are_reused_until_a_run_file_changes(settings, prepared):
     assert client.get(f"/runs/{prepared.id}").text == first           # served from the cache
     prepared.set_status(prepared.meta["status"], "test note")         # any change to the run's files
     assert run_fingerprint(prepared.dir) != fp
+
+
+def test_catalogue_pages_follow_datasets_series_and_search(settings, prepared, test_db):
+    from dataops import deploy_import as di
+    from dataops.legacy_import import upsert
+    settings.db = test_db
+    with dbmod.connection(test_db) as conn:
+        dbmod.migrate(conn)
+        dbmod.register_run(conn, prepared)
+        ct = dbmod.query(conn, "SELECT series_uid, study_uid FROM series WHERE modality='CT' LIMIT 1")[0]
+        du = di.dataset_uuid("Organ/1.0.0")
+        rt = {"StudyInstanceUID": ct["study_uid"], "PatientID": "SYN_X", "Modality": "RTSTRUCT", "files": 1,
+              "head": {"RoiNames": ["Liver", "Spleen"], "ReferencedSeriesUID": ct["series_uid"]}}
+        entries = {"Organ/1.0.0": ({"memo": "m", "list": "train_valid_dict.json"},
+                                   [{"split": "train", "patient_id": "SYN_X", "patient_name": None,
+                                     "image_uid": ct["series_uid"], "rtss_uids": ["1.9.7"]}])}
+        rows, _ = di.build_rows(entries, {"Organ/1.0.0": {"series": {}}}, {"1.9.7": rt},
+                                {"series": {ct["series_uid"]}, "studies": {ct["study_uid"]}})
+        with conn.cursor() as cur:
+            for t in ("datasets", "subjects", "studies", "series", "dataset_series"):
+                upsert(cur, t, rows[t])
+        conn.commit()
+    client = TestClient(create_app(settings))
+    r = client.get("/datasets?origin=deploy")
+    assert r.status_code == 200 and "deploy/Organ/1.0.0" in r.text and "배포 묶음" in r.text
+    assert DATASET["dataset_uuid"] not in r.text                           # filtered to the bundles
+    r = client.get(f"/datasets/{du}?split=train")
+    assert r.status_code == 200 and "Liver" in r.text and "/series/1.9.7" in r.text
+    r = client.get(f"/series/{ct['series_uid']}")                         # the image: two datasets, one RTSTRUCT
+    assert r.status_code == 200 and "deploy/Organ/1.0.0" in r.text and "/series/1.9.7" in r.text
+    assert "train" in r.text
+    r = client.get("/series/1.9.7")
+    assert r.status_code == 200 and "Spleen" in r.text and f"/series/{ct['series_uid']}" in r.text
+    r = client.get("/search?q=spleen")
+    assert r.status_code == 200 and "/series/1.9.7" in r.text
+    assert "deploy/Organ/1.0.0" in client.get("/search?q=SYN_X").text
+    assert client.get("/series/not-a-uid").status_code == 404
+    assert client.get(f"/search?q={XSS}").text.count(XSS) == 0

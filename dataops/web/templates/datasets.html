@@ -3,14 +3,38 @@
 {% block body %}
 <h1>데이터셋 (관리 DB)</h1>
 {% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
+{% if totals %}
 <section>
+<div class="tiles">
+  <div class="tile"><b>{{ "{:,}".format(n_all) }}</b><span>데이터셋</span></div>
+  <div class="tile"><b>{{ "{:,}".format(totals.subjects) }}</b><span>환자 (PatientID)</span></div>
+  <div class="tile"><b>{{ "{:,}".format(totals.studies) }}</b><span>Study</span></div>
+  <div class="tile"><b>{{ "{:,}".format(totals.series) }}</b><span>시리즈</span></div>
+  <div class="tile"><b>{{ "{:,}".format(totals.instances|int) }}</b><span>DICOM 파일</span></div>
+</div>
+<p class="muted">같은 시리즈가 여러 데이터셋에 속할 수 있어, 데이터셋별 시리즈 수의 합은 전체보다 큽니다.</p>
+</section>
+{% endif %}
+<section>
+<form class="inline" method="get" action="/datasets">
+  <a class="badge{% if not origin %} on{% endif %}" href="/datasets?q={{ q|urlencode }}">전체 {{ n_all }}</a>
+  {% for k, label in origins.items() %}<a class="badge{% if origin == k %} on{% endif %}" href="/datasets?origin={{ k }}&amp;q={{ q|urlencode }}">{{ label }} {{ counts[k] }}</a> {% endfor %}
+  <input name="q" value="{{ q }}" placeholder="이름 일부">
+  {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
+  <button>찾기</button>
+  <a href="/search">환자·시리즈·ROI 검색 →</a>
+</form>
 <div class="table-wrap"><table>
-<tr><th>이름</th><th>UUID</th><th>라이선스</th><th>상업적 이용</th><th>PatientID 접두어</th><th>출처</th><th class="num">대상자</th><th class="num">시리즈</th><th class="num">인스턴스</th><th>등록일</th></tr>
+<tr><th>이름</th><th>출처</th><th>라이선스</th><th>상업적 이용</th><th>PatientID 접두어</th><th class="num" title="이 데이터셋이 등록한 환자와, 연결된 시리즈의 환자 (PatientID 기준)">환자</th><th class="num">시리즈</th><th class="num">RTSTRUCT</th><th class="num">train / valid</th><th class="num">DICOM 파일</th><th>등록일</th></tr>
 {% for d in rows %}
-<tr><td><a href="/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a></td><td class="mono">{{ d.dataset_uuid }}</td>
-<td>{{ d.license or '-' }}</td><td>{{ d.commercial_use }}</td><td>{{ d.patient_id_prefix or '-' }}</td><td>{% if d.legacy_id is not none %}기존 DB #{{ d.legacy_id }}{% else %}이 시스템{% endif %}</td>
-<td class="num">{{ d.n_subjects }}</td><td class="num">{{ d.n_series }}</td><td class="num">{{ d.n_instances }}</td><td>{{ d.created_at }}</td></tr>
-{% else %}<tr><td colspan="10" class="muted">등록된 데이터셋이 없습니다. <code>python -m dataops register RUN</code></td></tr>{% endfor %}
+<tr><td><a href="/datasets/{{ d.dataset_uuid }}" title="{{ d.dataset_uuid }}">{{ d.name }}</a></td>
+<td>{% if d.origin == 'legacy' %}기존 DB #{{ d.legacy_id }}{% else %}{{ origins[d.origin] }}{% endif %}</td>
+<td>{{ d.license or '-' }}</td><td>{{ d.commercial_use }}</td><td>{{ d.patient_id_prefix or '-' }}</td>
+<td class="num">{{ "{:,}".format(d.n_subjects) }}</td><td class="num">{{ "{:,}".format(d.n_series) }}</td>
+<td class="num">{{ "{:,}".format(d.n_rt|int) }}</td>
+<td class="num">{% if d.n_train or d.n_valid %}{{ "{:,}".format(d.n_train|int) }} / {{ "{:,}".format(d.n_valid|int) }}{% else %}-{% endif %}</td>
+<td class="num">{{ "{:,}".format(d.n_instances|int) }}</td><td>{{ d.created_at }}</td></tr>
+{% else %}<tr><td colspan="11" class="muted">{% if q or origin %}맞는 데이터셋이 없습니다.{% else %}등록된 데이터셋이 없습니다. <code>python -m dataops register RUN</code>{% endif %}</td></tr>{% endfor %}
 </table></div>
 </section>
 {% endblock %}
