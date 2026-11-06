@@ -66,12 +66,20 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 - `/search?q=`: datasets, ROI names (structure-set and dataset counts), RTSTRUCT, patients (one row per
   PatientID with every dataset that has them) and series (UID prefix or description).
 - `/browse` (nav "표", `dataops/web/browse.py`): the DB as one flat table. 시리즈 단위 = a row per series of a
-  dataset (dataset, origin, split, patient, study, modality, description, files, ROI names, source, UIDs …);
-  환자 단위 = a row per patient of a dataset (own or via linked series, series count, modalities, splits).
-  One search box (every word must be in some text column), a filter under each column (text: contains,
-  `=exact`, `!exclude`, `-` empty; numbers: `>10`, `<=3`, `5`; dropdowns for modality / split / origin /
-  source), header sort, a column picker, 50–500 rows a page, CSV of the filtered rows (up to 200,000).
-  Column expressions are fixed in code; values are bound parameters. Row counts are cached for 60 s.
+  dataset (dataset, origin, split, patient, study, modality, description, files, ROI names, the ROI names of the
+  RTSTRUCT pointing at an image, source, UIDs …); 환자 단위 = a row per patient of a dataset (own or via linked
+  series, series count, modalities, splits). Search panel:
+  - a word search over every text column (every word must match somewhere);
+  - dataset name and ROI name with suggestions (all dataset names; the 2,000 most used ROI names). ROI: several
+    names separated by commas must all be there; "이름 전체가 같은 것만" matches the whole name. A series row
+    matches when it is the RTSTRUCT holding the ROI or the image such an RTSTRUCT points at; a patient row when
+    the patient has such an RTSTRUCT in that dataset;
+  - ticks for origin / split / modality / sex / source (several = any of them, "(없음)" = empty);
+  - a field for every other column (text: contains, `a|b` either, `=exact`, `!exclude`, `-` empty; numbers:
+    `>10`, `<=3`, `5`) and a study date range (`2019` … `202106`: whole year / month);
+  - every condition shows as a chip that drops it.
+  Header sort, a column picker, 50–500 rows a page, CSV of the filtered rows (up to 200,000). Column expressions
+  are fixed in code; values are bound parameters. Row counts are cached for 60 s, suggestions for 5 min.
 
 Source values are shown as they are. Migration 0007 indexes `series.referenced_series_uid` and
 `subjects.patient_id` for these lookups.

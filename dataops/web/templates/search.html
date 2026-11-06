@@ -18,7 +18,7 @@
 <p>{% for d in res.datasets %}<a class="badge" href="/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a> {% endfor %}</p></section>{% endif %}
 {% if res.roi_names %}<section><h2>ROI 이름 {{ res.roi_names|length }}</h2>
 <div class="table-wrap"><table><tr><th>ROI 이름</th><th class="num">RTSTRUCT</th><th>들어 있는 데이터셋</th></tr>
-{% for e in res.roi_names[:limit] %}<tr><td>{{ e.name }}</td><td class="num">{{ "{:,}".format(e.series|length) }}</td>
+{% for e in res.roi_names[:limit] %}<tr><td><a href="/browse?f_roi={{ e.name|urlencode }}&amp;f_roi_exact=1" title="이 ROI가 있는 RTSTRUCT와 영상을 표로">{{ e.name }}</a></td><td class="num">{{ "{:,}".format(e.series|length) }}</td>
 <td>{% set ds = e.datasets.items()|list %}{% for du, name in ds[:6] %}<a class="badge" href="/datasets/{{ du }}?q={{ e.name|urlencode }}&amp;modality=RTSTRUCT">{{ name }}</a> {% endfor %}{% if ds|length > 6 %}<details style="display:inline"><summary>외 {{ ds|length - 6 }}개</summary>{% for du, name in ds[6:] %}<a class="badge" href="/datasets/{{ du }}?q={{ e.name|urlencode }}&amp;modality=RTSTRUCT">{{ name }}</a> {% endfor %}</details>{% endif %}</td></tr>{% endfor %}
 </table></div></section>{% endif %}
 {% if res.rois %}<section><h2>ROI 이름이 맞는 RTSTRUCT {{ res.rois|length }}{% if res.rois|length >= limit %}+{% endif %}</h2>

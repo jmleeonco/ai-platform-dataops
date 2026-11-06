@@ -136,12 +136,22 @@ form.deid-bar { padding: 8px 12px; border: 1px solid var(--line); border-radius:
 a.badge { text-decoration: none; color: inherit; } a.badge.on { background: var(--accent); color: #fff; }
 .rois { max-width: 360px; white-space: normal; font-size: 12px; }
 .pre-wrap { white-space: pre-wrap; }
-/* /browse: one flat table with a filter row */
+/* /browse: a search panel over one flat table */
 .inline-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .inline-row input.wide { flex: 1 1 360px; min-width: 0; }
+.fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 14px; margin: 8px 0; }
+.fld { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
+.fld > span, .fld > label:first-child { color: var(--muted); }
+.fld input { width: 100%; box-sizing: border-box; }
+.fld .range { display: flex; gap: 4px; align-items: center; color: var(--ink); }
+.fld .range input { flex: 1 1 0; min-width: 0; }
+.fld input[type=checkbox] { width: auto; margin: 0; }
+.inline-check { font-size: 12px; color: var(--ink); display: flex; gap: 4px; align-items: center; }
+.ticks { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; margin: 6px 0; font-size: 13px; }
+.ticks .tl { color: var(--muted); min-width: 70px; }
+.ticks label { white-space: nowrap; }
+details.more > summary { cursor: pointer; color: var(--accent); margin: 6px 0; }
+.chips .badge { margin: 2px 0; }
 .colpick { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0; }
 .colpick label { white-space: nowrap; font-size: 13px; }
-table.browse tr.filters th { padding: 2px 4px; }
-table.browse tr.filters input, table.browse tr.filters select { width: 100%; min-width: 64px; font-size: 12px; padding: 2px 4px; }
-.hidden-submit { position: absolute; left: -9999px; }
 table.browse th { white-space: nowrap; }

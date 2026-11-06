@@ -1,39 +1,62 @@
 {% extends "base.html" %}
 {% block title %}표 · 관리 DB{% endblock %}
+{% macro field(c) %}<label class="fld"><span>{{ c.label }}</span>
+<input name="f_{{ c.key }}" value="{{ filters.get(c.key, '') }}"{% if suggest.get(c.key) %} list="dl-{{ c.key }}"{% endif %} placeholder="{{ '예: >10, <=3, 5' if c.kind == 'num' else '포함 · a|b 둘 중 · =정확히 · !제외' }}"></label>{% endmacro %}
+{% macro ticks(c) %}<div class="ticks"><span class="tl">{{ c.label }}</span>
+{% for v in choices[c.key] + ['-'] %}<label><input type="checkbox" name="f_{{ c.key }}" value="{{ v }}" {{ 'checked' if v in filters.get(c.key, []) }}> {{ '(없음)' if v == '-' else c.labels.get(v, v) }}</label>{% endfor %}</div>{% endmacro %}
 {% block body %}
-<h1>관리 DB 표 <span class="muted small">{{ "{:,}".format(total) }}행{% if filters or q %} (검색·필터 적용){% endif %}{% if not db_error %} · {{ "%.2f"|format(elapsed) }}초{% endif %}</span></h1>
+<h1>관리 DB 표 <span class="muted small">{{ "{:,}".format(total) }}행{% if chips %} (조건 {{ chips|length }}개){% endif %}{% if not db_error %} · {{ "%.2f"|format(elapsed) }}초{% endif %}</span></h1>
 {% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
 <nav class="ser-tabs">{% for k, v in views.items() %}<a class="{{ 'on' if k == vname }}" href="/browse?view={{ k }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ v.label }}</a>{% endfor %}</nav>
 <p class="muted small">{{ view.hint }}. 읽기 전용입니다.</p>
 <form method="get" action="/browse" id="browse">
-<section>
+<input type="hidden" name="view" value="{{ vname }}">
+<input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="dir" value="{{ 'desc' if desc else 'asc' }}">
+<section class="search-panel">
 <div class="inline-row">
-  <input type="hidden" name="view" value="{{ vname }}">
-  <input type="search" name="q" value="{{ q }}" class="wide" placeholder="모든 글자 열에서 찾기 — 데이터셋, PatientID, 이름, 설명, ROI, UID … (띄어 쓰면 모두 포함)">
-  <select name="n">{% for s in page_sizes %}<option value="{{ s }}" {{ 'selected' if s == n }}>{{ s }}행</option>{% endfor %}</select>
-  <input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="dir" value="{{ 'desc' if desc else 'asc' }}">
+  <input type="search" name="q" value="{{ q }}" class="wide" placeholder="전체 검색 — 모든 글자 열 (데이터셋, PatientID, 이름, 설명, ROI, UID …), 띄어 쓴 단어는 모두 포함">
   <button>찾기</button>
   <a href="/browse?view={{ vname }}">초기화</a>
-  <a class="button" href="{{ csv_link }}">CSV</a>
+</div>
+<div class="fgrid">
+{% for c in view.columns if c.main and c.kind in ('text', 'num') and c.key != 'rois' %}{{ field(c) }}
+{% if c.key == 'dataset' %}<div class="fld"><label for="f-roi">ROI 이름</label>
+<input id="f-roi" name="f_roi" value="{{ special.roi or '' }}" list="dl-roi" placeholder="예: Liver · 쉼표로 여러 개 = 모두 가진 것">
+<label class="inline-check"><input type="checkbox" name="f_roi_exact" value="1" {{ 'checked' if special.roi_exact == '1' }}> 이름 전체가 같은 것만 (Liver_1 제외)</label></div>{% endif %}
+{% endfor %}
+</div>
+{% for c in view.columns if c.main and c.kind == 'enum' %}{{ ticks(c) }}{% endfor %}
+<details class="more"{{ ' open' if more_open }}><summary>조건 더 보기</summary>
+<div class="fgrid">
+{% if view.date %}<label class="fld"><span>Study 날짜 (부터 ~ 까지)</span><span class="range">
+<input name="f_date_from" value="{{ special.date_from or '' }}" placeholder="예: 2019 또는 20190301"> ~
+<input name="f_date_to" value="{{ special.date_to or '' }}" placeholder="예: 2021 또는 202106"></span></label>{% endif %}
+{% for c in view.columns if not c.main and c.kind in ('text', 'num') and c.key != 'rois' %}{{ field(c) }}{% endfor %}
+</div>
+{% for c in view.columns if not c.main and c.kind == 'enum' %}{{ ticks(c) }}{% endfor %}
+</details>
+<p class="muted small">ROI는 그 ROI가 있는 RTSTRUCT{% if vname == 'series' %}와, 그 RTSTRUCT가 가리키는 영상 시리즈{% else %}를 가진 환자{% endif %}를 찾습니다 (Modality로 둘 중 하나만 고를 수 있습니다). 대소문자는 구분하지 않습니다.</p>
+</section>
+{% for k, vals in suggest.items() %}<datalist id="dl-{{ k }}">{% for v in vals %}<option value="{{ v }}">{% endfor %}</datalist>{% endfor %}
+
+<section>
+{% if chips %}<p class="chips">{% for ch in chips %}<a class="badge on" href="{{ ch.drop }}" title="이 조건 빼기">{{ ch.label }}: {{ ch.value }} ✕</a> {% endfor %}<a href="/browse?view={{ vname }}">모두 해제</a></p>{% endif %}
+{% if bad %}<p class="err">숫자 조건을 읽지 못해 무시했습니다: {{ bad|join(', ') }}</p>{% endif %}
+<div class="inline-row">
+  <select name="n" class="autosubmit">{% for s in page_sizes %}<option value="{{ s }}" {{ 'selected' if s == n }}>{{ s }}행씩</option>{% endfor %}</select>
+  <a class="button" href="{{ csv_link }}">CSV (조건 그대로)</a>
 </div>
 <details class="cols"><summary>열 선택 ({{ cols|length }}/{{ view.columns|length }})</summary>
 <div class="colpick">{% for c in view.columns %}<label><input type="checkbox" name="c" value="{{ c.key }}" {{ 'checked' if c.key in shown }}{{ ' data-default' if c.show }}> {{ c.label }}</label>{% endfor %}</div>
 <p class="muted small">고른 뒤 찾기를 누르세요.</p>
 </details>
-<p class="muted small">열 아래 칸은 그 열만 거릅니다: 글자는 포함, <code>=값</code> 정확히, <code>!값</code> 제외, <code>-</code> 빈 값 · 숫자는 <code>&gt;10</code>, <code>&lt;=3</code>, <code>5</code> · 머리글을 누르면 정렬.</p>
-{% if bad %}<p class="err">숫자 조건을 읽지 못해 무시했습니다: {{ bad|join(', ') }}</p>{% endif %}
-{% for k, v in filters.items() if k not in shown %}<p class="small">숨긴 열 필터: <span class="badge mono">{{ k }} = {{ v }}</span> <input type="hidden" name="f_{{ k }}" value="{{ v }}"></p>{% endfor %}
 <div class="table-wrap"><table class="std dbt browse">
-<thead>
-<tr>{% for c in cols %}<th class="{{ 'num' if c.kind == 'num' }}"><a href="{{ link(sort=c.key, dir='asc' if sort == c.key and desc else ('desc' if sort == c.key else 'asc'), p=1) }}">{{ c.label }}{{ (' ▼' if desc else ' ▲') if sort == c.key }}</a></th>{% endfor %}</tr>
-<tr class="filters">{% for c in cols %}<th>{% if c.kind == 'enum' %}<select name="f_{{ c.key }}" class="autosubmit"><option value="">전체</option>{% for v in choices[c.key] %}<option value="{{ v }}" {{ 'selected' if filters.get(c.key) == v }}>{{ c.labels.get(v, v) }}</option>{% endfor %}<option value="-" {{ 'selected' if filters.get(c.key) == '-' }}>(없음)</option></select>{% else %}<input name="f_{{ c.key }}" value="{{ filters.get(c.key, '') }}" placeholder="{{ '>0' if c.kind == 'num' else '포함' }}">{% endif %}</th>{% endfor %}</tr>
-</thead>
+<thead><tr>{% for c in cols %}<th class="{{ 'num' if c.kind == 'num' }}">{% if c.kind == 'linked' %}<span title="이 영상을 가리키는 RTSTRUCT의 ROI">{{ c.label }}</span>{% else %}<a href="{{ link(sort=c.key, dir='asc' if sort == c.key and desc else ('desc' if sort == c.key else 'asc'), p=1) }}">{{ c.label }}{{ (' ▼' if desc else ' ▲') if sort == c.key }}</a>{% endif %}</th>{% endfor %}</tr></thead>
 <tbody>
 {% for row in cells %}<tr>{% for c in row %}{% set col = cols[loop.index0] %}<td class="{{ 'num' if col.kind == 'num' }}{{ ' mono small' if col.key.endswith('uid') or col.key == 'ref_series' }}" title="{{ c.title or c.text or '' }}">{% if c.text is none %}<span class="muted">-</span>{% elif c.href %}<a href="{{ c.href }}">{{ c.text }}</a>{% else %}{{ c.text }}{% endif %}</td>{% endfor %}</tr>
 {% else %}<tr><td colspan="{{ cols|length or 1 }}" class="muted">맞는 행이 없습니다.</td></tr>{% endfor %}
 </tbody>
 </table></div>
-<button class="hidden-submit" tabindex="-1" aria-hidden="true">찾기</button>
 {% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs <= 3 %}<a href="{{ link(p=i) }}">{{ i }}</a>{% elif i == 4 or i == pages - 3 %}<span class="muted">…</span>{% endif %}{% endfor %}</p>{% endif %}
 </section>
 </form>

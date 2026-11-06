@@ -359,3 +359,18 @@ def test_catalogue_pages_follow_datasets_series_and_search(settings, prepared, t
     assert r.status_code == 200 and "Liver, Spleen" in r.text and "deploy/Organ/1.0.0" in r.text
     assert client.get("/browse?view=nope").status_code == 404
     assert client.get(f"/browse?q={XSS}&f_dataset={XSS}").text.count(XSS) == 0
+    # the search panel: ROI names (the RTSTRUCT and the image it points at), exact names, several values
+    r = client.get("/browse?f_roi=liver,spleen&f_modality=CT&c=series_uid&c=linked_rois")
+    assert f"/series/{ct['series_uid']}" in r.text and "Liver, Spleen" in r.text      # image found via its RTSTRUCT
+    assert "/series/1.9.7" not in r.text
+    assert "/series/1.9.7" in client.get("/browse?f_roi=Spleen&f_roi_exact=1&f_modality=RTSTRUCT").text
+    assert "/series/1.9.7" not in client.get("/browse?f_roi=Splee&f_roi_exact=1&f_modality=RTSTRUCT").text
+    assert "/series/1.9.7" not in client.get("/browse?f_roi=liver,kidney").text      # every name must be there
+    r = client.get("/browse?f_modality=RTSTRUCT&f_modality=CT&f_dataset=nothing|Organ&c=series_uid")
+    assert "/series/1.9.7" in r.text and f"/series/{ct['series_uid']}" in r.text
+    assert "ROI (정확히): Spleen" in client.get("/browse?f_roi=Spleen&f_roi_exact=1").text   # condition chip
+    assert "datalist" in r.text and "Spleen" in r.text                                    # suggestions
+    assert "맞는 행이 없습니다" in client.get("/browse?f_date_from=2999").text
+    r = client.get("/browse?view=patients&f_roi=spleen")              # the patient of the RTSTRUCT's study
+    assert '<span class="muted small">1행' in r.text and "deploy/Organ/1.0.0" in r.text
+    assert "맞는 행이 없습니다" in client.get("/browse?view=patients&f_roi=kidney").text

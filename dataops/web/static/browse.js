@@ -1,9 +1,9 @@
-// /browse: a dropdown filter applies as soon as it changes (text filters apply on Enter). Empty filters and the
+// /browse: the page size applies as soon as it changes (the search panel applies on Enter or 찾기). Empty filters and the
 // default column choice are left out of the URL, so links stay short.
 (function () {
   var form = document.getElementById("browse");
   if (!form) return;
-  form.querySelectorAll("select.autosubmit").forEach(function (s) {
+  form.querySelectorAll(".autosubmit").forEach(function (s) {
     s.addEventListener("change", function () { form.requestSubmit(); });
   });
   form.addEventListener("submit", function () {
