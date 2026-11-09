@@ -389,6 +389,16 @@
     reads at most 20 unread structure sets per call (C-GET, kept as the hub's copy) and expands at most 100 PACS studies
     per call (<code>truncated</code>); a PACS failure is reported in <code>pacs.error</code> and the hub rows are still
     answered.</li>
+    <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
+    a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
+    <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread
+    structure sets); choosing one searches <code>&lt;prefix&gt;_*</code> and opens the panel <b>ROI names in &lt;prefix&gt;</b>
+    (<code>GET …/items/roi-vocab?prefix=</code>): every ROI name the dataset's labels hold, with its count and what it resolves to
+    today. A lead <b>drags</b> a name onto a target ROI and it becomes a hub-owned registry alias (<code>POST /ui/api/registry/aliases</code>,
+    table <code>roi_alias_hub</code>; × removes it; ai-pipeline's own aliases stay locked), served at once in
+    <code>registry.json</code> / <code>registry.csv</code> — so the executor's converter and every hub matching know the name with
+    no executor or ai-pipeline change. Unread structure sets are read with <i>Read ROI names</i> (20 per call, the §75 route).
+    Aliases added here apply to every project and job; the §39 per-project dialog is unchanged.</li>
     </ul></li>
   </ol>
   <p><i>Advanced: any template, any cohort</i> opens the old wizard (<code>/training/advanced</code>). The old
