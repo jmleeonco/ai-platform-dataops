@@ -1097,7 +1097,8 @@
   by the hub</i> when the hub could not be asked (an older hub, no network). The app never stores a second time; a failed store, a save to a file
   and the OncoPACS internal channel tell the hub nothing.</p>
   <p id="central-ack-web"><b>On the hub's pages (W45).</b> The stage reads <b>Sent · review pending</b> (a dashed green pill)
-  while no verdict approved the row; its tooltip says <i>Sent from OncoStudio by SHK at &lt;time&gt;; not reviewed yet</i>.
+  while no verdict approved the row; its tooltip says <i>Sent from OncoStudio by SHK at &lt;time&gt;; not reviewed yet</i>. A send the backfill found carries no
+  sender; it was made from the labeler's own OncoStudio, so the tooltip and the history name the row's labeler (W45b).
   A Sent pill's tooltip names where the send came from: <i>Sent from the hub by &lt;lead&gt;</i>, <i>Sent from OncoStudio by
   &lt;initials&gt;</i> or <i>On the PACS before the hub</i>. The project page's strip and My works show a <i>Sent · review
   pending n</i> chip that filters the list to those rows; the review queue lists them as it lists labeled ones, with the

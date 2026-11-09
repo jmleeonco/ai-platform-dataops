@@ -310,7 +310,7 @@ clause compares <code>manifest.assignment_id</code> as a uuid (primary key). Hea
   (404 → <code>[data-basis-missing]</code>).</td></tr>
   <tr id="web-central-ack"><td>1.67 web — Sent · review pending, the send's origin, the filter and the history (§27.9, W45,
   U161, D341; labeling-web: <code>web/src/lib/stages.js</code> <code>isSentUnreviewed / stageKey</code> ('sent_unreviewed'; rowStage
-  stays the stored status's), <code>web/src/lib/apptext.js</code> <code>originTip / verdictText / centralEntries / stageTone</code>,
+  stays the stored status's), <code>web/src/lib/apptext.js</code> <code>originTip / verdictText / centralEntries / stageTone / senderOf</code> (W45b: <code>central.by</code>, else for an OncoStudio send the labeler — a backfill records none),
   <code>StageBadge.svelte</code>, <code>StagePill.svelte</code>, <code>Pill.svelte</code>, <code>pages/Project.svelte</code> (strip chip,
   stage tooltip, verdict toast), <code>pages/MyWork.svelte</code> (chip), <code>CaseDialog.svelte</code>, <code>AssignmentDrawer.svelte</code>
   (verdict notice), <code>CaseSections.svelte</code> (history entry); locale <code>stage.sent_unreviewed</code>, <code>stage_tip.*</code>,
