@@ -31,6 +31,38 @@
 <form method="post" action="/runs/{{ run.id }}/reanalyze">{{ csrf_field(csrf) }}<button>다시 분석</button></form></section>
 {% endif %}
 
+{% macro purge_form(rid, size, next='') -%}
+<form method="post" action="/runs/{{ rid }}/purge" class="inline" data-confirm="{{ rid }}의 영상 파일({{ size }})을 이 서버에서 지웁니다. plan·manifest·전송 기록·보고서는 남습니다. 계속할까요?">
+  {{ csrf_field(csrf) }}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  <input name="by" maxlength="64" required placeholder="삭제하는 사람">
+  <button type="submit">이 서버의 영상 삭제</button>
+</form>
+{%- endmacro %}
+<section id="images" class="retention">
+<h2>이 서버의 영상</h2>
+{% if retention.holds %}
+<p><b>{{ "{:,}".format(retention.files) }}개 · {{ mb(retention.bytes) }}</b> 가 이 서버에 있습니다.
+<span class="muted small">영상은 Central(전송 후) 또는 원본 폴더에 있고, 이 서버에는 한 번에 한 데이터셋만 둡니다 (§78.6).</span></p>
+{% if retention.refusal %}<p class="muted small">지금은 지울 수 없습니다: {{ retention.refusal }}</p>
+{% elif not active %}{{ purge_form(run.id, mb(retention.bytes)) }}
+<p class="muted small">지워도 원본 폴더와 plan으로 같은 파일을 다시 만들 수 있습니다 (manifest의 sha256으로 확인).</p>{% endif %}
+{% elif retention.purged %}
+<p>{% if retention.on_central %}영상은 Central에 있습니다 · 이 서버의 사본은 <b>{{ retention.purged.at }}</b>에 삭제했습니다
+{% else %}영상은 Central에 없습니다 · 원본 폴더와 plan으로 다시 만들 수 있습니다 (이 서버의 사본은 <b>{{ retention.purged.at }}</b>에 삭제){% endif %}
+<span class="muted small">({{ "{:,}".format(retention.purged.files) }}개, {{ mb(retention.purged.bytes) }} · {{ retention.purged.reason }}{% if retention.purged.by %} · {{ retention.purged.by }}{% endif %})</span></p>
+{% else %}<p class="muted small">이 run은 영상 파일을 갖고 있지 않습니다.</p>{% endif %}
+{% if slot and meta.status not in ['CENTRAL_SENT', 'ANALYSIS_FAILED', 'LOCAL_SENT'] %}
+{% for o in slot %}
+<div class="notice">다른 run이 영상을 갖고 있어 이 run의 샘플 추출·파일럿·Central 전송을 시작할 수 없습니다:
+<a class="mono" href="/runs/{{ o.run_id }}">{{ o.run_id }}</a> {{ o.dataset_name or '' }} {{ status(o.status) }} · {{ mb(o.bytes) }}
+{% if o.refusal %}<p class="muted small">그 run은 지금 지울 수 없습니다: {{ o.refusal }}</p>
+{% elif o.busy %}<p class="muted small">그 run의 작업이 진행 중입니다.</p>
+{% else %}{{ purge_form(o.run_id, mb(o.bytes), run.id) }}{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+</section>
+
 {% if plan_errors or (plan and plan.unresolved) or blocking %}
 <section id="unresolved">
 <h2>전송 전에 해결할 항목</h2>
@@ -248,6 +280,7 @@
 </details>
 {% endif %}
 <script src="/static/live.js?v={{ static_v }}"></script>
+<script src="/static/confirm.js?v={{ static_v }}"></script>
 <script src="/static/tabs.js?v={{ static_v }}"></script>
 <script src="/static/jtable.js?v={{ static_v }}"></script>
 {% endblock %}

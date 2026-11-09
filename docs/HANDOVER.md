@@ -37,6 +37,8 @@ copies of the existing LAB DB and of the model-training bundles in `/mnt/deploy/
 | Pseudonymisation | Public data: never. Internal roots (`DATAOPS_INTERNAL_ROOTS`): profile `pseudonym-v2` (names/institution/IDs/order numbers out, UIDs replaced, dates and birth date kept). Original↔pseudonym map lives in a separate schema/account (`dataops_deid_map`). |
 | Naming | PatientID prefix `<source>_<region>[_<modality>][_<sub>]_<PUB\|NC\|IO>` from Notion "04-1 Data prefix 규칙"; Notion is the source, the code (`plan.prefix_problems`, `.claude/skills/dataset-intake`) is a copy. |
 | Reports | Same numbered tables for every dataset — no free-form per-dataset write-ups. |
+| Images are transient (2026-11-09, CONTRACT §78.6) | "the db agent should not store image permanently. The images should be in central scp … It may store one project's image (if necessary) at a time." At most one run holds image files; prepare/pilot/publish refuse while another does. Purge (`purge <run>` or the run page) keeps the record. A complete publish + registration, a failed analysis and a superseded pilot-stage run are purged automatically. Backups hold no images. |
+| No transfer without the user (U156) | No Central publish, local-SCP send, pilot or approve unless the user says so explicitly. |
 | Other | No sudo on 183. Do not touch `/drive/project/backups` or other projects. No crontab changes beyond the backup block. Work on main, commit and push; ask before PRs or deleting branches. |
 
 ## 3. Running it
@@ -45,7 +47,7 @@ copies of the existing LAB DB and of the model-training bundles in `/mnt/deploy/
 cd /drive/project/ai-platform-dataops
 PY=~/.venvs/ai-platform-dataops/bin/python
 set -a; . ~/.config/ai-platform-dataops/env; set +a          # for ad-hoc scripts
-PYTHONPATH=. $PY -m pytest -q -p no:warnings                  # 125 tests, ~100 s (DB tests use dataops_test_* schemas)
+PYTHONPATH=. $PY -m pytest -q -p no:warnings                  # 134 tests, ~125 s (DB tests use dataops_test_* schemas)
 deploy/web.sh start|stop|restart|restart-web|status|logs      # web (:8096) + one job worker; not auto-started after reboot
 deploy/db.sh up                                                # Docker MariaDB 11.4, container ai-platform-dataops-db, 127.0.0.1:13306
 $PY -m dataops db-status | db-migrate
@@ -56,7 +58,8 @@ Origin checks on POSTs). `restart-web` after template/code changes; a running jo
 
 CLI (`python -m dataops …`): `plan`, `ingest`, `validate`, `prepare`, `verify`, `register`, `show`,
 `send-local`, `echo`, `runs`, `db-migrate`, `db-status`, `deid-map-save`, `import-legacy`, `import-deploy`
-(`--dry-run`, `--rescan`), `worker`, `analyze`, `pilot`, `approve`, `publish`, `serve`, `prefix-check`.
+(`--dry-run`, `--rescan`), `worker`, `analyze`, `pilot`, `approve`, `publish`, `serve`, `prefix-check`,
+`purge` (delete a run's image files on this host; `runs` shows each run's footprint).
 
 Nightly backup: user crontab 00:30 → `ops/backup/nightly_backup.sh` → `/mnt/ai-pipeline/backups/ai-platform-dataops/`
 (DB dumps incl. map DB, run metadata, repo bundle) and `…-files/` (rsync snapshot of `runtime/runs`).
@@ -116,7 +119,8 @@ copied enc maps. Never shown outside the admin pages; backed up nightly.
 | 20261031T055249-1532fe83, 20261031T061554-6ee801e2 | Prostate-3T, CT-ORG | PLANNED |
 | 20261030T195103-6f2ec0d5, 20261031T055249-83b5e739, 20261031T055249-99421f76 | CIRT, CT-ORG, HNN_GTV early attempts | ANALYSIS_FAILED (superseded) |
 
-`python -m dataops runs` lists them; each has a page at `/runs/<run_id>`.
+`python -m dataops runs` lists them; each has a page at `/runs/<run_id>`. Since 2026-11-09 (DO2) only
+20261101T004152-228df0e1 holds image files; every other run's images were purged (records kept).
 
 ## 7. Web pages
 

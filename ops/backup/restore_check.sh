@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prove a backup restores: DB dump -> fresh throw-away MariaDB container and row counts,
-# repo bundle -> clone at the recorded commit, artifact snapshot -> re-hash, run metadata -> untar.
+# repo bundle -> clone at the recorded commit, run snapshot -> manifests intact + no image files, run metadata -> untar.
 # Touches nothing in the live DB, runtime folder or backup folders.
 #
 #   ops/backup/restore_check.sh [YYYY-MM-DD]      (default: latest backup)
@@ -64,7 +64,7 @@ if [[ -f "$DIR/runs/runs-metadata.tar.gz" ]]; then
   echo "  runs restored: $(find "$TMP/runs" -maxdepth 2 -name run.json | wc -l)"
 fi
 
-echo "== artifact snapshot"
+echo "== run snapshot (manifests intact, no images: §78.6)"
 "${TOOL[@]}" verify-artifacts "$ROOT/$SYSTEM-files/$DAY" || MISMATCH=1
 
 if [[ $MISMATCH -eq 0 ]]; then echo "RESTORE CHECK OK ($DAY)"; else echo "RESTORE CHECK FAILED ($DAY)"; exit 1; fi

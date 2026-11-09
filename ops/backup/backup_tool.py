@@ -4,7 +4,11 @@
   backup_tool.py manifest WORK_DIR --started EPOCH --commit SHA --ok 1|0 [--error TEXT] [--extra JSON]
   backup_tool.py prune BASE_DIR --today YYYY-MM-DD [--dry-run]
   backup_tool.py verify-files DAY_DIR                       re-hash files listed in manifest.json
-  backup_tool.py verify-artifacts SNAPSHOT_DIR              re-hash every artifact against each run's manifest
+  backup_tool.py verify-artifacts SNAPSHOT_DIR              run metadata snapshot: every manifest intact, no pixel file
+  backup_tool.py prune-pixels FILES_BASE [--dry-run]        delete pixel files from earlier snapshots (once, §78.6)
+
+Images are not backed up (CONTRACT §78.6): Central or the source folder holds them, and a run can be frozen again
+from source + plan; the snapshot keeps the run metadata (manifests with every sha256, journals, reports).
 
 Retention (CONTRACT §65): the 14 most recent daily folders plus the first folder of each month for the
 12 most recent months; today's folder is never deleted; only YYYY-MM-DD folders inside BASE_DIR are touched.
@@ -91,16 +95,62 @@ def verify_files(day: Path) -> list[str]:
     return bad
 
 
+PIXEL_SUFFIXES = (".dcm", ".nii", ".nii.gz")
+ARTIFACT_DIRS = ("artifacts",)
+MANIFEST_BODY = ("run_id", "run_uuid", "plan_sha256", "plan_revision", "scope", "instances")
+
+
+def _canonical_sha(obj) -> str:            # = dataops.util.sha256_json
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                          .encode("utf-8")).hexdigest()
+
+
+def pixel_files(snapshot: Path):
+    """Pixel files of a runs snapshot: whole artifact directories of each run, and image files anywhere."""
+    for p in snapshot.rglob("*"):
+        rel = p.relative_to(snapshot).parts
+        if p.is_file() and ((len(rel) > 2 and rel[1] in ARTIFACT_DIRS) or p.name.lower().endswith(PIXEL_SUFFIXES)):
+            yield p
+
+
 def verify_artifacts(snapshot: Path) -> tuple[int, list[str]]:
+    """(manifests checked, problems): every run manifest matches its own sha256 (the record that lets a run be frozen
+    again and proven equal), and the snapshot holds no pixel file."""
     n, bad = 0, []
     for man in sorted(snapshot.glob("*/manifest*.json")):      # manifest.json and manifest-pilot.json
-        m = json.loads(man.read_text(encoding="utf-8"))
-        for inst in m["instances"]:
-            p = man.parent / inst["path"]
-            n += 1
-            if not p.is_file() or sha256(p) != inst["sha256"]:
-                bad.append(f"{man.parent.name}/{inst['path']}")
+        n += 1
+        try:
+            m = json.loads(man.read_text(encoding="utf-8"))
+            if _canonical_sha({k: m[k] for k in MANIFEST_BODY if k in m}) != m["manifest_sha256"]:
+                bad.append(f"{man.parent.name}/{man.name}: manifest_sha256")
+        except (ValueError, KeyError) as e:
+            bad.append(f"{man.parent.name}/{man.name}: {e}")
+    bad += [f"pixel file: {p.relative_to(snapshot)}" for p in pixel_files(snapshot)]
     return n, bad
+
+
+def prune_pixels(files_base: Path, dry_run: bool) -> dict:
+    """Delete the pixel files of every dated snapshot under FILES_BASE (only there; hard links are shared between
+    days, so the bytes come back when the last link goes). Run metadata stays."""
+    files_base = files_base.resolve()
+    seen, n, freed = set(), 0, 0
+    for day in sorted(p for p in files_base.iterdir() if p.is_dir() and DATE_RE.fullmatch(p.name)):
+        if day.resolve().parent != files_base:
+            continue
+        for p in list(pixel_files(day)):
+            st = p.stat()
+            if (st.st_dev, st.st_ino) not in seen:
+                seen.add((st.st_dev, st.st_ino))
+                freed += st.st_size
+            n += 1
+            if not dry_run:
+                p.unlink()
+        if not dry_run:
+            for run in day.iterdir():
+                for d in ARTIFACT_DIRS:
+                    if (run / d).is_dir():
+                        shutil.rmtree(run / d)
+    return {"links_removed": n, "bytes_freed": freed, "dry_run": dry_run}
 
 
 def main(argv=None) -> int:
@@ -121,6 +171,9 @@ def main(argv=None) -> int:
     v.add_argument("day", type=Path)
     a = sub.add_parser("verify-artifacts")
     a.add_argument("snapshot", type=Path)
+    pp = sub.add_parser("prune-pixels")
+    pp.add_argument("files_base", type=Path)
+    pp.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "manifest":
         res = manifest(args.work, args.started, args.commit, bool(args.ok), args.error, json.loads(args.extra))
@@ -134,8 +187,10 @@ def main(argv=None) -> int:
         return 1 if bad else 0
     elif args.cmd == "verify-artifacts":
         n, bad = verify_artifacts(args.snapshot)
-        print(f"artifacts checked {n}, mismatches {len(bad)}" + (f": {bad[:10]}" if bad else ""))
+        print(f"manifests checked {n}, problems {len(bad)}" + (f": {bad[:10]}" if bad else ""))
         return 1 if bad else 0
+    elif args.cmd == "prune-pixels":
+        print(json.dumps(prune_pixels(args.files_base, args.dry_run)))
     return 0
 
 

@@ -22,6 +22,7 @@ from . import deid, nfs
 from .inventory import read_dicom_header
 from .legacy import n2d
 from .plan import validate_plan
+from .retention import check_slot
 from .rtstruct import RtstructError, build_rtstruct, rtstruct_ids
 from .runs import Run, RunError
 from .util import IO_WORKERS, copy_hashed, now_iso, pmap, safe_name, sha256_file, sha256_json
@@ -52,6 +53,7 @@ def prepare(run: Run, scope: str = "full", log=lambda msg: None) -> dict:
                    "full": {"PLANNED", "APPROVED"}}[scope]
         if meta["status"] not in allowed:
             raise RunError(f"{scope} 준비는 {sorted(allowed)} 상태에서만 가능합니다 (현재 {meta['status']})")
+        check_slot(run)                  # one dataset's images on this host at a time (§78.6)
         inv, plan = run.load("inventory.json"), run.load("plan.json")
         if sha256_json(plan) != meta["plan_sha256"]:
             raise RunError("plan.json이 검증 이후 수정되었습니다 — `dataops validate` 로 다시 검증하세요")

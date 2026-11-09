@@ -62,7 +62,7 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 ```
 
 - **Tests**: check `MemAvailable` ≥ 12 GB first (D51), then
-  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **125 passed** (2026-11-09,
+  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **134 passed** (2026-11-09,
   ~100 s; needs the DB container; DB tests create and drop `dataops_test_*` schemas) and
   `bash /drive/project/onco-mlops/scripts/docs-gate.sh HEAD~1..HEAD` (silent = OK; also the pre-commit hook).
 - **Deploy**: the workspace is the production tree. Once a change is proven, `deploy/web.sh restart-web` (a running
@@ -72,8 +72,13 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 - **Health**: `curl -s -o /dev/null -w '%{http_code}' http://10.101.1.183:8096/` → 200 (bound to the LAN address
   only; `127.0.0.1` does not answer).
 - **Logs**: `deploy/web.sh logs`; job logs and events under `runtime/runs/<run>/` and `runtime/jobs/`.
+- **Images are transient (§78.6, U155)**: at most one run holds image files (`runtime/runs/<run>/artifacts/`);
+  `PYTHONPATH=. $PY -m dataops runs` shows the footprint, `… purge <run> [--yes]` deletes a run's images and keeps
+  its record (`dataops/retention.py`). Never free the slot on your own for a run that is not final.
+- **No transfer without the user (U156)**: no Central publish, no local-SCP send, no pilot, no approve unless the user
+  says so explicitly in this conversation.
 - **Backup**: user crontab 00:30 → `ops/backup/nightly_backup.sh` → `/mnt/ai-pipeline/backups/ai-platform-dataops/<date>/`
-  + `…/ai-platform-dataops-files/`; errors in `/tmp/ai-platform-dataops-backup.err`. Restore proof:
+  + `…/ai-platform-dataops-files/` (run metadata only, images excluded); errors in `/tmp/ai-platform-dataops-backup.err`. Restore proof:
   `ops/backup/restore_check.sh`. Details: `docs/OPERATIONS.md`.
 
 ## 3. Hard rules (never ask, comply)
@@ -94,7 +99,7 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 
 | Section | Module | Test that proves it | Mock the other side can use |
 |---|---|---|---|
-| §78 data management DB + intake flow (boundary, Central, identifiers) | `dataops/*`, `dataops/web/*`, `sql/**` | `tests/` (125) | — (no consumer yet) |
+| §78 data management DB + intake flow (boundary, Central, identifiers) | `dataops/*`, `dataops/web/*`, `sql/**` | `tests/` (134); `tests/test_retention.py` for §78.6 | — (no consumer yet) |
 | §78.2 local sender guard / Central only through `publish.py` | `local_send.py`, `publish.py` | `test_pipeline.py::test_non_local_target_refused`, `::test_central_ae_refused_even_on_loopback`, `test_agent_flow.py::test_central_publication_needs_config_and_approval` | — |
 | §65 nightly backup shape | `ops/backup/nightly_backup.sh`, `backup_tool.py` | `tests/test_backup_tool.py`; on the host `ops/backup/restore_check.sh` | — |
 | §10 documentation | `handoff/docs/` snapshot, `onco-mlops/docs/components/dataops.html` | `docs-gate.sh` (pre-commit hook + test command) | — |

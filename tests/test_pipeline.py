@@ -12,6 +12,7 @@ from dataops.local_send import destination, send_local
 from dataops.plan import build_plan, prefix_problems, validate_plan
 from dataops.prepare import prepare, verify_artifacts
 from dataops.records import build_records
+from dataops.retention import purge_images
 from dataops.runs import Run, RunError
 from dataops.synthetic import write_ct_series, write_nifti
 from dataops.util import sha256_file
@@ -167,6 +168,7 @@ def test_edited_plan_without_validate_is_refused(settings, mixed):
 def test_conversion_uids_stable_on_relocation_and_bytes_deterministic(settings, mixed, tmp_path):
     a = make_run(settings, mixed)
     ma = prepare(a)
+    purge_images(a, "compared by manifest")          # one run's images at a time (§78.6)
     moved = tmp_path / "moved" / "elsewhere"
     shutil.copytree(mixed, moved)
     b = make_run(settings, moved)

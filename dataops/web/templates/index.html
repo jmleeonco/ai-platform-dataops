@@ -9,6 +9,7 @@
     {% if db_info %}<b class="b-ok">연결됨</b><span>{{ settings.db.host }}:{{ settings.db.port }}/{{ settings.db.name }} · schema {{ db_info.migrations.current }}</span>
     {% else %}<b class="b-bad">연결 안 됨</b><span>{{ db_error }}</span>{% endif %}</div>
   <div class="stat"><span>Local SCP (파일럿)</span><b class="mono small">{{ settings.local_scp.called_ae }}@{{ settings.local_scp.host }}:{{ settings.local_scp.port }}</b><span>승인 전 확인용</span></div>
+  <div class="stat"><span>이 서버의 영상 (한 번에 한 데이터셋)</span>{% if images.holders %}<b class="{{ 'b-warn' if images.holders|length > 1 }}">{{ mb(images.bytes) }}</b><span>{% for h in images.holders %}<a class="mono" href="/runs/{{ h.run_id }}#images">{{ h.run_id }}</a> {{ h.dataset_name or '' }} {{ mb(h.images.bytes) }}{{ ' · ' if not loop.last }}{% endfor %}</span>{% else %}<b class="b-ok">0</b><span>없음 — 영상은 Central과 원본 폴더에 있습니다</span>{% endif %}</div>
   <div class="stat"><span>Central SCP (승인 후)</span>{% if central[0] %}<b class="mono small b-ok">{{ central[1] }}</b><span>활성</span>{% else %}<b class="small b-warn">미설정</b><span>{{ central[1] }}</span>{% endif %}</div>
 </div>
 
@@ -21,7 +22,7 @@
 <p><a class="button primary" href="/new">새 데이터셋 분석</a></p>
 <p class="muted">폴더를 지정하면 표가 만들어집니다 → 몇 명을 Local SCP로 보내 확인 → 최종 승인하면 Central로 전송·DB 등록.</p>
 <div class="table-wrap"><table>
-<tr><th>run</th><th>데이터셋</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th>전송</th><th>DB 등록</th><th>입력 폴더</th></tr>
+<tr><th>run</th><th>데이터셋</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th class="num">이 서버의 영상</th><th>전송</th><th>DB 등록</th><th>입력 폴더</th></tr>
 {% for r in runs %}
 <tr>
   <td><a class="mono" href="/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
@@ -29,12 +30,13 @@
   <td>{{ status(r.status) }}{% if r.job %} <span class="badge b-warn">{{ r.job.kind }} {{ r.job.status }}</span>{% endif %}</td>
   <td class="num">{{ r.revision }}</td>
   <td class="num">{{ r.instances if r.instances is not none else '-' }}</td>
+  <td class="num">{% if r.images.files %}{{ mb(r.images.bytes) }}{% elif r.images_purged %}<span class="muted" title="{{ r.images_purged.at }}">삭제됨</span>{% else %}<span class="muted">-</span>{% endif %}</td>
   <td>{% for t in r.transfers %}<div class="mono small">{{ '파일럿 ' if t.scope == 'pilot' }}{{ t.target }}</div>{% for k, v in t.counts.items() %}{{ status(k) }} {{ v }} {% endfor %}{% else %}<span class="muted">-</span>{% endfor %}</td>
   <td>{% if r.registered %}<span class="badge b-ok">등록</span> <span class="muted">{{ r.registered.at }}</span>{% else %}<span class="muted">미등록</span>{% endif %}</td>
   <td class="mono">{{ r.input_root }}</td>
 </tr>
 {% else %}
-<tr><td colspan="8" class="muted">아직 run이 없습니다. <a href="/new">새 데이터셋 분석</a></td></tr>
+<tr><td colspan="9" class="muted">아직 run이 없습니다. <a href="/new">새 데이터셋 분석</a></td></tr>
 {% endfor %}
 </table></div>
 </section>

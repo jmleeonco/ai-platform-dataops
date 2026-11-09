@@ -18,9 +18,10 @@ from ..config import Settings
 from ..jobs import active_job, check_input_root, deid_allowed, start_analysis, submit
 from ..plan import PREFIX_RE, validate_plan
 from ..publish import approve, central_ready
+from ..retention import check_slot, mb, purge_images, slot_holders
 from ..runs import EDITABLE, Run, RunError
 from ..spec import SAMPLES
-from ..util import sha256_json
+from ..util import RUN_ID_RE, sha256_json
 
 CSRF_COOKIE = "dataops_csrf"
 SPLIT_NAMES = {"train": "학습", "validation": "검증", "test": "테스트", "other": "기타", "none": "구분 없음"}
@@ -222,6 +223,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
         try:
             subjects_from_form(run, form)
             check_pilot_state(run)
+            check_slot(run)
             submit(settings, "sample", run.id, {}, form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e), anchor="samples")
@@ -235,6 +237,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
         try:
             subjects_from_form(run, form)
             check_pilot_state(run)
+            check_slot(run)
             samples = ((run.load("plan.json") or {}).get("pilot") or {}).get("subjects") or []
             subject = form.get("subject") or None
             if subject is not None and subject not in samples:
@@ -260,7 +263,8 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
                 raise RunError("공공 데이터는 가명화하지 않습니다 (내부 데이터 위치만)")
             (deid.enable if on else deid.disable)(plan)
             errors = save_plan(run, plan, f"비식별 {'켬' if on else '끔'} (웹)")
-            if not errors and (plan.get("pilot") or {}).get("subjects"):
+            if not errors and (plan.get("pilot") or {}).get("subjects") \
+                    and not slot_holders(settings.runs_dir, except_id=run.id):
                 submit(settings, "sample", run.id, {}, form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e))
@@ -273,8 +277,10 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
         try:
             if active_job(settings, run.id):
                 raise RunError("작업이 진행 중입니다")
-            approve(run, form.get("approver", ""), form.get("confirm", ""), form.get("note", ""))
             ok, why = central_ready(settings.central)
+            if ok:
+                check_slot(run)                # the full freeze needs the slot: free it before approving
+            approve(run, form.get("approver", ""), form.get("confirm", ""), form.get("note", ""))
             if ok:
                 submit(settings, "publish", run.id, {"target": settings.central.key}, form.get("approver", ""))
                 return back(run.id, msg="승인했습니다. 전체 변환 → Central 전송 → DB 등록을 시작합니다.", anchor="approve")
@@ -292,10 +298,32 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
                 raise RunError(why)
             if not run.meta.get("approval"):
                 raise RunError("승인 기록이 없습니다")
+            check_slot(run)
             submit(settings, "publish", run.id, {"target": settings.central.key}, form.get("by", ""))
         except RunError as e:
             return back(run.id, err=str(e), anchor="central")
         return back(run.id, msg=f"Central 전송을 시작했습니다 → {settings.central.key}", anchor="central")
+
+    @app.post("/runs/{run_id}/purge")
+    async def purge(request: Request, run_id: str):
+        """The owner deletes this run's image files on this host; the record stays (§78.6). `next` returns to the
+        run page that needed the slot."""
+        run = get_run(run_id)
+        form = await checked_form(request)
+        to = form.get("next") if RUN_ID_RE.fullmatch(form.get("next") or "") else run.id
+        try:
+            by = form.get("by", "")
+            if not by or len(by) > 64:
+                raise RunError("삭제하는 사람 이름을 입력하세요 (1..64자)")
+            if active_job(settings, run.id):
+                raise RunError("이 run의 작업이 진행 중입니다")
+            r = purge_images(run, "owner (web)", by)
+        except RunError as e:
+            return back(to, err=str(e), anchor="images")
+        if r.get("already"):
+            return back(to, msg=f"{run.id}: 지울 영상이 없습니다", anchor="images")
+        return back(to, msg=f"{run.id}: 이 서버의 영상 {r['files']:,}개 ({mb(r['bytes'])})를 삭제했습니다. "
+                            f"기록(plan, manifest, 전송 기록, 보고서)은 남아 있습니다.", anchor="images")
 
     @app.post("/runs/{run_id}/reanalyze")
     async def reanalyze(request: Request, run_id: str):

@@ -6,6 +6,7 @@ from dataops import db as dbmod
 from dataops.local_send import send_local
 from dataops.prepare import prepare
 from dataops.records import build_records
+from dataops.retention import purge_images
 
 
 @pytest.fixture
@@ -67,6 +68,7 @@ def test_same_content_new_run_reuses_identities(conn, settings, mixed):
     a = make_run(settings, mixed)
     prepare(a)
     dbmod.register_run(conn, a)
+    purge_images(a, "registered")                     # one run's images at a time (§78.6)
     b = make_run(settings, mixed)
     prepare(b)
     stats = dbmod.register_run(conn, b)
@@ -79,6 +81,7 @@ def test_conflicting_bytes_roll_back_everything(conn, settings, mixed):
     a = make_run(settings, mixed)
     prepare(a)
     dbmod.register_run(conn, a)
+    purge_images(a, "registered")
     before = counts(conn)
     b = make_run(settings, mixed)
     prepare(b)

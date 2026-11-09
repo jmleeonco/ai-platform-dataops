@@ -5,7 +5,10 @@
 #                                                    db/dataops_deid_map.sql.gz (+ .row_counts.tsv),
 #                                                    runs/runs-metadata.tar.gz, repo.bundle, crontab.txt,
 #                                                    manifest.json (sizes, sha256, commit, duration, ok)
-#   <root>/ai-platform-dataops-files/<YYYY-MM-DD>/  rsync --link-dest snapshot of runtime/runs (artifacts)
+#   <root>/ai-platform-dataops-files/<YYYY-MM-DD>/  rsync --link-dest snapshot of runtime/runs, without images
+#
+# Images are never backed up (CONTRACT §78.6): Central or the source folder holds them; a run's manifests (every
+# sha256), journals and reports are kept, so a run can be frozen again and proven equal.
 #   <root>/ai-platform-dataops/backup.log           one line per run
 #
 # Secrets (~/.config/ai-platform-dataops/env) are never copied. Only folders under
@@ -24,6 +27,7 @@ DB_NAME="${DB_NAME:-public_dataops}"
 MAP_NAME="${DATAOPS_DEIDMAP_DB_NAME:-$(sed -n 's/^DATAOPS_DEIDMAP_DB_NAME=//p' "${DATAOPS_CONFIG_DIR:-$HOME/.config/ai-platform-dataops}/env" 2>/dev/null || true)}"
 MAP_NAME="${MAP_NAME:-dataops_deid_map}"
 TOOL=(python3 "$REPO/ops/backup/backup_tool.py")
+PIXEL_EXCLUDES=(--exclude='/*/artifacts/' --exclude='*.dcm' --exclude='*.nii' --exclude='*.nii.gz')   # §78.6
 DAY="$(date +%F)"
 STARTED="$(date +%s)"
 LOCK="/tmp/$SYSTEM-backup.lock"     # local lock file: the NAS is NFS v3 with local_lock=none
@@ -85,16 +89,17 @@ fi
 
 # 2. Run metadata (plans, inventories, manifests, UID maps, transfer journals, registrations).
 if [[ -d "$RUNTIME/runs" ]]; then
-  tar -czf "$WORK/runs/runs-metadata.tar.gz" -C "$RUNTIME" --exclude='runs/*/artifacts' --exclude='*.lock' \
-    --exclude='*.tmp' runs $([[ -d "$RUNTIME/jobs" ]] && echo jobs)
+  tar -czf "$WORK/runs/runs-metadata.tar.gz" -C "$RUNTIME" --exclude='runs/*/artifacts' --exclude='*.dcm' \
+    --exclude='*.nii' --exclude='*.nii.gz' --exclude='*.lock' --exclude='*.tmp' runs $([[ -d "$RUNTIME/jobs" ]] && echo jobs)
 fi
 
-# 3. Frozen artifacts: hard-linked daily snapshot (unchanged files cost no space).
+# 3. Run folders without their images: hard-linked daily snapshot (unchanged files cost no space).
 PREV="$(find "$FILES_BASE" -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}' \
         ! -name "$DAY" | sort | tail -1)"
 mkdir -p "$SNAP_WORK"
 if [[ -d "$RUNTIME/runs" ]]; then
-  rsync -a --delete --exclude='*.lock' --exclude='*.tmp' ${PREV:+--link-dest="$PREV"} "$RUNTIME/runs/" "$SNAP_WORK/"
+  rsync -a --delete --delete-excluded "${PIXEL_EXCLUDES[@]}" --exclude='*.lock' --exclude='*.tmp' \
+    ${PREV:+--link-dest="$PREV"} "$RUNTIME/runs/" "$SNAP_WORK/"
 fi
 ART_CHECK="$("${TOOL[@]}" verify-artifacts "$SNAP_WORK")"
 

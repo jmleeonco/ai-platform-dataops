@@ -9,7 +9,7 @@ from uuid import UUID, uuid5
 
 import pydicom
 
-from . import deid
+from . import deid, retention
 from .runs import Run
 
 # The management DB (public_dataops): pseudonymised values only.
@@ -261,6 +261,9 @@ def outgoing_headers(run: Run, plan: dict, manifest: dict, active: list[dict]) -
         try:
             if p is not None and p.exists():
                 out[s["series_uid"]] = _read_head(str(p), p.stat().st_mtime_ns)
+                continue
+            if rel is not None:                       # images purged: the header kept at purge time
+                out[s["series_uid"]] = head_values(retention.header(run, rel))
                 continue
         except Exception:  # noqa: BLE001 - an unreadable artifact falls back to the plan
             pass

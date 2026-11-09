@@ -27,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 from .. import __version__
 from .. import db as dbmod
+from .. import retention
 from ..compare import sample_view
 from ..config import Settings
 from ..jobs import active_job, deid_allowed, job_log, list_jobs
@@ -193,6 +194,26 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
     if warm_views:
         threading.Thread(target=warm_loop, daemon=True).start()
 
+    fp_cache: dict = {}
+
+    def images_of(run_id: str) -> dict:
+        """A run's local image footprint (files, bytes); walked at most every 10 s (a full run has ~10^5 files)."""
+        hit = fp_cache.get(run_id)
+        if hit and time.monotonic() - hit[0] < 10:
+            return hit[1]
+        fp = retention.footprint(settings.runs_dir / run_id)
+        fp_cache[run_id] = (time.monotonic(), fp)
+        return fp
+
+    def slot_view(run_id: str) -> list[dict]:
+        """Other runs holding images (the one-slot rule, §78.6), with their size and whether they can be purged."""
+        out = []
+        for h in retention.slot_holders(settings.runs_dir, except_id=run_id):
+            meta = Run(settings.runs_dir, h["run_id"]).meta
+            out.append({**h, **images_of(h["run_id"]), "refusal": retention.purge_refusal(meta),
+                        "busy": bool(active_job(settings, h["run_id"]))})
+        return out
+
     # ------------------------------------------------------------------ dashboard
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -212,7 +233,10 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
             m["transfers"] = [{"target": j["target_key"], "scope": j.get("scope", "full"), "counts": _counts(j)}
                               for j in journals(run)]
             m["job"] = active_job(settings, m["run_id"])
-        return page(request, "index.html", runs=runs, db_info=db_info, db_error=db_error,
+            m["images"] = images_of(m["run_id"])
+        holders = [m for m in runs if m["images"]["files"]]
+        images = {"bytes": sum(m["images"]["bytes"] for m in holders), "holders": holders}
+        return page(request, "index.html", runs=runs, db_info=db_info, db_error=db_error, images=images, mb=retention.mb,
                     backups=_backups(settings)[:5], central=central_ready(settings.central))
 
     # ------------------------------------------------------------------ run
@@ -242,7 +266,9 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
                     db_sec=secs.get(7),
                     sample=run_view(run, "sample", lambda: sample_view(run, internal)) if plan.get("series")
                     else {"ready": False},
-                    internal=internal,
+                    internal=internal, mb=retention.mb,
+                    retention={**retention.state(run, meta), "refusal": retention.purge_refusal(meta)},
+                    slot=slot_view(run.id),
                     header_secs=[s for s in (report or {}).get("sections", []) if s["no"] == 10 and s["rows"]],
                     cover=run_view(run, "cover", lambda: coverage(run, plan, run.load("manifest.json")))
                     if plan.get("series") else None)
@@ -413,7 +439,8 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
                 if rec:
                     status.setdefault(i["sop_uid"], []).append(f"{j['target_key']}: {rec['status']}")
         geometry = _geometry(run, instances[0]) if instances else None
-        return page(request, "series.html", run=run, s=s, instances=[] if s["kind"] == "rtstruct" else instances,
+        return page(request, "series.html", run=run, s=s, purged=run.meta.get("images_purged")
+                    if not retention.holds_images(run.dir) else None, instances=[] if s["kind"] == "rtstruct" else instances,
                     rs_instances=instances if s["kind"] == "rtstruct" else [], report=report, delivery=status,
                     frozen_in=frozen_in, overlays=overlays,
                     geometry=geometry, study=next((st for st in plan["studies"] if st["study_uid"] == s["study_uid"]),
@@ -586,7 +613,7 @@ def _slice_order(run: Run, instances: list[dict]) -> list[dict]:
 
 def _geometry(run: Run, inst: dict) -> dict:
     try:
-        ds = pydicom.dcmread(run.dir / inst["path"], stop_before_pixels=True)
+        ds = retention.header(run, inst["path"])
     except Exception:  # noqa: BLE001
         return {}
     out = {}

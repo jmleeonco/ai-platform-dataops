@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import deid, nfs
 from .config import Settings
+from .retention import mb, purge_failed, purge_if_final, purge_superseded
 from .runs import Run, RunError, list_runs
 from .util import now_iso, read_json, write_json
 
@@ -133,7 +134,9 @@ def worker(settings: Settings, once: bool = False, poll_s: float = 2.0) -> None:
     for r in list_runs(settings.runs_dir):
         if r.get("status") == "ANALYZING" and r["run_id"] not in waiting:
             try:
-                Run(settings.runs_dir, r["run_id"]).set_status("ANALYSIS_FAILED", "분석 작업이 중간에 중지됨 — 다시 분석하세요")
+                failed = Run(settings.runs_dir, r["run_id"])
+                failed.set_status("ANALYSIS_FAILED", "분석 작업이 중간에 중지됨 — 다시 분석하세요")
+                purge_failed(failed)
             except RunError:
                 pass
     while True:
@@ -185,7 +188,9 @@ def run_job(settings: Settings, job: dict) -> dict:
         log(traceback.format_exc()[-4000:])
         if job["kind"] == "analyze":
             try:
-                Run(settings.runs_dir, job["run_id"]).set_status("ANALYSIS_FAILED", str(e)[:500])
+                failed = Run(settings.runs_dir, job["run_id"])
+                failed.set_status("ANALYSIS_FAILED", str(e)[:500])
+                purge_failed(failed)
             except RunError:
                 pass
     job["finished_at"] = now_iso()
@@ -201,6 +206,8 @@ def _analyze(settings: Settings, run: Run, job: dict, log) -> dict:
     root = Path(job["params"]["input_root"])
     if run.meta["status"] != "ANALYZING":
         run.set_status("ANALYZING", "재분석")
+    for p in purge_superseded(run):
+        log(f"대체된 run {p['run_id']}의 영상 삭제: {p['files']} 파일, {mb(p['bytes'])}")
     log(f"scan {root}")
     s = scan(root)
     run.save("scan.json", s)
@@ -290,6 +297,7 @@ def _publish(settings: Settings, run: Run, job: dict, log) -> dict:
             else:
                 r["registered"] = dbmod.register_run(conn, run)
         log(f"DB registered: {r['registered']}")
+        r["purged"] = purge_if_final(run, log)       # Central is the home now (§78.6)
     else:
-        log("DB 설정 없음 — 등록 생략")
+        log("DB 설정 없음 — 등록 생략 (영상 유지)")
     return r

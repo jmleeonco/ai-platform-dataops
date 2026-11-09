@@ -16,7 +16,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 
-from . import deid, nfs
+from . import deid, nfs, retention
 from .legacy import n2d
 from .local_send import journals
 from .prepare import MANIFESTS, image_comments, pilot_series
@@ -501,7 +501,7 @@ def real_tags(run: Run, uids: set) -> dict:
             if u in out:
                 continue
             try:
-                ds = pydicom.dcmread(run.dir / inst["path"], stop_before_pixels=True)
+                ds = retention.header(run, inst["path"])
             except Exception:  # noqa: BLE001 - the series then shows as not checked
                 continue
             ctx = {"frozen_n": counts[u]}
@@ -591,7 +591,7 @@ def build(run: Run, refresh: bool = False) -> dict:
         if r is None or any(h["modality"] == mod for h in headers_view):
             continue
         try:
-            ds = pydicom.dcmread(run.dir / r["path"], stop_before_pixels=True)
+            ds = retention.header(run, r["path"])
         except Exception:  # noqa: BLE001
             continue
         headers_view.append({"modality": ds.get("Modality"), "series": c["s"]["series_key"],

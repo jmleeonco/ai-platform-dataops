@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pydicom
 
-from . import deid
+from . import deid, retention
 from .inventory import read_dicom_header
 from .metadata import HEADERS_FILE, KIND_LABEL, TAG_SOURCE, read_nifti_header
 from .prepare import pilot_series
@@ -284,7 +284,7 @@ def sample_view(run: Run, internal: bool = True) -> dict:
         c["artifact"] = str(run.dir / inst["path"]) if inst else None
         if inst:
             try:
-                out_ds = pydicom.dcmread(run.dir / inst["path"], stop_before_pixels=True)
+                out_ds = retention.header(run, inst["path"])
             except Exception:  # noqa: BLE001 - shown as "not extracted"
                 out_ds = None
         label = f"{KIND_LABEL.get(s['kind'], s['kind'])} {s.get('modality') or ''}".strip()

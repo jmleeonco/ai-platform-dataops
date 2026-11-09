@@ -17,6 +17,7 @@
   pilot RUN                          freeze the plan's pilot subjects and send them to the LOCAL SCP
   approve RUN --by NAME --confirm DATASET_NAME   record approval after a fully received pilot
   publish RUN [--dry-run]            approved run: full freeze -> Central SCP -> DB (needs DATAOPS_CENTRAL_*)
+  purge RUN [--yes]                  delete the run's image files on this host, keep its record (§78.6)
 """
 from __future__ import annotations
 
@@ -130,6 +131,11 @@ def main(argv=None) -> int:
     pb = sub.add_parser("publish")
     pb.add_argument("run")
     pb.add_argument("--dry-run", action="store_true")
+    pg = sub.add_parser("purge", help="delete a run's image files on this host (metadata kept)")
+    pg.add_argument("run")
+    pg.add_argument("--yes", action="store_true", help="do not ask")
+    pg.add_argument("--by", default="cli")
+    pg.add_argument("--reason", default="manual (cli)")
     sv = sub.add_parser("serve")
     sv.add_argument("--host")
     sv.add_argument("--port", type=int)
@@ -174,8 +180,27 @@ def main(argv=None) -> int:
         elif args.cmd == "register":
             cmd_register(args, settings)
         elif args.cmd == "runs":
+            from .retention import footprint, mb
+            total = 0
             for m in list_runs(settings.runs_dir):
-                print(f"{m['run_id']}  {m['status'] or '-':14} rev {m['revision']}  {m.get('dataset_name') or ''}")
+                fp = footprint(settings.runs_dir / m["run_id"])
+                total += fp["bytes"]
+                img = f"images {mb(fp['bytes'])} ({fp['files']} files)" if fp["files"] else \
+                    ("images purged" if m.get("images_purged") else "no images")
+                print(f"{m['run_id']}  {m['status'] or '-':14} rev {m['revision']}  {img:32} {m.get('dataset_name') or ''}")
+            print(f"local image footprint: {mb(total)}")
+        elif args.cmd == "purge":
+            from .retention import footprint, mb, purge_images
+            run = Run(settings.runs_dir, args.run)
+            fp = footprint(run.dir)
+            print(f"{run.id} ({run.meta['status']}): {fp['files']} image files, {mb(fp['bytes'])}")
+            if fp["files"] and not args.yes:
+                if not sys.stdin.isatty():
+                    raise RunError("확인 없이 지우지 않습니다 — --yes")
+                if input("delete them? [y/N] ").strip().lower() != "y":
+                    print("kept")
+                    return 1
+            _print(purge_images(run, args.reason, args.by))
         elif args.cmd == "show":
             run = Run(settings.runs_dir, args.run)
             meta = run.meta
@@ -210,7 +235,6 @@ def main(argv=None) -> int:
             _print(run_deploy_import(settings, rescan=args.rescan, dry_run=args.dry_run))
         elif args.cmd == "deid-map-save":
             from .jobs import save_deid_map
-            from .runs import list_runs
             ids = [r["run_id"] for r in list_runs(settings.runs_dir)] if args.run == "all" else [args.run]
             for rid in ids:
                 run = Run(settings.runs_dir, rid)
@@ -230,7 +254,6 @@ def main(argv=None) -> int:
                 print(job["status"], job.get("error") or job.get("result"))
                 return 0 if job["status"] == "done" else 1
         elif args.cmd == "pilot":
-            from .prepare import prepare
             run = Run(settings.runs_dir, args.run)
             m = prepare(run, "pilot", print)
             print(f"pilot frozen: {len(m['instances'])} instances")
@@ -251,6 +274,8 @@ def main(argv=None) -> int:
             _print(publish_central(run, settings, dry_run=args.dry_run))
             if not args.dry_run and settings.db_configured:
                 cmd_register(argparse.Namespace(run=run.id), settings)
+                from .retention import purge_if_final
+                purge_if_final(run, print)
         elif args.cmd == "serve":
             import uvicorn
             from .web.app import create_app

@@ -12,6 +12,7 @@ from __future__ import annotations
 from .config import CentralScp, Settings
 from .legacy import sender
 from .local_send import send_with_journal
+from .retention import check_slot
 from .runs import Run, RunError
 from .util import now_iso, sha256_json
 
@@ -134,6 +135,7 @@ def publish_central(run: Run, settings: Settings, dry_run: bool = False) -> dict
         manifest = run.load("manifest.json")
         if not approval or not manifest or manifest["plan_sha256"] != approval["plan_sha256"]:
             raise RunError("승인된 plan으로 고정된 manifest가 아닙니다 — Central 전송 거부")
+        check_slot(run)
         cov = coverage(run, manifest=manifest)       # every file of the folder decided, every series frozen
         if cov["unclassified"] or cov["missing_series"]:
             raise RunError(f"폴더 전체 처리 내역이 맞지 않습니다 (미분류 파일 {cov['unclassified']}개, "
