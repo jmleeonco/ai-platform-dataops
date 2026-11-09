@@ -406,7 +406,9 @@
     the files, case kept, each with the number of files holding it; <code>via</code> tells why a name resolves —
     <code>exact</code>, <code>registry</code> (one of ai-pipeline's alternative names, or another case or spacing),
     <code>hub</code> (an alternative name added here) — and a project's own §39 names are not used there. The list counts
-    at most 500 unread structure sets for <i>Read ROI names</i>. Details: <a href="../components/hub.html#s54-dataset-roi-names">hub
+    at most 500 unread structure sets for <i>Read ROI names</i>. With a modality chosen, a structure set counts unless the
+    hub knows its images are of another modality (many imported datasets keep their structure sets in studies the hub has
+    no images of); reading names updates the counts at once (S54b). Details: <a href="../components/hub.html#s54-dataset-roi-names">hub
     S54</a>, <a href="datasets.html#hub-aliases">the ROI registry</a>.</span>
     <span id="dataset-roi-names-web"><b>On the page (W43).</b> <b>Dataset</b> sits above the search form: type or pick a
     prefix (the list shows <i>&lt;prefix&gt; · n series · n labels · n unread</i>; empty = any dataset). Choosing one sets
@@ -420,7 +422,8 @@
     target — to add it; the results are searched again, so the Target ROIs column follows. A refusal (another ROI's name,
     an unknown ROI) is the hub's sentence under the panel. × asks first, then removes a hub-added name. <i>n structure sets
     not read yet</i> + <b>Read ROI names</b> reads them 20 at a time with progress and Cancel, then the panel counts again.
-    A labeler (or any non-lead) sees the panel read-only: no drag, no menu, no ×.</span></li>
+    A labeler (or any non-lead) sees the panel read-only: no drag, no menu, no ×. A search that read structure
+    sets (or <i>Read ROI names</i> in the results) makes the panel count once more (W43b).</span></li>
     </ul></li>
   </ol>
   <p><i>Advanced: any template, any cohort</i> opens the old wizard (<code>/training/advanced</code>). The old

@@ -1059,6 +1059,14 @@
   <div class="note warn"><b>The Labeling tab is gone</b><span>Settings › General › Labeling › "Enable labeling mode" is off on this PC (per user); tick it and the tab is back at once.</span></div>
   <div class="note warn"><b>The save went to the wrong project</b><span>the series belongs to several projects: open it from the Project page of the project you mean (Open takes the case there) — the save follows that assignment.</span></div>
   <div class="note warn"><b>My work says the login is not bound</b><span>the hub is older than 1.8 (accounts register themselves since CONTRACT §14) or it refused the login (a hub account of that name is disabled, or the login is linked to another hub user) — the Hub page shows the hub's answer; ask an admin.</span></div>
+  <h3 id="central-ack">A send made from OncoStudio itself is acknowledged (v1.67 §27.9, U161, D341)</h3>
+  <p>OncoStudio keeps its own <i>send to PACS</i>. When the app's C-STORE to the central SCP succeeds, the app tells the hub
+  (<code>POST /api/v1/assignments/{id}/central-ack</code>); the hub checks the structure set is really on the central PACS
+  (one C-FIND) and records it as sent with origin <i>OncoStudio</i>. Approval stays separate: an approved row becomes
+  <b>Sent</b>; a row not yet reviewed shows <b>Sent · review pending</b> and stays in the review queue — the reviewer's
+  approval later keeps the send, nothing is sent twice. A lead's hub send (§27.7) is unchanged and remains the only C-STORE
+  the hub itself performs. A one-off backfill (<code>central-ack-backfill</code>) records structure sets that reached the PACS
+  before this rule. Hub S56, app O33, web W45.</p>
 </section>
 
 <footer>
