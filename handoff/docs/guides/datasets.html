@@ -164,6 +164,19 @@
   <code>custom</code> (관리 › ROIs). The hub never writes ai-pipeline's file. When the file later lists the same name, the
   entry becomes the file's (with the file's alternative names), and the <code>roi_custom</code> row stays as the record
   of who added it.</p>
+  <p id="hub-aliases"><b>Alternative names added on the hub (v1.65 §80.1, U159, D339).</b> A lead can give a registry or
+  custom ROI an alternative name of the hub's own — in the training wizard by dragging a dataset's ROI name onto a target
+  ROI: <code>POST /ui/api/registry/aliases {official, alias}</code> (lead or admin). <code>201</code> stores it (table
+  <code>roi_alias_hub</code>: the alias as typed, the ROI, who, when); a name that already means that ROI answers
+  <code>200 created: false</code>; a ROI the registry does not know → <code>404 unknown ROI: …</code>; a name that already means
+  another ROI (its official name, one of its alternative names, a custom ROI) → <code>422 alias names another ROI: …</code>.
+  The alias is served with the registry at once — <code>registry.json</code> (<code>aliases</code> and <code>hub_aliases</code>),
+  <code>registry.csv</code> (<code>alternative_names</code>), the pickers' source — and counts in every hub comparison of ROI
+  names, in every project and job. <code>DELETE /ui/api/registry/aliases/{official}/{alias}</code> removes a hub alias;
+  the file's own alternative names cannot be removed there (<code>403 owned by the registry file</code>). 관리 › ROIs lists
+  the hub's aliases with who added them (<code>GET /ui/api/registry/roi</code> <code>hub_aliases</code>; <code>GET
+  /ui/api/registry/aliases?official=</code> lists both kinds). When ai-pipeline's file later lists the same name, it is the
+  file's.</p>
   <p>Since v1.55 §72 (S47) <code>GET /ui/api/registry/roi</code> is part of the public set: every signed-in account
   (labelers too) and a visitor without a login read it — the roadmap's ROI picker uses it. An anonymous reply carries
   no names: <code>custom[].created_by</code> is <code>null</code> (<code>app/ui/routes_registry.py</code> <code>roi</code>,

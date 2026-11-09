@@ -191,6 +191,22 @@
   <code>GET /ui/api/roi-board/{roi}/{modality}</code> (+ <code>history</code>); <code>PUT …/plan</code> (lead);
   <code>GET/POST /ui/api/roi-requests</code>, <code>POST …/{id}/support</code>, <code>POST …/{id}/decision</code> (lead).
   Live event <code>roi_board</code>.</p>
+  <h3 id="roadmap-stages">The stages (v1.66 §81.3, U160)</h3>
+  <p><b>Not started</b> — on the board only because a project targets the ROI or a model holds it; nothing drawn, no plan.
+  <b>Planned</b> — a lead set a plan (dates, owner, goal) and no label exists yet. <b>Labeling</b> — at least one human label
+  holds the ROI; the bar is labels / goal. <b>Training</b> — a hub training job whose target ROIs include it is queued or
+  running. <b>Validating</b> — a model holding the ROI exists in the model tree and is being evaluated or reviewed; not yet in
+  a release. <b>Released</b> — the newest live release package ships the ROI. <b>On hold</b> — a lead paused it (plan status).
+  The <b>?</b> beside the stage counts on the roadmap shows this text.</p>
+  <h3 id="roadmap-estimates">How the expected date is computed (v1.66 §81.1, U160, D340)</h3>
+  <p>From the hub's own records, recomputed hourly: the median <i>active drawing seconds</i> per ROI (per-ROI median when
+  20 or more samples in 90 days, else the platform median) summed over the project's target ROIs — more ROIs, more time — times
+  an overhead factor (the review / open / save time measured around the drawing); divided by a labeler's measured active
+  seconds per working day times the labelers who delivered on the project in the last 14 days; the result in working days
+  (Mon–Fri) is the labeling end; <b>training + validation + deploy is counted as one week</b> after it. Rows without a goal
+  have no estimate and say so. The estimate is drawn dotted where no plan exists and never overwrites a plan; a lead's
+  <i>Adopt estimate</i> turns it into one (a logged plan change). <code>GET /ui/api/roi-board/estimate-basis</code> shows the
+  live figures; hub S55 (route), web W44 (views, bars, popup).</p>
 </section>
 
 <section id="gotchas">

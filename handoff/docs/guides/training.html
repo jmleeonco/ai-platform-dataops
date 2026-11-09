@@ -398,7 +398,29 @@
     table <code>roi_alias_hub</code>; × removes it; ai-pipeline's own aliases stay locked), served at once in
     <code>registry.json</code> / <code>registry.csv</code> — so the executor's converter and every hub matching know the name with
     no executor or ai-pipeline change. Unread structure sets are read with <i>Read ROI names</i> (20 per call, the §75 route).
-    Aliases added here apply to every project and job; the §39 per-project dialog is unchanged.</li>
+    Aliases added here apply to every project and job; the §39 per-project dialog is unchanged.
+    <span id="dataset-roi-names-hub"><b>Hub (S54).</b> The Dataset list counts image series per prefix and shows a prefix
+    from 2 series; a labels count is the structure sets whose ROI names the hub knows (a person's or legacy label, or a
+    structure set already read from ONCOPACS), unread = the rest the hub has seen on ONCOPACS; <code>bare</code> marks a
+    prefix that is a whole PatientID without <code>_</code> (the search then uses that ID). The panel's names are as written in
+    the files, case kept, each with the number of files holding it; <code>via</code> tells why a name resolves —
+    <code>exact</code>, <code>registry</code> (one of ai-pipeline's alternative names, or another case or spacing),
+    <code>hub</code> (an alternative name added here) — and a project's own §39 names are not used there. The list counts
+    at most 500 unread structure sets for <i>Read ROI names</i>. Details: <a href="../components/hub.html#s54-dataset-roi-names">hub
+    S54</a>, <a href="datasets.html#hub-aliases">the ROI registry</a>.</span>
+    <span id="dataset-roi-names-web"><b>On the page (W43).</b> <b>Dataset</b> sits above the search form: type or pick a
+    prefix (the list shows <i>&lt;prefix&gt; · n series · n labels · n unread</i>; empty = any dataset). Choosing one sets
+    Patient ID to <code>&lt;prefix&gt;_*</code> (a bare ID: the ID itself), keeps the other filters and searches; <i>Any
+    dataset</i> clears it. The panel <b>ROI names in &lt;prefix&gt;</b> stands beside the results (below them on a narrow
+    screen) with the line <i>Alternative names added here apply to every project and training job</i>. Left, each target ROI
+    is a drop zone: ai-pipeline's alternative names grey with a lock (the first six, <i>+n more</i>), names added in the hub
+    with ×, the dataset's names that already mean it in green, and <i>· n names</i>. Right, the dataset's names as chips
+    <i>name · files</i>: bold = no ROI uses it yet (listed first), dimmed <i>→ ROI</i> = it already means a target or
+    another ROI. Drag a chip onto a target — or select it (Enter) and choose <i>Use as alternative name of…</i> → the
+    target — to add it; the results are searched again, so the Target ROIs column follows. A refusal (another ROI's name,
+    an unknown ROI) is the hub's sentence under the panel. × asks first, then removes a hub-added name. <i>n structure sets
+    not read yet</i> + <b>Read ROI names</b> reads them 20 at a time with progress and Cancel, then the panel counts again.
+    A labeler (or any non-lead) sees the panel read-only: no drag, no menu, no ×.</span></li>
     </ul></li>
   </ol>
   <p><i>Advanced: any template, any cohort</i> opens the old wizard (<code>/training/advanced</code>). The old
