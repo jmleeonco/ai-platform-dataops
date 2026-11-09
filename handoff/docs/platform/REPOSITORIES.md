@@ -76,7 +76,7 @@ The `pipeline_adapter/` code it owns lives in the executor repository.
 | `sql/migrations/`, `sql/deid_map_migrations/` | `public_dataops` (0001–0007) and the pseudonym map DB |
 | `deploy/` | `web.sh` (web + worker), `db.sh` (the MariaDB container) |
 | `ops/backup/` | `nightly_backup.sh` (00:30, §65 shape), `restore_check.sh` |
-| `tests/` | pytest (125; DB tests use `dataops_test_*` schemas; synthetic images, loopback receiver) |
+| `tests/` | pytest (139; DB tests use `dataops_test_*` schemas; synthetic images, loopback receiver) |
 | `docs/` | `HANDOVER.md` (current state, hard rules, code map — read first), `OPERATIONS.md`, `WORKFLOW.md`, `IMPLEMENTATION.md`, `DATABASE.md`, `VALIDATION.md`, `CONTEXT.md` |
 | `.claude/skills/` | the system's own skills (`public-dataops`, `dataset-intake`, `send-local-scp`) |
 | `AGENTS.md`, `CLAUDE.md` | the owner's constraints and the role section (platform, §78) |
