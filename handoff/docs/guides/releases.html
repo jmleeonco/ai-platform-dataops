@@ -213,7 +213,9 @@
   A labeler's day is the minutes the app reported as active on a working day with at least 10 such minutes (about 2.2
   hours). A project with 10 or more labels with recorded seconds in 90 days uses its own median item time
   (<code>basis: project</code>); otherwise the per-ROI medians (<code>basis: platform</code>). The plan's label target, when
-  set, is the goal of the whole row. Training and validating rows have no labeling left: their release is a week from today
+  set, is the goal of the whole row; without one a project's per-ROI goal or target count is used, and without those the
+  project's live items — every item still in the project is to be labeled (S55b, <code>goal_source</code> plan | project |
+  items). Only a project with no live items has no estimate (<i>no goal</i>). Training and validating rows have no labeling left: their release is a week from today
   (training: from the running job's start); a released row has no estimate. Today counts as a working day when it is one,
   so a single day of work ends today. Details: <a href="../components/hub.html#s55-roadmap-estimates">hub S55</a>.</p>
   <p id="roadmap-view-web"><b>On the page (W44).</b> A <b>View</b> bar above the timeline / table: <i>Group by</i> none ·
@@ -225,7 +227,8 @@
   (<code>?group=project&amp;show=progress&amp;sort=name&amp;density=compact</code>) and in this browser. Where a row has no plan
   dates the timeline draws the estimate dotted — Labeling to the expected labeling end, then one week <i>Training ·
   Validating · Deploy</i> — and an outlined diamond at the expected release; hovering it reads <i>estimated: n items left ×
-  r ROIs ≈ h h of drawing ÷ l labeler(s) · basis project | platform</i>. A row with plan dates draws the plan (hatched) and
+  r ROIs ≈ h h of drawing ÷ l labeler(s) · basis project | platform</i>, then the goal it rests on (W44b) — <i>goal:
+  plan target n</i>, <i>project goal n</i> or <i>all n project items</i> (also under the table's ≈ date). A row with plan dates draws the plan (hatched) and
   the tooltip adds <i>estimate: &lt;date&gt;</i>; a row without a goal says <i>no goal set</i> and draws no estimate. The
   table's Target column shows <i>≈ date</i> in italics, the release calendar places such ROIs by that date (≈). A lead's
   <b>Adopt estimate</b> is in the ROI's dialog and in the bulk bar for a selection (one plan change per ROI: labeling end,

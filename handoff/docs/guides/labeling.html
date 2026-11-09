@@ -1067,6 +1067,14 @@
   approval later keeps the send, nothing is sent twice. A lead's hub send (§27.7) is unchanged and remains the only C-STORE
   the hub itself performs. A one-off backfill (<code>central-ack-backfill</code>) records structure sets that reached the PACS
   before this rule. Hub S56, app O33, web W45.</p>
+  <p id="central-ack-web"><b>On the hub's pages (W45).</b> The stage reads <b>Sent · review pending</b> (a dashed green pill)
+  while no verdict approved the row; its tooltip says <i>Sent from OncoStudio by SHK at &lt;time&gt;; not reviewed yet</i>.
+  A Sent pill's tooltip names where the send came from: <i>Sent from the hub by &lt;lead&gt;</i>, <i>Sent from OncoStudio by
+  &lt;initials&gt;</i> or <i>On the PACS before the hub</i>. The project page's strip and My works show a <i>Sent · review
+  pending n</i> chip that filters the list to those rows; the review queue lists them as it lists labeled ones, with the
+  pill. Approving one says <i>The send is kept — nothing is sent again</i> (requesting changes: the send is set aside and
+  the corrected label is sent after its review). The case's History lists the entry <i>Sent · acknowledged by OncoStudio ·
+  verified on the central PACS</i> (or <i>found on the central PACS</i> for a backfilled row).</p>
 </section>
 
 <footer>
