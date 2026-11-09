@@ -97,6 +97,11 @@
   comment: the row goes back to the labeler as <i>changes requested</i>, the earlier send stays on record as superseded, and
   the corrected label is reviewed and sent again (the central PACS then keeps both, the newer one wins per ROI). The button is
   hidden for non-leads and disabled, with the reason, while the hub has no destination configured (production today).</p>
+  <p id="central-ack-review"><b>Sent from OncoStudio before the review</b> (v1.67 §27.9, hub S56): a row the app sent to the
+  central PACS itself reads <b>Sent · review pending</b> and is <b>not</b> final — it is reviewed like a labeled row:
+  <i>Approve</i> (one row or the bulk approve) keeps the send and makes it <b>Sent</b>, nothing is sent again;
+  <i>Request changes</i> sets the send aside (superseded) and the row goes back to its labeler, whose corrected label is
+  reviewed and sent again. Only an approved and sent row is final.</p>
   <p id="relabel-resend"><b>A sent file with a wrong Structure Set name</b> (v1.50 §27.7 amendment, U133, D306 — 2026-10-29): a lead
   has the hub rewrite the naming fields of its stored copy (<code>StructureSetLabel</code>, <code>StructureSetName</code>,
   <code>SeriesDescription</code> := the project's RTSS name; UIDs, dates and contours untouched) and send the same object again;

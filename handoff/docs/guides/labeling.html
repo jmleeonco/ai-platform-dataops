@@ -185,6 +185,7 @@
     <li>Every stroke, tool change and edit command is recorded locally and uploaded in the background; you do not need to do anything, and drawing never waits for the network.</li>
     <li>Auto-segmentation and interactive tools are available as in the regular product; their use is recorded as tool events so effort per ROI can be measured.</li>
     <li id="roi-overlap-keys"><b>Overlapping ROIs</b> (U131): press <b>A</b> to mark the selected ROI as an <i>Avoid ROI</i> (press again to unset it), and <b>Shift+A</b> to <b>subtract the overlap</b> from the selected ROI — every voxel inside an Avoid ROI is removed (no Avoid ROI set: every voxel inside any other visible ROI). It is one edit: <b>Ctrl+Z</b> brings the ROI back. The same commands are on the ROI's right-click menu with their keys; change the keys in Settings › Shortcuts › Tool Shortcuts.</li>
+    <li id="viewer-keys"><b>Shortcut keys in the viewer</b> (O34, U161 — 2026-11-09): the viewer's keys (tools <b>1–9</b>, <b>A</b> / <b>Shift+A</b>, <b>I</b>, <b>F</b>, <b>V</b>, <b>H</b>, <b>Ctrl+Z</b>, <b>Ctrl+S</b>, …) now work wherever the keyboard is in the viewer window, not only after a click in an image. After you type a value or an ROI name and press <b>Enter</b> (or <b>Esc</b>), the keyboard goes back to the image you used last, so the next key is a shortcut again — before, a key pressed right after naming a new ROI or changing the Brush Size did nothing until you clicked an image. While a text field is being typed in, letters and digits still go into the field. The keys that delete contours or ROIs (<b>Del</b>, <b>Shift/Ctrl+Del</b>, <b>X</b>, <b>Ctrl+Shift+D</b>) still act only after a click in the viewer. The Korean input mode (한/영) does not matter: in the image the keys work in Hangul mode too. One key does one thing: if Settings › Shortcuts gives the same key to two commands, only the first one gets it (the app log names the clash).</li>
     <li id="tool-bar-fixed">The tool-option bar above the viewports (brush size etc.) no longer makes the images jump when you change tools: while it is docked (outline pin) its row stays put — empty for a tool without options. Click the pin to float it over the images instead, as before.</li>
     <li id="ai-usage-recorded">Each AI result is recorded with what it made: an Auto Segmentation run, each Interactive Seg / GTV result (with the number of prompts), and an AI pre-label you open (v1.47 §62). What you do to those ROIs afterwards (brush, pen, rename, delete, Undo prompt) is recorded against that result, and the save lists for each ROI whether it came from AI and how many edits followed. Records then shows for each AI use whether you <b>accepted</b> it as-is or <b>edited</b> it. You do not need to do anything.</li>
   </ol>
@@ -1067,6 +1068,25 @@
   approval later keeps the send, nothing is sent twice. A lead's hub send (§27.7) is unchanged and remains the only C-STORE
   the hub itself performs. A one-off backfill (<code>central-ack-backfill</code>) records structure sets that reached the PACS
   before this rule. Hub S56, app O33, web W45.</p>
+  <p id="central-ack-hub"><b>Hub (S56).</b> <code>POST /api/v1/assignments/{id}/central-ack</code> <code>{user_id,
+  rtss_sop_uid, rtss_series_uid, destination:{host, port, ae}, at, app_version?}</code> (a labeler's own rows; data / admin
+  logins any row; an unbound login 403). The SOP must be a label revision of the row, else 404 <i>no such revision of this
+  item</i>; a destination that is not the hub's central one (same host and port, or the same AE title) → 200
+  <code>recorded: false</code>, <i>not the central destination</i>. The hub then asks the central destination (where the app
+  stored it — prod ONCOPACS, dev the PC's OncoPACS) by one IMAGE-level C-FIND of the SOP (ONCOPACS refuses IMAGE-level queries, so there the structure set's own series is
+  looked up at SERIES level — one SOP per saved series): not there → 409 <i>not found on
+  the central PACS: &lt;sop&gt;</i>; no answer → 502 <i>the central PACS did not answer: …</i>; found → one transaction:
+  <code>central_send</code> (sent, <code>sent_at</code> = <code>at</code>, by the login, origin <code>oncostudio</code>, detail
+  <i>acknowledged by OncoStudio &lt;version&gt;; verified by C-FIND</i> — the version from the body or the login's latest
+  session), <code>assignment.central_sent_at</code>, and a case-history entry (origin <code>central_ack</code>). A second ack
+  of the same SOP → 200 <i>already recorded</i>. If the login may review and did not draw the label, the row is approved in
+  the same transaction (stage <b>Sent</b>); otherwise it keeps its status and reads <code>sent_unreviewed</code>. Every row
+  shape (<code>…/cases</code>, <code>my/work</code>, the review queue, the web rows, the case page and history) carries
+  <code>central {sent_at, by, rtss_sop_uid, superseded, origin, unreviewed, detail}</code> — <code>by</code> is null for a
+  backfill. Backfill: <code>python -m jobs.central_ack_backfill --project &lt;code&gt; [--since YYYY-MM-DD] [--dry-run]</code>
+  (rows with a human revision and no send: C-FIND of the newest revision; found → recorded with <i>backfill: found on the
+  central PACS</i> and the object's StructureSetDate+Time, else SeriesDate+Time, else the revision's time). Nothing is
+  ever sent by any of this (D53).</p>
   <p id="central-ack-web"><b>On the hub's pages (W45).</b> The stage reads <b>Sent · review pending</b> (a dashed green pill)
   while no verdict approved the row; its tooltip says <i>Sent from OncoStudio by SHK at &lt;time&gt;; not reviewed yet</i>.
   A Sent pill's tooltip names where the send came from: <i>Sent from the hub by &lt;lead&gt;</i>, <i>Sent from OncoStudio by
