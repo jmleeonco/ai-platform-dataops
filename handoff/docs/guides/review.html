@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · labeling-server / labeling-web</span>
+  <h1>Reviewing labels</h1>
+  <p class="lede">After this page a reviewer can work the review queue, give a verdict, ask for changes, and know how a verdict changes a label&#39;s state and what the labeler sees next.</p>
+  <p class="meta">Last verified 2026-09-30 · CONTRACT v1.6 · <span class="owner">owner: labeling-server, labeling-web</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What review is</h2>
+  <p>Review is the lead's sign-off on a delivered label: one verdict per RTSTRUCT, the latest verdict counts. A verdict
+  is <b>approved</b> or <b>changes requested</b> (a comment is required for the latter; per-ROI notes are optional).
+  The verdict decides the label's <b>state</b> for training (<a href="../flows.html#states">label states</a>): approved →
+  <code>approved</code>, changes requested → <code>changes_requested</code>. A delivered label that nobody has reviewed yet is
+  <code>unreviewed</code> — since D74 it may still be used for training if a lead or a policy includes that state.</p>
+</section>
+
+<section id="queue">
+  <h2>The review queue (검수)</h2>
+  <ol>
+    <li>Open <b>검수</b> (review). It lists assignments whose labels arrived (stage <b>Labeled</b>, stored
+    <code>delivered</code>) and those a reviewer has opened (stage <b>Review</b>, stored <code>in_review</code>), oldest
+    first, filterable by project and stage. Since v1.18 (D149) every web list shows the five display stages — see
+    <a href="#stages">Stages</a>.</li>
+    <li>Each row (D153 W5: stage, project, patient, series as modality · description · date, assignee, delivered, ROI
+    check, a 검수 button) compares the delivered ROI list with the project's ROI set (through the ROI registry's
+    aliases): missing ROIs are flagged with their count (names on hover), extra ones counted. A red "AI pre-label" mark
+    means the saved label still carries the pre-label structure-set name — ask for a re-save. Purpose and data level
+    are on hover and in the drawer's revisions. Below 900 px the rows are cards. Since v1.19 (§26, D159) a <i>검사</i>
+    column shows the hub's automatic label checks for the row (errors / warnings as icon + count, <i>미검사</i> while not
+    checked yet); the drawer's <i>라벨 검사</i> section lists the findings — ROI, slice z, expected range — to look at
+    before the verdict. They never block approval.</li>
+    <li>Opening a row (or its 검수 button) starts the review (<code>in_review</code>) in the side drawer — beside the
+    list on a wide screen —: what to do next, patient, series, delivered RTSTRUCT, revisions, earlier comments. Open the
+    same series in OncoStudio to look at the contours.</li>
+  </ol>
+</section>
+
+<section id="stages">
+  <h2>Stages (v1.18, D149)</h2>
+  <p>People see a row's <b>stage</b>, never the stored status: <b>Unassigned</b> (미할당) → <b>Assigned</b> (할당됨;
+  stored <code>assigned</code> or <code>in_progress</code>, with a <i>drawing</i> note while someone holds the patient
+  open) → <b>Labeled</b> (라벨 완료; <code>delivered</code>) → <b>Review</b> (검수; <code>in_review</code>, or
+  <code>changes_requested</code> shown in red with the note <i>changes requested</i>) → <b>Approved</b> (승인);
+  <b>Excluded</b> (제외) stands apart. The web reads the hub's <code>stage</code> / <code>stages{}</code> and applies the same
+  rule itself when an older hub sends none, so the counts on the project page (stage chips, progress bar, project cards,
+  public overview) add up to the stored ones: Assigned = assigned + in progress, Review = in review + changes requested.
+  Status changes in the drawer history, the case page and the live feed read the same way ("Review (changes requested)",
+  "Assigned (started)"). A lead's bulk <b>Set stage</b> on the board writes the stage's plain status (Labeled →
+  <code>delivered</code>, Review → <code>in_review</code>).</p>
+</section>
+
+<section id="reviewer">
+  <h2>A reviewer per item (v1.20 §27.6)</h2>
+  <p>Each row can name its <b>reviewer</b> — a lead or admin. The labeler names one once the row is labeled (OncoStudio's
+  case dialog, the web drawer: <i>Reviewer…</i>); a lead may set, change or clear it at any stage from labeled on. The named
+  reviewer finds the row in <b>To review</b> on My works / 내 작업 and under the <i>mine</i> filter of the review queue
+  (<code>review/queue?mine=1</code>). Any lead may still give the verdict — the reviewer is who is expected to. <b>From D187 (v1.24, 2026-10-11) labelers review each other</b>: the reviewer may be any labeler — since v1.30 (§43.1, U53) the row's own labeler too — as well as a lead, and the row's assigned reviewer gives the verdict (and may correct the label, §34) on both APIs; anyone else gets <i>the row's reviewer or a lead</i>. An admin can switch one account's review right off (<code>web_user.can_review</code>). Assigning items stays a lead's. A row already
+  sent to the central PACS (stage <b>Sent</b>, after Approved) is final: its reviewer no longer changes.</p>
+  <p><b>On the web</b> the 검수 page has a <i>내 리뷰</i> chip (<code>?mine=1</code>) and names the set reviewer under the
+  labeler (→ name), both as the accounts' initials (<i>LJM → SHK</i>, v1.23 §31). The queue lists rows that carry a label revision; a row set to Labeled by hand without a file is in the
+  reviewer's 내 작업 › 검수할 항목 but not in the queue. The drawer's <i>리뷰어</i> picker offers only people who can review.</p>
+  <p id="send-central"><b>Sending to the central PACS (web).</b> A lead selects approved rows on the project page (or opens one)
+  and picks <i>중앙 PACS 전송…</i>. The confirmation lists the items and the destination (<code>AE@host:port</code>), names
+  the selected rows that will not go (not approved, no label file on the hub, already sent), says that sending is final, and
+  sends only after <i>위 항목과 보낼 곳을 확인했습니다</i> is ticked. The answer lists what was sent and what the hub refused
+  with its reason. When the hub has no destination configured the button is disabled with that reason (and a 409 from the hub
+  is shown in the dialog); nothing is sent. A sent row reads <b>중앙 전송</b> (Sent) in every stage chip, filter and pill; its
+  drawer offers no verdict, only <i>다시 열기</i> with a required comment.</p>
+</section>
+
+<section id="send-central">
+  <h2>Send to the central PACS — final (v1.20 §27.7)</h2>
+  <p>An approved label stays in the hub until a <b>lead</b> sends it: select approved rows on the project page (or open one
+  in the drawer / case dialog) and press <b>Send to central</b>; the confirmation lists the items and the destination. The hub
+  restores the patient's name, birth date and other identifiers from the image on the central share into a copy of the
+  saved label (when the share holds no header for that image, the hub asks the central PACS itself for the patient
+  record, since v1.59), sends that copy and throws it away — the copy the hub keeps stays de-identified. If neither the
+  share nor the PACS can supply the patient record, or the record does not match the label's patient id, the row is
+  refused (<i>patient module unavailable</i>) and nothing is sent; a failed transfer is shown with its reason and
+  recorded. A sent row reads <b>Sent</b>, after Approved, and is <b>final</b>: it opens view-only, <i>Request changes</i>,
+  reassigning and changing its reviewer are refused. If something must still be corrected a lead uses <b>Reopen</b> with a
+  comment: the row goes back to the labeler as <i>changes requested</i>, the earlier send stays on record as superseded, and
+  the corrected label is reviewed and sent again (the central PACS then keeps both, the newer one wins per ROI). The button is
+  hidden for non-leads and disabled, with the reason, while the hub has no destination configured (production today).</p>
+  <p id="relabel-resend"><b>A sent file with a wrong Structure Set name</b> (v1.50 §27.7 amendment, U133, D306 — 2026-10-29): a lead
+  has the hub rewrite the naming fields of its stored copy (<code>StructureSetLabel</code>, <code>StructureSetName</code>,
+  <code>SeriesDescription</code> := the project's RTSS name; UIDs, dates and contours untouched) and send the same object again;
+  the row stays <b>Sent</b> with a new send on record and the earlier one superseded. The central PACS is expected to replace the
+  object of the same SOP Instance UID — the hub checks with its own C-FIND and reports. This is the hub's
+  <code>relabel-resend</code> management command, run on the user's order; there is no button, because since v1.50 §59.1a the
+  name cannot be mistyped at save time.</p>
+</section>
+
+<section id="central-reconcile">
+  <h2>Labels that were on the central PACS before the hub (v1.42 §27.8)</h2>
+  <p>Some projects (first: <b>Thoracic_LN</b>) were contoured before the hub existed; their RTSTRUCTs already live on
+  ONCOPACS, often under another structure-set name. For such items a lead runs <b>central/reconcile</b> (route or hub job)
+  with the data list's labeler per item and the node stations the list notes as absent. The hub looks the item's image series
+  up on the central PACS (a fresh query of the study on ONCOPACS, then each file itself — the hub's copy or a retrieval;
+  read only), reads the ROI names of every
+  RTSTRUCT that references the series, matches them to the project's target ROIs through the aliases, and for a file that
+  covers every target (minus the listed absences) does three things at once: it becomes the item's label with the named
+  person as labeler, the item is <b>approved</b> by the lead, and the row is recorded as <b>Sent</b> with
+  <code>origin: pacs</code> — nothing is transferred, the file is already there. Files that cover fewer ROIs, items with
+  no RTSTRUCT on central, and hub-made labels that never went to the PACS are listed with their reason and left as they
+  are; the last group is sent the normal way. A dry run shows the lists before anything is written.</p>
+</section>
+
+<section id="verdict">
+  <h2>Giving a verdict</h2>
+  <ol>
+    <li>In the drawer choose <b>승인</b> (approve) or <b>수정 요청</b> (request changes); write the comment the labeler will
+    read (required for changes), optionally per ROI. The buttons are there for a lead whenever the stage is
+    <b>Labeled</b>, <b>Review</b> or <b>Approved</b> — also on an approved row and on a data-list row that has no label
+    revision (v1.18 §12, D150): a lead can send an approved row back with <b>Request changes</b>, or re-approve it. The
+    row and the board refresh after the verdict; if the hub refuses (an older hub answers 409 for an approved row), its
+    message is shown under the buttons and the buttons stay.</li>
+    <li><b>Approve</b>: the assignment becomes <code>approved</code>, the label enters the approved feed and counts for
+    policies that include <code>approved</code>.</li>
+    <li><b>Request changes</b>: the assignment becomes <code>changes_requested</code>; the labeler sees the comment as a banner
+    the next time they open the series in OncoStudio and acknowledges it. The rejected RTSTRUCT stays a labeled sample in
+    state <code>changes_requested</code>; the corrected save is a new revision (unreviewed until you review it).</li>
+  </ol>
+</section>
+
+<section id="bulk">
+  <h2>Bulk approve (v1.29 §42.3)</h2>
+  <p>A lead or reviewer can approve many items at once from <i>Training › Projects › &lt;project&gt;</i> (the project's
+  <a href="training.html#training-view">training view</a>): <b>Approve selected</b> and <b>Approve all labeled</b> give
+  the approve verdict to many rows at once (U52: the lead marks everything approved before training).
+  <b>Who</b>: every account that may review — a lead or admin approves any row, a labeler whose account may review only
+  the rows they are the reviewer of; others get 403. <b>What it does</b>: each row goes through the same approve as the
+  drawer — one <code>review</code> row on the row's latest human revision, reviewer = you, <code>origin=hub</code>, status
+  <code>approved</code> — so label states, the approved feed, policies and the app's next poll see ordinary verdicts.
+  <i>Approve all labeled</i> takes every row of the project at stage <b>Labeled</b> or <b>Review</b> that has a human
+  label of its own (the row's latest save in this project — v1.31 §44: a label of the same image in another project is
+  that project's to review) — your own items included (v1.30 §43.1: no own-item rule). <b>What it refuses</b> (listed with the result, the
+  rest still approved): <i>not yours to review</i>, <i>no label</i>, <i>stage unassigned</i>, <i>stage
+  assigned</i>, <i>stage excluded</i>, <i>sent</i> (final, §27.7); rows already approved are skipped, not refused. <b>For a lead or admin</b> (v1.40 §60.3, U98, D261) only <i>no label</i> (no revision at all) and <i>stage excluded</i> remain: a row at any stage with a label of any kind — the labeler's own, an imported one, a legacy one — is approved; <i>Approve all labeled</i> reads <i>Approve all with a label</i>. Only
+  approve exists in bulk — <i>Request changes</i> needs a comment per row. The live feed shows one line
+  <i>CODE · approved 38 items</i> per batch; each row's own history keeps its line, marked <i>bulk approve</i>
+  (origin <code>bulk</code>).</p>
+  <p class="note"><code>POST /ui/api/projects/{id}/review/bulk</code> with <code>{"verdict": "approved",
+  "assignment_ids": [...]}</code> (at most 500) or <code>{"verdict": "approved", "all": true}</code> →
+  <code>{ok, approved: [assignment_id…], refused: [{assignment_id, patient_id, reason}], skipped_n}</code>; another verdict,
+  both selectors or neither → 422. For a lead or admin (v1.40 §60.3) the approved revision is the row's latest delivery or
+  correction, else its newest own revision of any kind (§44: human, external, Excel-era historical or merged, a pre-label
+  last); a sent row counts in <code>skipped_n</code>; <code>all: true</code> is every row that is not excluded, not sent,
+  not yet approved and has such a revision.</p>
+</section>
+
+<section id="oncostudio">
+  <h2>Review from OncoStudio</h2>
+  <p>Since hub 1.6 (CONTRACT §12, D93) a lead can do the same from OncoStudio's <b>Labeling › Review</b> page: it shows
+  <b>the same queue rows</b> as 검수 (<code>GET /api/v1/review/queue</code> is the web queue's query with the study /
+  RTSTRUCT series UIDs and the round added), <b>Open</b> starts the review and <b>Approve</b> / <b>Request changes…</b> post
+  the verdict through <code>POST /api/v1/assignments/{id}/start-review</code> and <code>…/review</code>. The hub records
+  exactly the <code>review</code> row the web page would write — reviewer = the hub account the OncoStudio login is bound
+  to, <code>origin=hub</code> — so the approved feed, label states, rounds and the labeler's My work do not know which door
+  it came through. The login must be bound to an account with role <code>lead</code> or <code>admin</code>; a labeler or an
+  unbound login is answered <i>not available to your role</i> (403), and a viewer without <code>is_labeler</code> may read
+  the queue (masked IDs) but not sign off. Both pages stay: leads pick the browser or the tab.</p>
+</section>
+
+<section id="legacy">
+  <h2>Imported (legacy) reviews</h2>
+  <p>Verdicts imported from the Excel workbook are recorded with <code>origin=excel</code> and <code>legacy=true</code>. They show
+  on the assignment's history but do <b>not</b> count as hub reviews: they do not feed the approved set or policies, and
+  a label whose only reviews are imported has state <code>legacy</code>.</p>
+  <p>Where they show (D95/H4): imported reviews and the workbook's comments sit under one collapsed block
+  <b>이전 기록 (Excel)</b> — closed by default — in the assignment drawer (every scope) and on the case page; hub reviews
+  stay in the visible 검수 list and the project board no longer shows a comment count. Nothing is deleted and the
+  importer is unchanged; the block simply keeps the old notes out of the main displays.</p>
+</section>
+
+<section id="record">
+  <h2>What is recorded</h2>
+  <div class="tbl"><table><thead><tr><th>Record</th><th>Where to see it</th></tr></thead><tbody>
+  <tr><td><code>review</code> row (reviewer, verdict, comment, per-ROI notes, time; the id is the approved-feed cursor)</td><td>assignment drawer and case page (hub reviews visible, Excel-era ones under 이전 기록 (Excel)); a labeler sees the verdict and text without the reviewer's name (D95)</td></tr>
+  <tr><td>assignment status</td><td>project board, 내 작업 of the labeler</td></tr>
+  <tr><td>label state as of any time</td><td>training wizard (per-series state), <code>GET /svc/v1/projects/{code}/label-set?as_of=</code> — the project's own revisions only (v1.31 §44); the case history keeps listing every revision of the image with its project</td></tr>
+  <tr><td>who changed what, when</td><td>기록 › 결과물 › deliverable timeline, 기록 › 실시간 feed (a bulk approve: one line <i>approved n items</i>, v1.29)</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note warn"><b>"a comment is required when requesting changes"</b><span>Write what to fix; the labeler sees exactly this text.</span></div>
+  <div class="note warn"><b>The verdict buttons are missing</b><span>Only leads and admins give verdicts; viewers see the queue read-only.</span></div>
+  <div class="note warn"><b>The labeler did not see the comment</b><span>The banner appears on the next open of that series in OncoStudio, not live.</span></div>
+  <div class="note warn"><b>Reviewed the wrong revision</b><span>Verdicts attach to one RTSTRUCT; a newer save is a new revision and needs its own verdict.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/review.html</code> · owner: labeling-server, labeling-web · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

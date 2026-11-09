@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Management DB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Component · ai-platform-dataops</span>
+  <h1>The data management DB and the dataset intake flow</h1>
+  <p class="lede">After this page you can say what the data management DB holds and where each row came from, take a dataset folder from analysis to Central with the owner's approval, find any dataset, series or ROI in the catalogue, and run, test, back up and restore the system.</p>
+  <p class="meta">Last verified 2026-11-09 · CONTRACT v1.62 §78 · <span class="owner">owner: ai-platform-dataops</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What it is for</h2>
+  <p>A system on the platform host (10.101.1.183, repo <code>/drive/project/ai-platform-dataops</code>, branch <code>main</code>) with two jobs:</p>
+  <ul>
+    <li><b>Intake.</b> It takes a medical imaging dataset folder and brings it to the central PACS in a controlled way. An agent and deterministic code analyse the folder. A 2-subject sample goes to a local OncoStudio for a visual check. Then the owner approves, and the full set goes to Central and is registered in the DB.</li>
+    <li><b>Catalogue.</b> The same DB is the company-wide catalogue of datasets already in use. It holds a read-only copy of the LAB DB and of the model-training bundles in <code>/mnt/deploy/data</code>, so one place answers which dataset holds which patient, series, split and ROI.</li>
+  </ul>
+  <div class="tbl"><table><thead><tr><th>Part</th><th>Where</th><th>Who uses it</th></tr></thead><tbody>
+  <tr><td>Web + one job worker</td><td><code>http://10.101.1.183:8096/</code>. Bound to the LAN address only; <b>no login</b>; CSRF + Origin checks on every POST.</td><td>The dataset owner (intake, approval). Anyone on the LAN can browse the catalogue.</td></tr>
+  <tr><td>CLI</td><td><code>python -m dataops …</code> on the host</td><td>The role agent, scripted runs</td></tr>
+  <tr><td>MariaDB 11.4</td><td>docker <code>ai-platform-dataops-db</code>, <code>127.0.0.1:13306</code></td><td>Only this system (§78.2). Nobody else reads or writes it directly.</td></tr>
+  </tbody></table></div>
+  <p>Contract: CONTRACT §78 (what it is, the boundary, operations). There is no API to the hub, the executor or ai-pipeline yet. The first consumer will be an amendment of §78.</p>
+</section>
+
+<section id="db">
+  <h2>What the DB holds</h2>
+  <p>Two schemas, each with its own account:</p>
+  <div class="tbl"><table><thead><tr><th>Schema</th><th>Tables</th><th>Migrations</th></tr></thead><tbody>
+  <tr><td><code>public_dataops</code>: the data management DB</td><td><code>datasets</code>, <code>subjects</code>, <code>studies</code>, <code>series</code>, <code>dataset_series</code> (membership + <code>split</code>), <code>instances</code>, <code>transfer_results</code>, <code>ingest_runs</code>, <code>external_mappings</code>, <code>schema_migrations</code></td><td><code>sql/migrations/</code> 0001–0007, additive only. All 7 applied, none pending (2026-11-09).</td></tr>
+  <tr><td><code>dataops_deid_map</code></td><td>original ↔ pseudonym rows: from pseudonymised runs, and the copied encryption maps of the LAB DB</td><td><code>sql/deid_map_migrations/</code> 0001. Shown only on admin pages.</td></tr>
+  </tbody></table></div>
+  <p>Row counts on 2026-11-09:</p>
+  <div class="tbl"><table><thead><tr><th>Table</th><th>Rows</th></tr></thead><tbody>
+  <tr><td><code>datasets</code></td><td class="num">128</td></tr>
+  <tr><td><code>subjects</code></td><td class="num">23,788</td></tr>
+  <tr><td><code>studies</code></td><td class="num">13,041</td></tr>
+  <tr><td><code>series</code></td><td class="num">43,560</td></tr>
+  <tr><td><code>dataset_series</code></td><td class="num">90,368</td></tr>
+  <tr><td><code>instances</code></td><td class="num">98,975</td></tr>
+  <tr><td><code>transfer_results</code></td><td class="num">99,066</td></tr>
+  <tr><td><code>ingest_runs</code></td><td class="num">1</td></tr>
+  <tr><td><code>external_mappings</code></td><td class="num">68</td></tr>
+  </tbody></table></div>
+  <p>Rows come from <b>three origins</b>. <code>series.source_kind</code> tells the series apart:</p>
+  <div class="tbl"><table><thead><tr><th>Origin</th><th>Datasets</th><th><code>source_kind</code> (series)</th><th>How it got there</th></tr></thead><tbody>
+  <tr><td>This system's runs</td><td class="num">1</td><td><code>nifti</code> 600 · <code>rtstruct</code> 360</td><td>A public abdominal CT/MR set, published through the intake flow on 2026-11-02. It is the only Central publication so far, and also the only <code>ingest_runs</code> row. Each of its instances has a <code>transfer_results</code> row.</td></tr>
+  <tr><td>The LAB DB (<code>oncolabdb</code>, 10.101.1.4)</td><td class="num">68</td><td><code>oncolabdb</code> 31,429</td><td><code>import-legacy</code> (owner 2026-11-03). It copies the values of <code>lab_datasets</code> / <code>lab_dataset_items</code> at series level in a read-only session; the encryption maps go to <code>dataops_deid_map</code>. Each dataset has an <code>external_mappings</code> row back to its LAB id.</td></tr>
+  <tr><td>Training bundles in <code>/mnt/deploy/data</code></td><td class="num">59</td><td><code>deploy</code> 10,349 · <code>central-find</code> 822</td><td><code>import-deploy</code> (owner 2026-11-03). One dataset per bundle, named <code>deploy/&lt;model&gt;/&lt;version&gt;</code>. Its train/valid lists set <code>dataset_series.split</code>. DICOM inside the bundle is read header-only. Series not in the bundle are linked to rows that already exist, or found by a read-only C-FIND on Central. RTSTRUCTs that exist only on Central got their ROI names by C-GET, kept in memory.</td></tr>
+  </tbody></table></div>
+  <p>A series can belong to datasets of more than one origin. <code>dataset_series</code> holds the memberships, so the same image is stored once and listed under each dataset that uses it.</p>
+  <h3 id="roi">ROI names</h3>
+  <p>Each RTSTRUCT series stores its ROI names (<code>series.roi_names</code>, a JSON list) and the image series it points at (<code>series.referenced_series_uid</code>). That links a ROI name to the CT/MR it was drawn on. On 2026-11-09 there were 18,661 RTSTRUCT series:</p>
+  <ul>
+    <li>18,296 have ROI names.</li>
+    <li>17,934 are linked to an image.</li>
+    <li>There are 4,046 distinct names.</li>
+  </ul>
+  <p>Names are stored as written in each file. Spellings are not mapped to one organ.</p>
+</section>
+
+<section id="flow">
+  <h2>The intake flow</h2>
+  <p>Everything happens in the web, one page per run at <code>/runs/&lt;run_id&gt;</code>. A run's files live in <code>runtime/runs/&lt;run_id&gt;/</code>. Statuses:</p>
+  <p><code>ANALYZING → PLANNED / NEEDS_INPUT → PILOT_READY → PILOT_SENT → APPROVED → PREPARED → CENTRAL_SENT | CENTRAL_PARTIAL | CENTRAL_FAILED</code></p>
+  <div class="tbl"><table><thead><tr><th>Step</th><th>What happens</th><th>What it produces</th><th>What can go wrong</th></tr></thead><tbody>
+  <tr><td>1. Analyse: 새 분석 (new analysis) → 분석 시작 (start)</td><td>A fast scan of the folder, then a headless analysis agent. The agent uses read-only tools and returns a JSON-schema proposal of how to read the folder. Deterministic code (<code>spec.py</code>, <code>plan.py</code>) checks every field. The PatientID prefix <code>&lt;source&gt;_&lt;region&gt;[_&lt;modality&gt;][_&lt;sub&gt;]_&lt;PUB|NC|IO&gt;</code> comes from the company naming rule.</td><td>A versioned <code>plan.json</code> and its sha256. A standard HTML report with the same numbered tables for every dataset.</td><td>An unknown layout or missing prefix → <code>NEEDS_INPUT</code>; fix the reviewable fields on the run page. A failed agent → <code>ANALYSIS_FAILED</code>; 다시 분석 (analyse again).</td></tr>
+  <tr><td>2. Pilot: 이 샘플 Local SCP로 보내기 (send this sample to the local SCP)</td><td>2 subjects are converted and frozen: NIfTI → DICOM, label maps → RTSTRUCT (round-trip Dice checked), and DICOM copied byte-for-byte. They are then C-STOREd to the PC's OncoPACS <code>OS_LJM@10.101.1.107:4001</code> for a visual check in OncoStudio.</td><td>A sha256 manifest and a per-instance send journal</td><td>The local sender refuses any host except this machine and the review PC, and refuses AE <code>ONCOPACS</code>. If the plan changes after the pilot, the pilot is stale and must be sent again.</td></tr>
+  <tr><td>3. Approve: 최종 승인 · Central 전송 (final approval · send to Central)</td><td>The owner presses it in the web. The approval is bound to the plan's sha256.</td><td>An approval record in the run</td><td>Only the owner approves. No agent presses it.</td></tr>
+  <tr><td>4. Publish</td><td>The full set is frozen, which makes the run immutable. It is then C-STOREd to <code>ONCOPACS@10.101.1.4:4002</code> (calling AE <code>DATAOPS</code>) by <code>publish.py</code>, with a journal and retry.</td><td><code>transfer_results</code> per instance</td><td>A partial send → <code>CENTRAL_PARTIAL</code>; Central 전송 이어서 (continue sending) sends only the instances Central has not accepted yet.</td></tr>
+  <tr><td>5. Register</td><td><code>records.py</code> projects the run into DB rows, and <code>db.py</code> writes them idempotently.</td><td>Rows in <code>public_dataops</code>; the pseudonym map in <code>dataops_deid_map</code></td><td>A row that conflicts with an existing one rolls the whole registration back. Nothing is half-written.</td></tr>
+  </tbody></table></div>
+  <div class="note warn"><b>Internal data</b><span>Folders listed in <code>DATAOPS_INTERNAL_ROOTS</code> go out pseudonymised (profile <code>pseudonym-v2</code>: names, institution, IDs and order numbers removed, UIDs replaced, dates kept). Public data is never pseudonymised. The run page shows the source values next to the outgoing ones.</span></div>
+</section>
+
+<section id="catalogue">
+  <h2>The catalogue pages</h2>
+  <div class="tbl"><table><thead><tr><th>Page</th><th>What it shows</th></tr></thead><tbody>
+  <tr><td><code>/datasets</code> 데이터셋 (datasets)</td><td>Every dataset by origin, with totals. <code>/datasets/&lt;uuid&gt;</code> filters its series by split, modality and ROI.</td></tr>
+  <tr><td><code>/series/&lt;uid&gt;</code></td><td>One series: the datasets that hold it, its ROI names, the image an RTSTRUCT points at, sibling series and transfers.</td></tr>
+  <tr><td><code>/search</code> 검색 (search)</td><td>Datasets, ROI names, patients and series matching a word.</td></tr>
+  <tr><td><code>/browse</code> 표 (table)</td><td>The DB as one flat table, either per series or per patient. Search by dataset or ROI name, with suggestions. A ROI search matches the RTSTRUCT and the image it points at. Tick boxes for modality, split and origin; a study date range; a field per column; removable condition chips; a column picker; CSV of the current conditions.</td></tr>
+  <tr><td><code>/central</code>, <code>/db</code>, <code>/legacy</code> 기존 DB (existing DB), <code>/backups</code></td><td>What was sent to Central; the raw tables (live); the LAB DB's schema and compatibility; backup status.</td></tr>
+  </tbody></table></div>
+  <p><b>Re-running the imports</b> is idempotent and cheap, because the bundle header scans are cached in <code>runtime/deploy_scan/</code>:</p>
+  <pre><code>python -m dataops import-legacy [--dry-run]
+python -m dataops import-deploy [--dry-run] [--rescan]</code></pre>
+  <p>Both read only: <code>oncolabdb</code> through a READ ONLY session, <code>/mnt/deploy/data</code> as files, and Central by C-FIND and C-GET of RTSTRUCT (approved 2026-11-03).</p>
+</section>
+
+<section id="cli">
+  <h2>The CLI</h2>
+  <p><code>python -m dataops &lt;command&gt;</code> from the repo root, with <code>PYTHONPATH=.</code> and the venv <code>~/.venvs/ai-platform-dataops</code>:</p>
+  <div class="tbl"><table><thead><tr><th>Group</th><th>Commands</th></tr></thead><tbody>
+  <tr><td>Browser flow, scripted</td><td><code>analyze</code>, <code>pilot</code>, <code>approve</code>, <code>publish</code> (approve and publish are the owner's, never an agent's), <code>runs</code>, <code>show</code></td></tr>
+  <tr><td>Local-only CLI flow</td><td><code>plan</code>, <code>ingest</code>, <code>validate</code>, <code>prepare</code>, <code>verify</code>, <code>register</code>, <code>send-local</code>, <code>echo</code>, <code>prefix-check</code></td></tr>
+  <tr><td>DB</td><td><code>db-status</code>, <code>db-migrate</code>, <code>deid-map-save</code>, <code>import-legacy</code>, <code>import-deploy</code></td></tr>
+  <tr><td>Service</td><td><code>serve</code>, <code>worker</code> (normally started by <code>deploy/web.sh</code>)</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="rules">
+  <h2>Hard rules</h2>
+  <p>These are the owner's rules (the system's <code>docs/HANDOVER.md</code> §2 and <code>AGENTS.md</code>). They are part of §78 by reference, and no work order relaxes them.</p>
+  <div class="tbl"><table><thead><tr><th>Rule</th><th>Detail</th></tr></thead><tbody>
+  <tr><td>Central is production</td><td>Only runs the owner approved in the web and asked to send go to Central. Nobody approves or publishes on the owner's behalf. Central has been enabled since 2026-11-02.</td></tr>
+  <tr><td>Local sender guard</td><td><code>local_send.py</code> / <code>/send-local-scp</code> refuse any host but this machine and the review PC, and refuse AE <code>ONCOPACS</code>. Central goes through <code>publish.py</code> only.</td></tr>
+  <tr><td>The existing MariaDB (10.101.1.4)</td><td>SELECT only. No export into <code>oncolabdb</code> (owner 2026-10-29). Only the LAB dataset tables and the encryption maps are copied; reading any other table's rows needs the owner first.</td></tr>
+  <tr><td><code>/mnt/deploy</code></td><td>Read only. On <code>/mnt</code>, only the nightly backup writes.</td></tr>
+  <tr><td>Identifiers</td><td>Patient names, IDs and dates from internal data never appear in chat, commits, STATUS or reports. The web shows real source values on the source side (owner 2026-10-30/31); only the outgoing side is pseudonymised.</td></tr>
+  <tr><td>Secrets</td><td>Only in <code>~/.config/ai-platform-dataops/env</code> (mode 600), never in git, docs, backups or chat.</td></tr>
+  <tr><td>Naming</td><td>The PatientID prefix follows the company rule in Notion ("04-1 Data prefix 규칙"); the code is a copy.</td></tr>
+  <tr><td>Reports</td><td>Every dataset gets the same numbered tables, with no free-form write-up.</td></tr>
+  </tbody></table></div>
+  <p>The platform's limits apply too: no sudo, never stop a process you did not start, the memory gate before the full suite, and pushes go only to <code>main</code> on <code>origin</code> (COLLABORATION §5).</p>
+</section>
+
+<section id="ops">
+  <h2>Running, testing, backing up</h2>
+  <div class="tbl"><table><thead><tr><th>What</th><th>How</th></tr></thead><tbody>
+  <tr><td>DB</td><td><code>deploy/db.sh up</code>, then <code>python -m dataops db-status</code> / <code>db-migrate</code></td></tr>
+  <tr><td>Web + worker</td><td><code>deploy/web.sh start|stop|restart|restart-web|status|logs</code>. After a code change use <code>restart-web</code>; a running job keeps going. <b>Neither the DB container nor the web starts by itself after a reboot.</b></td></tr>
+  <tr><td>Health</td><td><code>curl -s -o /dev/null -w '%{http_code}' http://10.101.1.183:8096/</code> → 200. It listens on the LAN address only, so <code>127.0.0.1</code> does not answer.</td></tr>
+  <tr><td>Tests</td><td><code>PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings</code> → 125 passed, about 100 s (2026-11-09). Needs the DB container; DB tests use throw-away <code>dataops_test_*</code> schemas. Then <code>scripts/docs-gate.sh</code>.</td></tr>
+  <tr><td>Logs</td><td><code>deploy/web.sh logs</code>; per run and job under <code>runtime/runs/</code> and <code>runtime/jobs/</code></td></tr>
+  <tr><td>Backup</td><td>User crontab <b>00:30</b> → <code>ops/backup/nightly_backup.sh</code> → <code>/mnt/ai-pipeline/backups/ai-platform-dataops/&lt;date&gt;/</code>: dumps of both schemas, run metadata, a repo bundle and <code>manifest.json</code>, with retention as §65. Plus <code>…/ai-platform-dataops-files/</code>, an rsync snapshot of <code>runtime/runs</code>. Errors go to <code>/tmp/ai-platform-dataops-backup.err</code>.</td></tr>
+  <tr><td>Restore check</td><td><code>ops/backup/restore_check.sh [YYYY-MM-DD]</code> restores into a throw-away MariaDB container and compares the row counts of both schemas with the backup's. It also checks that the repo bundle holds the recorded commit, re-hashes the artifact snapshot and unpacks the run metadata. It touches nothing live.</td></tr>
+  </tbody></table></div>
+  <div class="note"><b>NFS</b><span>The <code>/mnt2</code> mount sometimes returns "not found" for minutes. Every input read goes through <code>dataops/nfs.py</code>, which falls back to the read-only mirror.</span></div>
+</section>
+
+<section id="open">
+  <h2>Open threads</h2>
+  <ul>
+    <li><b>No login on the web.</b> It is bound to the LAN; a login, or a hub login in front of it, is not decided (§78.4).</li>
+    <li><b>The LAB DB account is a shared admin account.</b> A SELECT-only account and a password rotation were recommended to the owner; neither is done yet.</li>
+    <li><b>No read-back check on Central.</b> Sends are journalled per instance, but what Central stored is not read back.</li>
+    <li><b>The licence tier of the one published public set</b> (PUB vs NC) is still open with the owner.</li>
+    <li><b>Internal sets with identifiers</b> in folder names and tags are not ingested until a de-identification profile and an owner decision exist. Duplicate pilot runs of one internal set are waiting for a clean-up decision.</li>
+    <li><b>Naming-rule questions</b> are open with the owner.</li>
+    <li><b>Speed.</b> The dashboard takes about 1.3 s; the per-patient view of <code>/browse</code> takes about 1–2 s.</li>
+    <li><b>No consumer yet.</b> The hub's 데이터셋 (datasets) pages and the executor do not read this catalogue. The first one is a §78 amendment.</li>
+  </ul>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/components/dataops.html</code> · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md). The system's own current-state document is <code>docs/HANDOVER.md</code> in its repo.</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Releases Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · ai-pipeline (+ hub pages by labeling-web)</span>
+  <h1>Releases: packaging, validation, registration</h1>
+  <p class="lede">After this page you can package a release in ai-pipeline, validate its bundle, see it registered in the hub with its models and countries, and withdraw it if needed.</p>
+  <p class="meta">Last verified 2026-11-05 · CONTRACT v1.61 (§77: immutable packages; the rest v1.4) · <span class="owner">owner: ai-pipeline, labeling-web</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What a release is</h2>
+  <p>A release is a named set of trained models shipped together, e.g. <code>1.7.0</code>. On disk it is a folder
+  <code>/mnt/deploy/release/&lt;version&gt;/</code> with one sub-folder per model (weights <code>3d_final_model.pt</code> and
+  <code>global_fingerprint.json</code>) plus shared top-level files. Names of the form <code>x.y.z</code> are standard releases
+  (the newest is the dashboard's LATEST); <code>prefix_x.y.z</code> are custom builds. A model sub-folder is named after its
+  family, old names and hub-trained <code>&lt;CODE&gt;_&lt;3d|2d&gt;</code> (<code>RIBS_3d</code>, §63) alike; the model picker
+  (<code>/packaging/release-models</code>) and the 모델 다운로드 page show each family's <code>model_type</code> (<code>3d</code>
+  when the name has no suffix).</p>
+  <div class="tbl"><table><thead><tr><th>Field (hub)</th><th>Where it comes from</th></tr></thead><tbody>
+  <tr><td><code>version</code></td><td>the folder name</td></tr>
+  <tr><td><code>models[]</code> = family, version, md5, input classes</td><td>each model folder; the <b>version is the catalog version whose weights are byte-identical</b> (md5), because a package's <code>git_tag</code> has been wrong before (1.6.4); else the declared tag; else <code>unknown</code></td></tr>
+  <tr><td><code>countries[]</code></td><td>every country a package of this release was built for in ai-pipeline; empty = not known yet</td></tr>
+  <tr><td><code>report_path</code></td><td><code>RELEASE_REPORT.html</code> in the folder, when present</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="how">
+  <h2>Packaging and validating</h2>
+  <p>All in ai-pipeline <code>/packaging/</code> (모델 패키징); the actions that write are admin-only.</p>
+  <ol>
+    <li><b>Check the numbers first.</b> <code>/spec/package/&lt;version&gt;</code> shows every model of a release with its
+    evaluation (DSC/HD95 per ROI, leak-guard exclusions); <code>/spec/compare</code> compares two releases ROI by ROI. A model
+    with no evaluation yet can be queued from 추론 관리.</li>
+    <li><b>Check the data behind them.</b> Every deployed data version is validated automatically after deploy (bundle
+    validation, D37: class lists, GT channel count, empty channels, valid/valid_gt order); a failed validation is on
+    <code>/spec/validation/&lt;model&gt;/&lt;data version&gt;</code> and marks the dataset not deployable in the hub. Model flags
+    (duplicate weights, channel-swap suspects, D38) appear in the hub's model page.</li>
+    <li><b>새 패키지 (new package).</b> Choose a name (<code>x.y.z</code> or <code>prefix_x.y.z</code>) and the model versions; the
+    dialog shows the difference to an existing release before anything is written. Create writes
+    <code>/mnt/deploy/release/&lt;name&gt;/</code> (models + the shared files of the latest package). If the name exists you must
+    confirm the overwrite; the old folder is moved to <code>/mnt/deploy/trash/</code>, not deleted.</li>
+    <li><b>Permit 동기화.</b> Pull the per-country ROI permits (KR, JP, US) from the certification sheet; the status strip
+    shows how many ROIs each country allows. Each country reads one tab (<code>PERMIT_SHEET_TABS</code>: KR/JP
+    <code>…OncoStudio 2.1.x</code>, US <code>FDA_OncoStudio 2.2.x</code>) — when RA renames or adds a version tab, update
+    that map or the country fails to sync and keeps its old list. Digit-only cells are list numbers, never ROIs. The
+    인허가 프로파일's <code>?permit=</code> filter reads the same lists.</li>
+    <li><b>Build a package for a country.</b> Pick 기준 릴리즈 (the release to start from), 새 버전 이름 (the output name),
+    the country, modalities (MR/CT/GTV) and optionally single models. The build rewrites every model's
+    <code>usage</code> list to the country's permitted ROIs and returns a zip. Nothing is written back into the release.
+    The dashboard's download dialog builds the same way for everyone.</li>
+  </ol>
+  <p>The hub's <b>배포</b> section (§70, U134) offers the same actions through ai-pipeline's JSON API
+  (<code>/api/v1/deploy/packaging…</code>, proxied as <code>/ui/api/deploy/packaging…</code>) with the same functions and
+  role rules: 새 패키지 options, diff and create; Permit 동기화; the permit CSVs; the per-model zips. A country build there
+  is a background job (<code>POST packaging/build</code> → <code>packaging/builds/{id}</code> → the zip at
+  <code>packaging/download?job_id=</code>), because a 2 GB bundle takes longer than the hub's 30 s request timeout. Details:
+  <a href="../components/ai-pipeline.html#deploy-api">ai-pipeline component page</a>.</p>
+  <p>The coloured dot next to each model version on <code>/packaging/</code> means: green, that version has /spec numbers
+  (an evaluation); orange, only another version has; grey, none. Before 2026-10-29 every dot was grey, because the page
+  read a Notion-era cache that no longer exists.</p>
+  <p><b>Config 관리</b> (<code>/config</code>) keeps the shared config files of a release (ROI presets, channel
+  modifications, landmarks, the OD models) as git tags: <code>vx.y.z</code> for a package and <code>vx.y.z.n</code> for a
+  sub-revision registered on top of it (1.7.0.1, 1.7.0.2). The <i>latest</i> badge is the highest of these by number;
+  prefixed custom tags (<code>vwsch_…</code>, <code>vsmu_…</code>) are never latest (D318). Registering a tag changes no
+  release folder: the copy into the deployed bundle (<code>_deploy_to_release</code>, which rewrote 1.7.0 in place and
+  made D317 necessary) is gone since 2026-11-05 (D331).</p>
+  <p id="immutable"><b>Since 2026-11-05 a package never changes</b> (CONTRACT v1.61 §77, D331–D333). A config, model or
+  OD change becomes a <b>new folder</b> made with the hub's 배포 › 새 릴리즈 wizard. It is written by ai-pipeline's
+  release writer, with <code>RELEASE.json</code> (state candidate → released → superseded, or withdrawn),
+  <code>RELEASE_NOTES.md</code> and its own config tag. <i>Latest</i> on the dashboard and the hub is the highest
+  <b>released</b> package; folders made before that date count as released, and 1.7.0.3 is a candidate until QA marks
+  it released. A country build never includes <code>RELEASE.json</code>, because the state changes after the build.
+  How to: <a href="release-flow.html">the release flow</a>; the API:
+  <a href="../components/ai-pipeline.html#releases-api">ai-pipeline component page</a>.</p>
+</section>
+
+<section id="register">
+  <h2>Registration in the hub</h2>
+  <p>ai-pipeline registers releases itself; nobody types them into the hub.</p>
+  <div class="tbl"><table><thead><tr><th>Action in ai-pipeline</th><th>What the hub receives</th></tr></thead><tbody>
+  <tr><td>새 패키지 created</td><td>the release with its models (<code>POST /svc/v1/releases</code>, §3)</td></tr>
+  <tr><td>새 패키지 over an existing name</td><td>first a withdrawal of the old content (§6.3, reason "패키지 덮어쓰기"), then the new content — registering again un-withdraws it</td></tr>
+  <tr><td>Package build for a country</td><td>the release again with that country added. A build named after an existing release registers that release's <b>full</b> model set, never the modality-filtered subset; a build under a new name registers the built bundle itself</td></tr>
+  <tr><td>A model version hidden in <code>/admin/models</code></td><td>its evaluations are withdrawn; releases are not changed</td></tr>
+  </tbody></table></div>
+  <p><b>Countries</b> (§6.4): the list ai-pipeline sends replaces the stored one; an empty list means "unknown" and never
+  erases countries already recorded. <b>Evaluations</b> are registered separately per model version × data version
+  (<a href="training.html#evaluation">Training › Evaluation</a>); the hub links a release's models to their evaluations
+  by weights md5 and <code>split_hash</code>. If the hub is down, registrations wait in ai-pipeline's outbox and are sent
+  when it is back; <code>python3 scripts/hub_register.py status</code> shows what is pending.</p>
+</section>
+
+<section id="hubpages">
+  <h2>Hub pages (릴리스, 평가, 모델)</h2>
+  <div class="tbl"><table><thead><tr><th>Hub page</th><th>What it shows</th></tr></thead><tbody>
+  <tr><td>릴리스 (releases)</td><td>each release with its shipped date, countries, the model families and versions in it (weights md5), report link; withdrawn releases are hidden unless "show withdrawn" is on</td></tr>
+  <tr><td>평가 (evaluations)</td><td>standard and run evaluations per model and data version with DSC/HD95 per ROI; regressions raise an alert; withdrawn evaluations hidden by default</td></tr>
+  <tr><td>모델 (model page)</td><td>tabs 학습 데이터 (training split, demographics, label states), 성능 (performance over versions), 릴리스, 이력 (folders, deploys, flags, withdrawals); profile.xlsx</td></tr>
+  <tr><td>공개 현황 (public overview)</td><td>shipped releases without login (version, date, families, countries)</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="roadmap">
+  <h2>ROI roadmap: progress, schedule, requests</h2>
+  <p>The hub's first page (<b>ROI roadmap</b>, <code>/roadmap</code>; the landing page for leads and admins, in every
+  account's menu, labelers included — USER 2026-10-17) shows, for every ROI and modality, how far it is and when it is
+  planned to come out.</p>
+  <ul>
+    <li><b>Counts per stage</b> (click one to filter): <i>Released</i> (a live release's model holds the ROI), <i>Validating</i>
+    (a model holds it), <i>Training</i> (a hub job for it runs), <i>Labeling</i> (labeled items exist), <i>Planned</i>,
+    <i>On hold</i>, <i>Not started</i>. The stage follows the data unless a lead sets it in the plan (the tooltip then names
+    the stage the data says).</li>
+    <li><b>Sections</b> (CONTRACT v1.35 §46.5, USER 2026-10-18 "actively working ROIs at the top"): the timeline and the
+    table list the ROIs in three sections, each with a header and its count — <i>Active</i> first, then <i>Planned / not
+    started</i>, then <i>Released</i>. <i>Active</i> = the stage is Labeling, Training or Validating, or a stage started or
+    the plan changed within the last 30 days. A release date is not activity, and a released ROI counts as active only
+    when a stage started more than a day after its release (new work on it, e.g. a training job): the 2026-09-28 registry
+    import dated hundreds of releases, model validations and labels on the same day, which would otherwise fill
+    <i>Active</i> with everything released. An ROI on hold stays under <i>Planned / not started</i>. The stage counts,
+    the GTV / CT / MR filter and the search act within every section; a section left with no ROI keeps its header,
+    greyed. Models marked hidden and closed projects put nothing on the board (the hub drops those rows).</li>
+    <li><b>Live, and projects in progress</b> (CONTRACT v1.36 §49, USER 2026-10-19): the page refreshes itself in place
+    when anything behind it changes — a job starts, moves to its next stage or ends, a label is saved or approved, a model
+    or release is registered, a plan or request changes (the hub's live event <code>roi_board</code>; after a lost
+    connection the board is fetched again; an account without the live stream, such as a labeler, refreshes every 60 s).
+    <i>Projects in progress</i>, above the sections, has one card per project with a running or queued job or with labels
+    in the last 7 days — the running job first: <i>training · stage 7/11 · since 22:24</i> (opens the job), or <i>14
+    labels this week</i> (opens the project's training page). In <i>Active</i>, ROIs with a running job come first, then
+    the most recent change; such a row shows <i>training now</i> with a pulsing dot (a released ROI keeps its release:
+    <i>In release wsch_1.3.0 · v1.0.2</i> beside <i>training now</i>). Each card also lists its ROIs (v1.39 §49.1): the project's targets with its label count and target count, the ones
+    its running job trains first. On the card they are chips <i>Liver 20/30</i> (usable labels / the target count when
+    set). The running job's ROIs carry a dot, and past six the card shows <i>+n</i> (hover for the names). A chip shows
+    that ROI's row in the board below: it is scrolled to and marked for a moment. If the filters hid the row, they are
+    cleared to a search for that ROI first (U81).</li>
+    <li><b>Release calendar</b>: the ROIs by the month of their target date — <i>Overdue</i> first (red), then the months;
+    <i>179 ROIs have no target date yet</i> (not released, no date) filters the table to them.</li>
+    <li><b>Timeline</b> (the default view; <i>Table</i> next to it): one bar per ROI across the months —
+    <i>Labeling</i> (blue), <i>Training</i> (orange), <i>Validating</i> (purple); solid for what happened (from the first
+    label, the first training job, the first model), hatched with a dashed outline for the plan (each stage's planned end),
+    the release as a diamond (filled green = out, outlined = planned, red = the planned date passed), a red line at today.
+    A released ROI with a new plan shows its next version: the planned stages after today and a second, outlined diamond.
+    Released ROIs without a plan are hidden behind <i>Show the n released ROIs without a plan</i>. On a phone the bars
+    scroll sideways and open at today. The models and releases imported on 2026-09-28 carry that registration date, so a
+    stage can appear to start after the next one; the bar then shows the later one as under way.
+    <b>Estimated</b> (USER 2026-10-18; faint, dotted): every ROI that is not released and not on hold is drawn to its
+    release. A stage nobody dated gets an estimated end: where the previous stage ends + the median length of that stage
+    among the released ROIs of the same modality (none → all released ROIs; none → 60 days); a stage under way past its
+    usual length lets the next one start today; a stage skipped (a later one already started) is not estimated; without a
+    planned release the release is estimated at the end of the chain (a dotted diamond). Only stages of 1 to 365 days
+    count for the median: on the hub every released ROI came in with the 2026-09-28 registry import and its first label
+    can be years older, which is history, not a stage (as of 2026-10-18 that gives CT labeling 242 days, MR 167, training
+    and validating 60 — no released ROI has those dates). The tooltip says which median a segment used. A planned date
+    always wins over an estimate. A release diamond that happened carries its package and the model version in it
+    (<i>wsch_1.3.0 · v1.0.2</i>).</li>
+    <li><b>The table</b>: ROI · Stage · Labels (labeled items holding the ROI against the goal, with a bar) · Projects ·
+    Best model by that ROI's own DSC (or, without a DSC for it, the latest model holding it; and the release it is in) · Target date (<i>in 12 days</i> / <i>3 days late</i>) ·
+    Owner · Note; the release named with its package and model version (<i>In release wsch_1.3.0 · v1.0.2</i>). Filters
+    (both views): <i>All</i> · <i>GTV</i> · <i>CT</i> · <i>MR</i> — <i>GTV</i> keeps the target volumes and combines with
+    a modality: the registry category when it has one (<i>target</i>, <i>target volume</i>, <i>GTV</i>, <i>CTV</i>,
+    <i>PTV</i>, <i>ITV</i>), else (the registry has no categories yet, 2026-10-18) a GTV / CTV / PTV / ITV / IGTV part in
+    the name (<i>GTV_Liver</i>, <i>CTVn_L2_L</i>, <i>CTV_Cervix^HR</i>, <i>LN_GTV</i>, <i>Prostate_CTV</i>: 25 rows on the
+    hub); and a search (ROI, owner, project); the ROIs that are moving come first, released ones last.</li>
+    <li><b>A row</b> opens the ROI: its projects (labeled of items, goal), its best and latest model, its release, and the
+    <b>plan</b> — stage (or automatic), when <i>Labeling</i>, <i>Training</i> and <i>Validating</i> should be done, the
+    target release date, owner, labels needed, a note everyone sees (a later stage ending before an earlier one is
+    flagged). A lead saves it;
+    every change is logged and listed under <i>Plan history</i> (who, when, old → new), so a slipped date stays
+    visible.</li>
+    <li><b>ROI requests</b> (tab): anyone signed in uses <i>Request an ROI</i> — the ROI (a registry name or a new one),
+    modality, priority, body region, needed-by date and why. Others add <i>+1</i>. A lead decides (<i>Accepted</i>,
+    <i>Planned</i>, <i>Done</i>, <i>Declined</i>) with a note and the registry ROI it maps to; <i>Planned</i> or
+    <i>Accepted</i> with a registry ROI creates its plan on the roadmap.</li>
+  </ul>
+  <p class="note">Hub routes (proposed §46): <code>GET /ui/api/roi-board</code> (rows per ROI × modality: projects with
+  <code>labeled_n</code> — the project's own human labels whose ROI names hold it, alias-aware —, <code>goal_n</code>,
+  <code>model{best, latest}</code> with the per-ROI DSC of the newest evaluation, <code>released</code>, <code>plan</code>,
+  <code>stage</code> / <code>stage_derived</code> / <code>stage_source</code>, <code>requests_open_n</code>);
+  <code>GET /ui/api/roi-board/{roi}/{modality}</code> (+ <code>history</code>); <code>PUT …/plan</code> (lead);
+  <code>GET/POST /ui/api/roi-requests</code>, <code>POST …/{id}/support</code>, <code>POST …/{id}/decision</code> (lead).
+  Live event <code>roi_board</code>.</p>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note warn"><b>A model shows two versions, or the wrong one</b><span>The same weights sit in several
+  catalog folders (a <code>duplicate_weights</code> flag, e.g. Neck/1.0.1 = CrossRegional). The release names the catalog
+  version with those exact weights, preferring the one that has metrics; trust the md5, not the folder name or
+  <code>git_tag</code>.</span></div>
+  <div class="note"><b>Countries empty in the hub</b><span>No package of that release has been built for a country
+  in ai-pipeline yet: empty means unknown, not "none".</span></div>
+  <div class="note warn"><b>Hub numbers differ from /spec</b><span>They must not: both come from the same aggregation.
+  A difference means the hub still holds an older registration (hidden list, train manifest or class mapping changed);
+  run <code>python3 scripts/hub_register.py reregister-all --apply</code> in ai-pipeline.</span></div>
+  <div class="note"><b>Overwrite by mistake</b><span>The replaced release is in <code>/mnt/deploy/trash/release_&lt;v&gt;_replaced_&lt;time&gt;</code>;
+  move it back and create the package again (which re-registers it).</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/releases.html</code> · owner: ai-pipeline, labeling-web · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datasets Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · labeling-server / labeling-web</span>
+  <h1>Datasets, splits and their provenance</h1>
+  <p class="lede">After this page you can read a dataset version page, tell where each sample and its label came from and in what state, compare train and valid demographics, and export the profile.</p>
+  <p class="meta">Last verified 2026-10-01 · CONTRACT v1.7 · <span class="owner">owner: labeling-server, labeling-web</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What a dataset version is</h2>
+  <p>A <b>dataset version</b> is one train/valid split of one model family, identified by
+  <code>model_family × split_hash</code> (the hash covers role, sample, image series, RTSTRUCT series and image checksum —
+  <a href="../flows.html#provenance">provenance</a>). It arrives from three places: the executor when a training job builds
+  its split (<code>source=aitw</code>), <code>sync_deploy</code> from the data folders under <code>/mnt/deploy</code>
+  (<code>deploy</code>), and the Excel import (<code>excel</code>). Samples whose image series could not be matched exactly are
+  marked <b>inferred</b> (one known series for that patient) or <b>unresolved</b>.</p>
+</section>
+
+<section id="page">
+  <h2>The dataset page (데이터셋)</h2>
+  <ul>
+    <li>Header: family, data version, source, split hash, train/valid counts, the run and the models trained on it.</li>
+    <li><b>Label states</b> strip (v1.4): how many samples were approved, unreviewed, changes requested, AI pre-labels or
+    legacy when the split was drawn, and the cohort request (states, time). Splits registered before v1.4 show
+    <code>unknown</code>.</li>
+    <li><b>Demographics</b> per role (sex, age, vendor, scanner, slice thickness, contrast, …) with the source mix of each
+    field; <b>profile.xlsx</b> exports the same figures (display only — regulatory figures come from ai-pipeline).</li>
+    <li>The sample table: role, patient (masked for viewers), series, resolution, <b>label state</b>, projects, labeler,
+    revision time (and a warning when a newer revision exists), review verdict, image checksum, metrics.</li>
+    <li id="registry-for-labelers">v1.60 §76.3 (U151, D329): labelers read the dataset, model, evaluation, release and
+    run pages (<code>GET /ui/api/registry/datasets[/{id}]</code>, <code>models[/{md5}]</code>, <code>evaluations</code>,
+    <code>releases</code>, <code>runs[/{run_id}]</code>) exactly as a viewer does, patient IDs included (U5); the
+    <b>profile.xlsx</b> exports and the reconciliation stay lead / viewer / admin (data scope), adding an ROI by hand
+    stays lead / admin.</li>
+    <li id="releases-states">v1.61 §77.4 (S52, D333): <b>릴리스</b> (<code>GET /ui/api/registry/releases</code>) lists every
+    registered bundle with its state — <code>candidate</code>, <code>released</code>, <code>superseded</code>,
+    <code>withdrawn</code> from the bundle's <code>RELEASE.json</code>, <code>released</code> for an older x.y.z bundle
+    registered without one, none for a four-part bundle not yet registered with one — plus base version, bump, notes
+    summary, Jira keys, creator, release time, and <code>latest_released</code>: the newest bundle of the released
+    channel. A model counts as <i>released</i> (here, in OncoStudio's model list and on the roadmap) only through a
+    released bundle; a candidate's models are not.</li>
+  </ul>
+</section>
+
+<section id="states">
+  <h2>Label states in a split</h2>
+  <p>The training wizard's state selection (or a policy's <code>label_states</code>) goes to the executor with the job; the
+  executor draws the cohort from <code>label-set</code> and registers the split with each item's <code>label_state</code>
+  (see below). To answer <b>"was this model trained on unreviewed data?"</b>: open the model page → its training split →
+  the label-state strip and column. Services ask the same through
+  <code>GET /svc/v1/models/{md5}/training-split</code>, whose items always carry <code>label_state</code> (<code>unknown</code> for
+  splits registered before v1.4, never omitted).</p>
+</section>
+
+<section id="executor-provenance">
+  <h2>What the executor sends with a split</h2>
+  <p class="owner">This section: executor (DOCMAP maps the executor's split registration here).</p>
+  <p>When a training job's split is ready, the executor registers it at the hub (<code>POST /svc/v1/splits</code>, CONTRACT §3, §6.12). What it carries depends on where the job's cohort came from:</p>
+  <div class="tbl"><table><thead><tr><th>Cohort from</th><th>Each item</th><th>The split</th></tr></thead><tbody>
+  <tr><td><code>label-set</code> (hub v1.4)</td><td><code>label_state</code> (approved, unreviewed, changes_requested, prelabel, legacy) and <code>label_kind</code> (human, prelabel, historical) of the RTSTRUCT that was trained on</td><td><code>label_states</code> — counts per state — and <code>cohort</code>: the time the states were judged at, the states asked for, the project, the policy when a policy started it</td></tr>
+  <tr><td><code>approved-set</code> (older hub)</td><td>no label fields (an older hub refuses unknown fields)</td><td>no label fields; the hub shows these items as <code>unknown</code></td></tr>
+  </tbody></table></div>
+  <p>A split registered from a job with a frozen validation set (<code>valid_pinned</code>, §11.6) has exactly the
+  pinned series as its <code>valid</code> items; the hash is computed the same way, so the same items give the same
+  hash whether they were pinned or drawn.</p>
+  <p id="model-type-provenance"><b>The model's type (v1.47 §63).</b> The model registration (<code>POST /svc/v1/models</code>) and the model deploy (<code>POST /svc/v1/deploys</code>) carry <code>model_type</code> (<code>3d</code> | <code>2d</code>) — the job's <code>train.mode</code> — when the hub reports contract 1.47 or later; the split and the run registration are unchanged.</p>
+  <p id="run-curve"><b>The run's training curve (v1.48 §66, E17).</b> The run registration's <code>metrics_summary.curve</code> (§8) is the job's curve rows, <code>[{epoch, train_loss, valid_loss, valid_dsc, full_valid_dsc?}]</code>: <code>full_valid_dsc</code> only on the epochs where the trainer's full (sliding-window) validation ran (every <code>train.full_eval_interval</code>, 50 by default). Beside it, <code>metrics_summary.best = {epoch, full_valid_dsc}</code> (the first epoch with the highest full validation, the one the trainer kept as <code>best_full_model.pth</code>) and <code>metrics_summary.stop_reason</code> (<code>early_stopping</code> | <code>epoch_limit</code> | <code>manual_stop</code>). The full-validation values come from the trainer's TensorBoard file in the experiment folder (<code>full_eval/dice_mean</code>, mapped to epochs through <code>training_log.json</code>'s steps): <code>training_log.json</code> keeps only the running best, so the evaluations that did not improve are nowhere else on disk. Without the event file, only the improving epochs are listed. Long curves are thinned to 500 points, but full-validation rows are always kept. Job 79 (81d49984): 9 values, 50 … 450; best 0.8539 at epoch 350; <code>early_stopping</code>.</p>
+  <p id="image-hash-timing"><b>When the split arrives.</b> Each item's <code>image_sha256</code> (of the decompressed
+  image) is computed after the split stage, in the executor's background sender, at roughly 0.7 s per image and cached
+  per file — so a 100-case split reaches the hub a minute or two after the job's split stage shows done, while the job
+  goes on. Each hash is saved the moment it is computed (since 2026-10-18), so the hashing never holds up the job's
+  own stages.</p>
+  <p id="manual-valid"><b>Validation entries marked by hand (v1.7).</b> Besides the set the round sampler freezes at
+  round 1's commit, a lead can mark a project's cases <i>valid</i> or <i>train</i> from OncoStudio's project page
+  (CONTRACT §13 <code>split</code>). Those entries live in the same <code>labeling_project.valid_set.series</code>
+  (listed again in <code>manual_series</code>, with <code>manual:true</code> and <code>frozen_at</code> set on the first
+  add), so every later training job pins them too (<code>valid_pinned</code>), the auto-train gate waits for their
+  labels and a pre-label request for them is refused. The sampler treats them as <b>frozen</b>: it draws no second
+  validation set while the set is non-empty, the leak guard holds their patients out of every sample, and a round reset
+  releases only the series that round's sampler froze. A series that already has a pre-label cannot become valid
+  (§11.4); a sampler-frozen series leaves the set only on an explicit <i>train</i> mark by a lead; the admin reset on
+  the Rounds tab clears everything.</p>
+  <p>The <b>split hash does not change</b> with label states (D75): it names the role, sample, image series, RTSTRUCT series and image checksum, and the state is information <i>about</i> that RTSTRUCT. The file the pipeline trains from (<code>train_valid_dict.json</code>) is the same format either way.</p>
+</section>
+
+<section id="demographics">
+  <h2>Demographics and reconciliation</h2>
+  <p>Each sample's demographics come from the case metadata first (DICOM headers, C-FIND, OncoStudio events), then from
+  ai-pipeline's per-sample values for deployed splits whose series are not in the hub (D49); the page shows which source
+  each field used. <b>인구통계 대조</b> (reconcile) puts the hub's profile of a deployed data version next to ai-pipeline's
+  regulatory profile, in ai-pipeline's categories and counting rules, and flags differences of 5 percentage points or more
+  over patients with a known value; categories the hub has no values for are marked, not flagged.</p>
+</section>
+
+<section id="lineage">
+  <h2>From a split to models and evaluations</h2>
+  <p>Dataset → the runs trained on it → their models (weights md5) → evaluations of each model on each data version →
+  releases that shipped those models. Every page links the next: dataset page → model chips; model page → training
+  split, evaluations, releases, deploys, flags; run page → dataset and models; job page → run, dataset, models. Since v1.13 the
+  모델 list also says, per set of weights, which <b>projects</b> and <b>ROIs</b> the training job used and the mean <b>DSC</b>
+  of its evaluations — the same three fields OncoStudio's Models tab shows (<code>GET /api/v1/models</code>, §21.1).
+  Since v1.16 (D142) a model is <b>one row</b>: its newest version (numeric order, 2.0.10 after 2.0.9), the version in a
+  release, how many versions exist, and the newest version's projects, ROIs, DSC and date; click the row for every
+  version, newest first, and a version for its page. The app's Models tab groups the same way.
+  Since v1.21 (§28.1, D168) <i>released</i> means the version shipped in the <b>newest</b> release (the highest
+  numbered one; site builds such as <code>smu_*</code> are not releases) — MR_HNN's newest is 2.2.0 while 1.7.0 ships
+  2.1.0 — and a model hidden in <code>/mnt/deploy/config/hidden_models.json</code> (the whole family, or one version) is
+  marked hidden rather than left out; the hub ranks the families once (<code>families[]</code> of
+  <code>GET /api/v1/models</code>) so the auto-contour picker and the Models tab agree.
+  <span id="hidden-set">Since v1.36 (§50) an admin also hides models, ROIs and one model's ROIs on the hub (관리 ›
+  Hidden). The hidden set is the hub's entries plus that file. A hidden family or version is marked <code>hidden</code>
+  in the model list, so pickers leave it out. Each model lists the ROIs hidden for it (<code>rois_hidden</code>). A
+  hidden ROI drops out of the ROI registry pickers (<code>GET /ui/api/registry/roi</code>, <code>GET
+  /api/v1/roi/registry</code>; both name it in <code>hidden[]</code>), and the roi-board no longer counts it as held by
+  any model. <span id="hidden-page">The page <b>관리 › Hidden</b> (admins only; others get <i>Admin only</i>) has three
+  tabs — <i>Models</i> (families, each with its versions), <i>ROIs</i> (the registry) and <i>Model ROIs</i> (each
+  family's newest model's ROIs) — with the hidden ones first, a search and <i>Hidden only</i>. <i>Hide…</i> asks for an
+  optional note and hides at once; <i>Unhide</i> makes it visible again. ai-pipeline's entries say <i>Hidden by
+  ai-pipeline</i> and cannot be changed here (edit the file). The model lists follow right away: a hidden family leaves
+  <i>Labeling › Models</i> and every picker.</span> <span id="hidden-project">Since v1.37 (USER 2026-10-20) the set
+  also takes <b>projects</b> and project-only ROI names. A hidden project stays labelable (unlike archiving) but puts
+  nothing on the roi-board — none of its targets, labels, dates or jobs, and no <i>projects in progress</i> entry — and
+  is left out of the public overview; <code>GET /ui/api/projects</code> and the project page mark it
+  <code>hidden</code>. A hidden ROI now also leaves the roi-board while an open project lists it as a target. The ROIs
+  tab can offer the target names outside the registry (<code>targets</code>), hidden as written. <span id="hidden-page-projects">On
+  the page (hub 1.37 or newer) a fourth tab <b>Projects</b> lists every project that is not deleted — code (a link to
+  its page), name, modality and status when not active — with the same search, <i>Hidden only</i>, <i>Hide…</i> (an
+  optional note; the dialog says the project stays labelable and leaves the roadmap, <i>Projects in progress</i> and
+  the public overview) and <i>Unhide</i>; a hidden project shows a <i>hidden</i> badge on <b>Projects</b> and in its
+  page title. The <b>ROIs</b> tab lists the target names no registry entry maps after the registry's names, each
+  marked <i>project target</i> with the projects that list it; hiding one takes it off the roadmap although those
+  projects stay open, and they keep it as a target.</span></span></span></p>
+</section>
+
+<section id="custom-rois">
+  <h2>ROI names typed by hand (v1.39 §45.4)</h2>
+  <p>The ROI registry is ai-pipeline's <code>roi_names.csv</code>, mirrored by the hub. When the wizard's <i>From
+  scratch</i> picker gets a name that is in neither its official names nor its alternative names, a lead can add it:
+  <code>POST /ui/api/registry/rois {name, modality?}</code> (lead or admin). The name is trimmed and compared like every
+  ROI name (case and spaces ignored). An official name or an alternative name answers <code>200 {official, created:
+  false}</code> with the registry's spelling, so a second entry cannot be made by spelling. Anything else is stored as the
+  hub's own ROI (table <code>roi_custom</code>: name as typed, modality, who, when) → <code>201 {official: name, created:
+  true}</code>. An empty name, one over 100 characters or one with <code>,</code> <code>|</code> or a control character →
+  422, as is a modality other than CT or MR.</p>
+  <p>A custom ROI is part of the registry the hub serves. <code>/svc/v1/roi/registry.json</code> lists it as <code>{official:
+  name, aliases: [], source: "hub"}</code> (the file's entries say <code>source: "aipipeline"</code>), and
+  <code>registry.csv</code> has a row for it with no alternative names. The converter's alias table and the executor's
+  official-name rule (§48) therefore know it with no change on their side. The pickers' source <code>GET
+  /ui/api/registry/roi</code> marks it <code>custom: true</code> and lists every custom ROI with who added it under
+  <code>custom</code> (관리 › ROIs). The hub never writes ai-pipeline's file. When the file later lists the same name, the
+  entry becomes the file's (with the file's alternative names), and the <code>roi_custom</code> row stays as the record
+  of who added it.</p>
+  <p>Since v1.55 §72 (S47) <code>GET /ui/api/registry/roi</code> is part of the public set: every signed-in account
+  (labelers too) and a visitor without a login read it — the roadmap's ROI picker uses it. An anonymous reply carries
+  no names: <code>custom[].created_by</code> is <code>null</code> (<code>app/ui/routes_registry.py</code> <code>roi</code>,
+  <code>app/ui/auth.py</code> <code>blank_names</code>).</p>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note warn"><b>Many unresolved samples</b><span>Deployed splits name patients, not series; they resolve once the series is known to the hub (C-FIND/header sync) or ai-pipeline sends per-sample meta.</span></div>
+  <div class="note warn"><b>A version is not deployable</b><span>ai-pipeline's bundle validation failed (e.g. an image read error); see its validation page.</span></div>
+  <div class="note warn"><b>The same split twice</b><span>A split is keyed by its hash: re-registering the same content updates it; a changed item makes a new version.</span></div>
+  <div class="note warn"><b>Label states show "unknown"</b><span>The split was registered before v1.4 or by an older executor; nothing is wrong with the data.</span></div>
+  <div class="note"><b>A project is missing from a split's project list</b><span>it was deleted (v1.19 §13, D157): deleted projects are left out of the registry's project columns and lists; an admin can undelete it on the web.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/datasets.html</code> · owner: labeling-server, labeling-web · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

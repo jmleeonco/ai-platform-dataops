@@ -16,3 +16,10 @@ send_local_scp_runs/
 *.dump
 backup/
 !ops/backup/
+# platform snapshots copied in by onco-mlops (read-only, U154) and the per-machine model pin
+handoff/CONTRACT.md
+handoff/DECISIONS.md
+handoff/WORKSPACES.md
+handoff/COLLABORATION.md
+handoff/ARCHITECTURE.md
+.claude/settings.local.json

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Labeling Rounds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · labeling-server / labeling-web (owner) + ai-training-web + ai-pipeline + oncostudio</span>
+  <h1>Labeling rounds: label, train, pre-label, correct, repeat</h1>
+  <p class="lede">After this page a project lead can run the loop the labeling team works in — choose a batch that
+  covers the data's distribution, have it labeled, train, pre-label the next batch with that model, let the team
+  correct it — and read, round by round, whether the model is good enough.</p>
+  <p class="meta">Skeleton 2026-09-30 (T0; sections are filled by their owner roles during T1); iterations 2026-10-14 · CONTRACT v1.5 §11, v1.28 §41.6 ·
+  <span class="owner">owners: labeling-server / labeling-web (page), ai-training-web, ai-pipeline, oncostudio (sections marked)</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What a round is</h2>
+  <p>A <b>round</b> is one pass of the team's loop for one project. Round 1 has no model: its cases are labeled from
+  scratch, and it also fixes the project's <b>validation set</b>. From round 2 on, the previous round's model
+  pre-labels the new cases and the team corrects the AI result instead of drawing everything.</p>
+<pre>
+ planning ─► sampled ─► prelabeling ─► labeling ─► training ─► evaluated ─► closed ─► next round (planning)
+    │           │            │              │            │            │
+ pool +      bulk        prelabel_only   OncoStudio   label-set +   DSC on the fixed valid set,
+ sampler     assign      job (round ≥ 2)  (pulls the    valid_pinned  correction effort per ROI,
+ (facets)                                 pre-label)   (auto at 90%) coverage per facet value
+</pre>
+  <div class="tbl"><table><thead><tr><th>Term</th><th>Meaning</th></tr></thead><tbody>
+  <tr><td>Pool</td><td>Cases that could enter the project: matching its patient-ID pattern and modality, not excluded, not already assigned, and (by default) not already labeled in a deployed split of the same model family.</td></tr>
+  <tr><td>Facets</td><td>sex, age bucket, vendor, scanner model, slice-thickness bucket, pixel spacing, contrast, institution, population, modality, body part, sequence. Buckets are ai-pipeline's regulatory categories; <code>unknown</code> is a value you can see and sample.</td></tr>
+  <tr><td>Validation set</td><td>Chosen once in round 1 (15 % of the round's target, at least 5 patients by default), labeled from scratch, never pre-labeled, and used as the validation split of every later training job — so DSC can be compared between rounds.</td></tr>
+  <tr><td>Round metrics</td><td>DSC / HD95 per ROI on the validation set, correction effort per ROI on this round's pre-labels, cases labeled, coverage per facet value.</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="iterations">
+  <h2>Iterations: the loop's rounds (v1.28)</h2>
+  <p class="owner">This section: hub (CONTRACT §41.6, D201).</p>
+  <p id="rounds-executor-wait"><b>S49b (2026-11-02):</b> the project pages (pool, rounds, loop strip, New training's
+  default option) read the executor's facts — info, templates, account links — before they take a database connection,
+  and a failed answer is remembered for 30 s; the loop's own moves after an executor event run on the background
+  poller's connection. A slow executor makes these facts late (the pages say the executor is unavailable), never the
+  whole hub unavailable.</p>
+  <p id="rounds-presser"><b>v1.60 §76.3 (S51):</b> an iteration's Train and the default pipeline are sent under the
+  hub's own identity as before; once the executor lists <code>hub_vouches</code> the job names the person who pressed
+  Train as its requester at the executor too (not <code>app:hub</code>), so that person may cancel or stop it there and
+  the executor's audit shows them. Who may press Train is unchanged (§40).</p>
+  <p id="iterations-fixed"><b>v1.39 §53.1:</b> an iteration that trains with the loop's pipeline sends the pipeline's
+  params without the ids the executor marks <code>fixed</code> (<code>convert.mode</code>: the iteration pins the project's
+  label revisions), as the wizard does. The wizard's <code>rtss.as_of</code> is given to the minute; the job's own
+  cohort <code>as_of</code> is the submission time.</p>
+  <p id="iterations-prerender"><b>v1.45 §56.4:</b> the same holds for any parameter the executor adds: an iteration
+  sends the loop's pipeline's stored value of <code>report.eval_prerender_n</code> (the evaluation viewer's prerendered
+  samples; e.g. 10), and nothing when the pipeline keeps the executor's default 5. A value outside the executor's
+  <code>min</code> / <code>max</code> is refused when the pipeline is saved (<a href="training.html#eval-prerender-hub">Training</a>).</p>
+  <p id="iterations-model-type"><b>v1.47 §63:</b> the loop policy has <code>model_type</code> (<code>3d</code> default,
+  <code>2d</code>; <code>PUT …/round-policy</code> refuses anything else with <i>model_type: 3d or 2d</i>). Every iteration
+  sends it as the executor's <code>train.mode</code> and records it in the round (<code>metrics.loop.model_type</code>,
+  beside <code>model_name</code>); the strip's <code>policy</code> and <code>model</code> carry it. Without its own
+  <code>model_name</code> the loop deploys to <code>&lt;CODE&gt;_&lt;model_type&gt;</code> (<code>RIBS_3d</code>), at the next
+  patch above the old <code>&lt;CODE&gt;</code> family's versions. A 2d loop on an executor without <code>train.mode</code>
+  is refused (409) with the reason (<code>tests/test_model_type_v147.py</code>).</p>
+  <p id="mode-defaults"><b>v1.48 §68 (S36, D300) — the type's defaults on Train:</b> a 2d loop trains with the
+  executor's 2d defaults (today batch size 16 instead of 2) for every parameter the loop's policy or pipeline does not
+  set; a value set there stands. Details: <a href="training.html#default-by-mode-hub">Training › the hub applies the
+  model type's defaults</a>.</p>
+  <p id="training-progress"><b>v1.48 §67 (S35, D299) — progress across jobs:</b> how the project's models improve
+  as more items are labeled. <code>GET /ui/api/projects/{id}/training-progress</code> (the app:
+  <code>GET /api/v1/projects/{code}/training-progress?user_id=</code>) lists one point per job of the project, oldest
+  first — every job that succeeded with an evaluation, plus the running ones (no DSC yet): mean validation DSC and HD95,
+  DSC per class, training / validation sizes, the items labeled when the job was submitted, the deployed ones, best
+  epoch and stop reason, and whether the validation set differs from the previous point's (then the DSC values are not
+  directly comparable). The Progress card on the training view draws it (W21); field list:
+  <a href="../components/hub.html#s35-training-progress">hub › training progress</a>.</p>
+  <p id="training-progress-web"><b>On the web (W21):</b> the <b>Iterations</b> panel's head links to <i>Progress across
+  jobs →</i>, the Progress card under Training › Training for this project (<a href="training.html#progress-web">Training ›
+  Progress across jobs</a>).</p>
+  <p id="model-type-app"><b>v1.47 §63 amendment (S33, D295):</b> OncoStudio's Train strip sets the type with
+  <code>PUT /api/v1/projects/{code}/round-policy</code> <code>{user_id, model_type: "3d" | "2d"}</code> (no token, like
+  every <code>/api/v1</code> call): a lead or admin only (403 <i>not available to your role</i> for a labeler, 403 for an
+  unbound login), only <code>model_type</code> (any other key → 400), the same effect as the web's
+  <code>PUT /ui/api/projects/{id}/round-policy</code> — the rest of the policy is kept, nothing is started (D141). Both
+  routes refuse <code>2d</code> with 409 <i>the executor's hub_loop cannot train 2d yet (its template has no
+  train.mode)</i> when the loop's template (its pipeline's) lacks <code>train.mode</code>. The app's reply:
+  <code>{ok, model_type, model_name, version, next_version}</code> — <code>model_name</code> the family the loop deploys to
+  (<code>RIBS_2d</code>), <code>version</code> the highest one deployed over it and the old <code>&lt;CODE&gt;</code> family
+  (null when none), <code>next_version</code> the one the next deploy takes (above the project's live jobs too).
+  <code>GET /api/v1/projects/{code}/loop</code> is unchanged and then shows <code>policy.model_type</code>.</p>
+  <p id="iterations-model-type-web"><b>On the web (W19):</b> the project page's Train strip shows <b>Model type 3D | 2D</b>
+  beside Train — a lead switches it there (saved at once as the loop policy's <code>model_type</code>; the next Train
+  trains that type), others read <i>Next Train: 2D model</i>. <b>Automation › Training loop</b> has the same choice, and its
+  model-name placeholder follows it (<code>RIBS_2d</code>). The <b>Iterations</b> table names each iteration's type after
+  its model (<i>RIBS_2d 1.0.5 · 2D</i>); iterations from before 1.47 show none.</p>
+  <p id="iterations-unavailable"><b>v1.39 §53.2:</b> <i>Train</i> pins every labeled item's revision as it is. A
+  revision whose file the hub cannot find is looked for on ONCOPACS by its series first. If it is not there, the item
+  is left out of the iteration, which runs with the rest; the job keeps the list (<code>cohort.unavailable</code>). The
+  strip's <code>cohort.unavailable_n</code> counts these items from the mirror (<a href="training.html#rtss-unavailable-hub">Training</a>).</p>
+  <p id="loop-one-at-a-time"><b>v1.39 §43.4:</b> the loop's <i>Train</i> keeps its rule <i>a job of this project is
+  running</i>; only the wizard may start a second job of the project, under another deploy version
+  (<a href="training.html#jobs-per-project">Training</a>). Since v1.44 the wizard raises a taken or lower version to the
+  next free one instead of refusing it; the loop's own deploy is unchanged (<a href="training.html#deploy-version">Training</a>).</p>
+  <p>Since v1.28 the usual way to train is the project page's <b>Train</b> button (<a href="training.html#loop">the
+  training loop</a>): add items, label, Train, correct the pre-labels, Train again — no pool and no sampler. Every Train
+  is one <b>iteration</b>, and an iteration is a round record like the ones below, with these differences:</p>
+  <div class="tbl"><table><thead><tr><th></th><th>Iteration (Train)</th><th>Sampler round (this page's steps 1–6)</th></tr></thead><tbody>
+  <tr><td>Born</td><td>by Train, directly in <b>training</b>; <code>target_n</code> = the labeled items at the press; no sampler request</td><td>by a lead in <b>planning</b>, then sample → commit</td></tr>
+  <tr><td>Items</td><td>every item of the project (no batch)</td><td>the committed sample</td></tr>
+  <tr><td>Label states</td><td>the project's <code>loop_label_states</code> (v1.29 §42.4; default the four human states, never <code>prelabel</code>) — the training view's chips</td><td>the round policy's <code>label_states</code> (all five)</td></tr>
+  <tr><td>Validation set</td><td>frozen at the project's first Train: the lead-marked rows, else a stratified draw over the labeled items (labels in the chosen states)</td><td>drawn inside round 1's sample</td></tr>
+  <tr><td>Pre-labels</td><td>started by the hub when the job exports its model, for every unlabeled item outside the validation set; items added later by the 10-minute tick (the training job's own pre-label hand-off, <code>prelabel.hub_push</code>, is off — D210)</td><td>round ≥ 2, the round's batch, at commit or by the button</td></tr>
+  <tr><td>Evaluated</td><td>the job succeeded → <b>evaluated</b> with the same metrics (DSC / HD95 per ROI, correction effort of the previous iteration's pre-labels, labeled count, coverage); plus the automatic deploy when the DSC passes the project's threshold</td><td>the same</td></tr>
+  <tr><td>Closed</td><td>by the next Train (which opens the next iteration)</td><td>by <b>라운드 종료</b></td></tr>
+  <tr><td>Deploy</td><td>the §41.5 threshold deploy after the job (<code>POST …/deploy</code> by <code>app:hub</code>) — or, v1.38 §55, when the loop's <code>round_policy.pipeline</code> has <code>deploy.enabled</code>, the job's own deploy stage (recorded as <code>metrics.loop.deploy_in_job {family, version, memo}</code>; <code>metrics.loop.deploy</code> follows the stage: deploying → deployed / failed / none); the loop's pipeline as <code>metrics.loop.pipeline {id, key, name}</code></td><td>none (a lead deploys from the job page)</td></tr>
+  <tr><td>Model name</td><td>the project's model name (<i>Automation… › Training loop</i>), also in the Models pages and the app — never the executor's export name (§41.10)</td><td>the executor's registration</td></tr>
+  <tr><td>Listed as</td><td><code>origin: "loop"</code> in <code>GET /ui/api/projects/{id}/rounds</code></td><td><code>origin: "sampler"</code></td></tr>
+  <tr><td>Labels counted</td><td colspan="2">the project's own only (v1.31 §44): the loop's counts, minimum, validation draw and pre-label eligibility, and a sampler round's labeled facets, validation check and pre-label batch ignore labels of the same series made for other projects</td></tr>
+  <tr><td>Not a round</td><td colspan="2">a <a href="training.html#default">Default pipeline</a> job (v1.30 §43.3) trains on the rows as marked valid / train (optionally on <a href="training.html#default-rois">a subset of the target ROIs</a>) and creates no round — no iteration, no pre-labels, no deploy after it; since v1.41 the wizard may send <a href="training.html#explicit-lists">its own Train / Valid lists</a> instead of the marks (every listed row is sent: no patient cap; a row left out is named in the preview; since v1.43 each listed series goes with its DICOM PatientID, never the hub's own id — D271)</td></tr>
+  </tbody></table></div>
+  <p>Items whose human label exists nowhere — no file saved to the hub and its RTSTRUCT series not in the hub's mirror
+  of the PACS — are not trained on and not drawn into the validation set (§41.9); <i>Iterations…</i> lists them with
+  <i>label file not found on the hub or the PACS</i> (<code>unusable[]</code> of <code>GET …/rounds</code>), and the
+  strip counts them apart (<code>labels.unusable_n</code>). Since v1.33 (§47) the list also holds the Excel-era rows
+  whose merged record has no single RTSTRUCT holding every target ROI, with <i>target ROIs spread over &lt;n&gt;
+  structure sets</i> or <i>missing target ROIs: &lt;list&gt;</i>; a row whose single source file is on the PACS trains as a
+  <a href="training.html#merged-source">legacy label</a>.</p>
+  <p>On the web <i>⋯ › Iterations…</i> lists the iterations (model, labels, pre-labels, DSC, deploy) beside any sampler
+  round, then the DSC per ROI by iteration; an iteration's page shows <i>This iteration</i> (model + job, DSC / HD95 /
+  n per ROI, pre-label jobs, deploy) instead of the pool and sampler cards, without round buttons. The DSC per ROI is
+  listed under the project's spelling of each target: the executor reports the registry's official names (v1.34 §48),
+  and the hub maps them back through the <a href="labeling.html#official-names">alternative names</a>, as on the
+  loop strip.</p>
+  <p>The web's <i>Rounds…</i> panel is named <b>Iterations…</b>: the same history and trend table; the pool and sampler
+  cards appear only for rounds the sampler created. The sampler path below stays for projects that want a batch chosen
+  to cover the data's distribution; the loop never calls it. A Train while a sampler round is open closes that round.</p>
+</section>
+
+<section id="hub-pool">
+  <h2>1 · Look at the pool</h2>
+  <p class="owner">This section: hub (CONTRACT §11.2, D83).</p>
+  <p>Open the project, tab <b>라운드 (Rounds)</b>, then a round. The top card shows the project's <b>pool</b>: every
+  image series whose patient ID matches the project's <code>patient_regex</code> and whose modality is the project's,
+  that is not an RT object, not already assigned in the project (excluded rows included) and — by default — not an
+  item of a deployed split of a model family the project has trained (those already have labels). A project without
+  <code>patient_regex</code> has no pool; set it under 편집.</p>
+  <p>For each sampled facet a small chart lists every value: a grey bar = series in the pool, a green bar = already
+  labeled in the project, a blue bar = proposed by the current preview, and a black tick = the preview's target. The
+  rule of each bucket is printed under its label (for example <code>49y ≤ age &lt; 71y</code> under <i>50~70</i>;
+  vendor is an open set — each first word of the manufacturer is its own value). <code>unknown</code> (population:
+  <code>Others</code>) is a value like any other: it is shown, counted and sampled. The card header says where the
+  bucket edges came from (<i>ai-pipeline</i>, cached daily with its sha256, or <i>hub fallback</i> — the same table
+  copied, used until the first fetch) and how many series each source contributed.</p>
+  <div class="tbl"><table><thead><tr><th>Where a facet comes from</th><th>Source (rank)</th></tr></thead><tbody>
+  <tr><td>the DICOM header read by the hub's header sync</td><td><code>dicom</code> (4)</td></tr>
+  <tr><td>the scoped C-FIND refresh (below)</td><td><code>cfind</code> (3)</td></tr>
+  <tr><td>the executor's harvest of the converter index; the SCP / OncoFlow mirrors</td><td><code>pipeline_db</code>, <code>scp</code>, <code>oncolabdb</code> (2)</td></tr>
+  <tr><td>ai-pipeline's per-case metrics, and the deployed metrics JSONs read by the hub's <code>sync_deploy</code></td><td><code>metrics</code> (1.5)</td></tr>
+  <tr><td>manual entry, OncoStudio events, imports</td><td>1 · Excel 0</td></tr>
+  </tbody></table></div>
+  <p>A higher rank wins per field; <code>meta_sources</code> on each case records the winner (the pool API lists it).
+  Everything arrives through one strict write path, <code>POST /svc/v1/cases/meta</code>, which refuses any key naming a
+  patient's name or birth data.</p>
+  <p><b>Growing the pool</b> (lead): <code>POST /ui/api/projects/{id}/pool/refresh {since?, until?, max_studies}</code> asks
+  the central PACS by C-FIND only (never C-MOVE or C-STORE, calling AE <code>ONCOLAB_HUB</code>) for the studies whose
+  PatientID starts with the regex's literal prefix (<code>^PELVIS_2023_00[0-9]{2}$</code> or <code>^PELVIS_2023_00([0-3][0-9]|40)$</code> → <code>PELVIS_2023_00*</code>; only a
+  <code>|</code> outside any group, as in <code>^A|^B</code>, leaves no prefix) and whose
+  ModalitiesInStudy is the project's — <b>one study-level query without a StudyDate</b>: the central PACS answers nothing
+  to a StudyDate range (found in the dev acceptance, 2026-09-30), so <code>since</code>/<code>until</code> only filter the
+  answers on the hub. The full regex filters them too; then, for at most <code>max_studies</code> (default 200) studies not
+  expanded before, in StudyInstanceUID order, a series-level query turns their image series into cases (source
+  <code>cfind</code>). The answer is <code>{studies, series_new, series_seen, found, next}</code>; <code>next</code> = studies still to
+  expand (call again), <code>null</code> when done. The expanded study UIDs are remembered, so a later refresh only
+  expands studies that are new. A regex without a literal prefix is crawled one StudyDate day at a time (at most 60 days
+  per call) and needs both dates. The header sync then reads the new series first when the project's open round is
+  still in planning (at most <code>HEADERS_MAX_PER_RUN</code> series per run, default 200).</p>
+</section>
+
+<section id="hub-sampler">
+  <h2>2 · Sample a batch that covers the distribution</h2>
+  <p class="owner">This section: hub (CONTRACT §11.3, D82).</p>
+  <figure><img src="../assets/img/hub-round.png" alt="Round page: facet bars with pool, labeled, proposed and target per value; the sampler form and its preview with validation rows"><figcaption>Round 1 on the dev hub: facet bars, the sampler, the preview (validation rows marked).</figcaption></figure>
+  <p>In a round in <b>planning</b> the lead fills the form; every change re-runs the <b>preview</b> (nothing is written):</p>
+  <div class="tbl"><table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
+  <tr><td>Series to label (<code>target_n</code>)</td><td>the size of the batch, validation set included</td></tr>
+  <tr><td>Facets</td><td>default sex × slice thickness × vendor</td></tr>
+  <tr><td>Cells</td><td><i>per value</i> (default): each facet value is a cell; <i>per combination</i>: every value combination is a cell (explodes quickly)</td></tr>
+  <tr><td>Min per cell</td><td>every populated cell first gets this many labeled-or-proposed series (default 1)</td></tr>
+  <tr><td>Target profile</td><td>after coverage, the rest follows the pool's own distribution, uniform, or a pasted <code>{facet: {value: share}}</code> (API)</td></tr>
+  <tr><td>Seed</td><td>ties break by <code>sha256(seed:series)</code>: <b>the same seed gives the same sample</b>; the dice make a new one</td></tr>
+  </tbody></table></div>
+  <p>How it picks: the rarest cell that still lacks its quota first, choosing among its candidates the one that fills the
+  most other missing cells; then, until the target, the series that closes the largest gap to the target profile; at
+  most one series per patient. Each row says why it was picked ("covers vendor=philips"). When the quotas need more
+  series than the target, the rarest cells win and the rest are listed as <b>short</b> — raise the target or accept it.
+  Held back (leak guard): patients someone has open in OncoStudio (open claims), patients of the validation set (after
+  round 1), and series already in the project or in a deployed split of its family.</p>
+  <p><b>Commit</b> re-runs exactly that preview (same seed) and creates the assignments (source <code>round</code>, with the
+  round's id). Pick labelers to spread the batch round-robin; with none, the rows stay unassigned and appear in each
+  labeler's 추천 (suggestions point at the open round's unassigned rows). Until someone starts working, <b>다시 표본
+  추출 (resample)</b> takes the round back to planning and removes its untouched assignments.</p>
+</section>
+
+<section id="hub-valid">
+  <h2>3 · The validation set (round 1)</h2>
+  <p class="owner">This section: hub (CONTRACT §11.4, D80).</p>
+  <p>Round 1's preview also draws the <b>validation set</b>: <code>max(valid_min_patients, ⌈valid_fraction × target⌉)</code>
+  patients (round policy, defaults 5 and 15 %), stratified over the same facets by a second pass of the sampler, taken
+  <b>out of</b> the target (a target of 20 labels 20 series, 5 of them for validation). They carry a lock mark in the
+  preview and on the board (<i>R1 · 검증</i>). At commit the set is <b>frozen</b> on the project (series, patients, date,
+  round) and shown on the round page and the Rounds tab.</p>
+  <ul>
+    <li>Validation series are labeled <b>from scratch</b>: the hub refuses a pre-label for them (<code>422 series is in the
+    validation set</code>) and a round's pre-label job leaves them out — a reference drawn by correcting the model would
+    flatter the model.</li>
+    <li>Every later training job of the project sends them as <code>valid_pinned</code> (executor contract ≥ 1.5), so
+    each round's DSC is measured on the same cases. Their patients never enter a later sample.</li>
+    <li>Leads can also mark cases <b>valid</b> / <b>train</b> by hand from OncoStudio's project page (CONTRACT §13, hub
+    1.7). Those entries are frozen like sampled ones: no second set is drawn while any entry exists, their patients are
+    held back, and a round reset keeps them (<a href="datasets.html#manual-valid">Datasets</a>).</li>
+    <li>Replacing the set is an admin action (Rounds tab › 검증 세트 초기화, with a reason; recorded and alerted). The next
+    committed round draws a new set. DSC before and after a reset is not comparable: the trend marks those rounds with
+    <b>*</b>.</li>
+  </ul>
+</section>
+
+<section id="hub-prelabel">
+  <h2>4 · Pre-label the batch (round 2 and later)</h2>
+  <p class="owner">This section: hub (CONTRACT §11.5, §7.3 v1.5, D81, D84, D86).</p>
+  <p>From round 2 on, committing the sample starts the pre-label job by itself when the round policy's <i>auto
+  pre-label</i> is on (default) and the previous round's model is known (the job of the closed round); the round goes
+  to <b>prelabeling</b>. The <b>사전 라벨</b> button does the same by hand (in <i>sampled</i> or <i>labeling</i>), with
+  another model if needed: an executor or hub job id, a model path, or a registered weights md5 (the hub resolves it to
+  a path). The hub sends template <code>prelabel_only</code> with a <code>series</code> cohort — the round's non-validation
+  series that have no human label, each with its patient and study — and the parameters <code>model_job_id</code> /
+  <code>model_path</code> / <code>model_md5</code>, <code>round_id</code> and <code>round_n</code>. An executor below contract
+  1.5 cannot run it: the button answers 409 and says so.</p>
+  <p>Each RTSTRUCT the executor hands back is recorded with its round, model version and job; the answer says how it
+  reaches the labeler: <b>push</b> when the project has a pre-label destination (C-STORE as before), otherwise
+  <b>pull</b> — OncoStudio fetches it with <code>GET /api/v1/prelabels/{sop}?user_id=</code> when the case is opened. The
+  hub serves a copy without the patient's name, birth date/time, other names/IDs, address, phone and mother's birth
+  name (the stored file is untouched), only to a bound OncoStudio login, and logs every pull (status <i>pulled</i>, who,
+  when, how often — project page › 자동화 › AI 사전 라벨). When the job ends — whatever each series' outcome — the
+  round moves to <b>labeling</b>; the round page lists per series whether a pre-label arrived and how it was delivered.</p>
+</section>
+
+<section id="oncostudio">
+  <h2>5 · Label or correct in OncoStudio</h2>
+  <ol>
+    <li>Labelers see the round's cases in OncoStudio › DICOM browser › <b>My assignments</b> with a <b>Round n</b> chip;
+    cases with a pre-label also carry an <b>AI pre-label</b> chip (tooltip: <i>ready</i> or <i>being prepared</i>).</li>
+    <li>Double-clicking (or Enter) opens the case. If the image series is not on the PC it is retrieved from the PACS
+    nodes configured as a source; if the case has a pre-label and nothing has been saved yet, the pre-label is pulled
+    from the hub and opened together with the image. The hub sends the pre-label without the patient's name and birth
+    date; OncoStudio copies them back from the local image before storing it, so the Local SCP never shows two
+    identities for one patient.</li>
+    <li>The labeler corrects and saves as usual; the save renames the <code>_pre</code> ROIs, links the pre-label
+    (<code>prelabel_revision_uid</code>) and the round (<code>round_id</code>), and the hub measures the correction
+    effort for the round metrics.</li>
+    <li><b>Next</b> in the panel header opens the next <i>open</i> assignment in the hub's order (delivered ones are skipped; it wraps to the first open one, D90).</li>
+  </ol>
+  <div class="note"><b>"The AI pre-label could not be loaded"</b><span>the toast names the cause: the hub is not
+  reachable, the OncoStudio login is not linked in the hub (403), or the hub has no such pre-label. The case still
+  opens without it; draw from scratch or retry later.</span></div>
+  <div class="note"><b>Series not retrieved</b><span>no PACS node is marked "use as source" in Settings › DICOM nodes,
+  or none of them holds the series → retrieve it by hand from the PACS browser.</span></div>
+</section>
+
+<section id="hub-train">
+  <h2>6 · Train and evaluate</h2>
+  <p class="owner">This section: hub (CONTRACT §11.7, D85, D80).</p>
+  <p>While the round is <b>labeling</b>, the hub checks every 10 minutes (<code>round_tick</code>): when the round's
+  delivered-or-later share reaches the policy's ratio (default 90 %) <b>and</b> every validation series is labeled, it
+  starts training itself (<code>requested_by app:hub</code>): the project's label set in the policy's label states (default
+  all five), the policy's template and parameters — every required ROI-list parameter of that template the policy leaves empty
+  gets the project's ROI set, under the template's own name (<code>start.rois</code> for the executor's
+  <code>hub_loop</code> / <code>hub_checkpoint</code>; other required parameters, e.g. <code>export.model_path</code> of
+  <code>hub_checkpoint</code>, must be in the policy), and <code>start.modality</code> the project's modality (CT / MR) when the
+  policy names none (the executor otherwise defaults to CT; an iteration's Train always sends the project's) — and the
+  pinned validation set. The progress card says what it waits for ("waiting for 0.9 delivered (12/16)", "waiting for the valid set (2
+  series unlabeled)"); its counts, per round and per labeler, and the round's item list read in display stages
+  (Assigned / Labeled / Review / Approved — v1.18, D149, <a href="review.html#stages">Stages</a>); facet values read in
+  the UI language (남 / 여, 조영 / 비조영, 미상 — D153 W7). <b>학습 시작</b> starts it by hand at any time from labeling (it refuses while validation series are
+  unlabeled, because the executor would refuse the pin); policy <i>train manually only</i> turns the automatic start
+  off. A failed job leaves the round in <b>training</b> with the error; press the button again. If it failed after
+  its evaluate stage, the page still shows that job's per-ROI DSC (for reference; the round is not evaluated).</p>
+  <p>A round's training job <b>asks for no pre-label push</b> (D89): the round's pre-labels come from
+  <code>prelabel_only</code>, and a training template's own predict stage predicts the validation split, whose pre-labels
+  the hub refuses. When the template exposes a <code>…hub_push</code> switch the hub sets it off for round jobs,
+  whatever the policy says; the executor's <code>hub_loop</code> / <code>hub_checkpoint</code> keep it fixed today, so
+  the round page says so and the executor skips the refused validation-set files instead of failing the job. Jobs
+  started from 새 학습 or a policy keep the template's behaviour.</p>
+  <p>When the job succeeds the round becomes <b>evaluated</b> with its metrics: DSC / HD95 per ROI on the validation set
+  (from the executor), the correction effort per ROI of this round's pre-labels (how many were delivered unchanged, the
+  median changed fraction), the number of labeled series and the coverage per facet value. The trend table compares
+  rounds. With an executor below 1.5 the job trains with its own split and the page says <i>valid set not pinned —
+  executor v1.4</i>. "Good enough" is the lead's call: <b>라운드 종료</b> closes the round and opens the next in planning,
+  with this round's model as its pre-label model.</p>
+  <div class="tbl"><table><thead><tr><th>Round policy (project › 자동화)</th><th>Default</th></tr></thead><tbody>
+  <tr><td>auto pre-label (round ≥ 2)</td><td>on</td></tr>
+  <tr><td>train when</td><td>90 % delivered + validation labeled; or manual</td></tr>
+  <tr><td>label states · template · parameters</td><td>all five · <code>hub_loop</code> · project ROI set (the loop's own states: <code>loop_label_states</code>, <a href="training.html#loop-settings">Training loop</a>)</td></tr>
+  <tr><td>valid fraction · valid min patients</td><td>15 % · 5</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="executor-jobs">
+  <h2>7 · What the executor runs</h2>
+  <p class="owner">This section: executor (CONTRACT §11.6, D80, D83, D84).</p>
+  <h3>Pre-labelling a round: <code>prelabel_only</code></h3>
+  <p>When a round is committed with a model, the hub asks the executor for a <code>prelabel_only</code> job: a <b>series
+  cohort</b> (the round's non-validation series, labelled or not, 1–500, each with its patient ID) and the model, named by
+  <code>model_job_id</code> (a finished executor job whose export is used — same project, or asked for by the same person)
+  or <code>model_path</code> (a <code>3d_final_model.pt</code>, or a deployed folder <code>/mnt/deploy/models/&lt;M&gt;/&lt;V&gt;</code>
+  the bound NAS account can read). <code>model_md5</code>, when sent, is checked against the file before the GPU is asked
+  for; <code>round_id</code> (the hub's round id) goes to the hub record and <code>round_n</code> (the round's number)
+  into the RTSTRUCT text — ids are for joins, numbers are for people. The classes come from the model's own
+  <code>global_fingerprint.json</code>.</p>
+  <div class="tbl"><table><thead><tr><th>Stage</th><th>What it does</th></tr></thead><tbody>
+  <tr><td>Download DICOM</td><td>by patient — the research downloader cannot fetch single series</td></tr>
+  <tr><td>Choose RTSTRUCT</td><td><b>prunes to the requested series</b>: every other series of those patients (and of any other patient in the account's store) is hidden, not deleted; the log shows bytes downloaded against bytes kept</td></tr>
+  <tr><td>DICOM → NIfTI · targets</td><td>converts with empty masks allowed (unlabelled series are the point)</td></tr>
+  <tr><td>Check the model</td><td>md5 checked when sent; the model's family and version recorded for the marking</td></tr>
+  <tr><td>Predict → RTSTRUCT → label → hand to the hub</td><td>one RTSTRUCT per series, marked <code>AI_PRELABEL</code>, sent to <code>POST /svc/v1/prelabel</code></td></tr>
+  </tbody></table></div>
+  <p>No training, export or deploy: a round's pre-label job takes minutes for a handful of series (the download is the long
+  part). It does not block a training job of the same project (the in-flight guard is per project and template).</p>
+  <h3>The pinned validation split</h3>
+  <p>Every training job of a project with a frozen validation set carries <code>cohort.valid_pinned</code>. The split then
+  puts <b>exactly</b> those series in <code>valid</code> and every other labelled series in <code>train</code>, whatever the
+  split mode says. A pinned series that has no label in the cohort refuses the job at creation (<code>422
+  valid_pinned_missing</code>, listing them) — never dropped silently, since the round's DSC would stop comparing. Another,
+  unpinned series of a validation patient goes to neither side and the split log names it (a patient is never on both
+  sides). The job page shows <code>valid_pinned_n</code>.</p>
+  <h3>What a pre-label records about itself</h3>
+  <p>The RTSTRUCT's <code>StructureSetDescription</code> reads <code>round &lt;n&gt; · &lt;family&gt; &lt;version | job:&lt;id&gt;&gt; ·
+  &lt;md5[:8]&gt;</code>, where <code>&lt;n&gt;</code> is <code>round_n</code> (no round part when the job has no
+  <code>round_n</code>); its <code>SeriesDescription</code> keeps the older
+  <code>AI_PRELABEL &lt;family&gt; &lt;md5[:8]&gt;</code>, which is how later selections keep ignoring pre-labels. The hand-off also
+  sends <code>round_id</code>, <code>model_version</code> and <code>job_id</code> — only to a hub that reports contract 1.5
+  (<code>GET /api/v1/health</code>); a hub that refuses them gets the older body, and the stage log says so. The hub's answer
+  (<code>delivery: push | pull</code>) is written in the stage log.</p>
+  <h3>Facets harvested on the way</h3>
+  <p>The converter builds an index of every DICOM file it reads (<code>&lt;store&gt;/.db</code>). Right after conversion — in
+  training and pre-label jobs alike — the executor reads <b>only</b> these columns from it: series and study UID, patient
+  ID, modality, body part, sex, age, manufacturer, model, slice thickness, pixel spacing, spacing between slices, kVp,
+  kernel, institution, protocol (as the sequence, MR only), field strength, contrast agent — one row per series — and sends
+  them to <code>POST /svc/v1/cases/meta</code> as source <code>pipeline_db</code>. Names, birth dates, physicians and paths
+  in the same file are never read into the payload. It needs the pinned pipeline's <code>db_sidecar</code> capability and a
+  hub on contract 1.5; otherwise, or when the hub answers 404 or 422, it is skipped and the conversion log says why — it
+  never fails a stage.</p>
+</section>
+
+<section id="pipeline-facets">
+  <h2>8 · Facets of deployed data and the categories</h2>
+  <p>Series that are already in a deployed training or validation split were evaluated by ai-pipeline, which read one
+  DICOM header per case at that time. Those values reach the hub's pool as facets, so the sampler can see where the
+  existing data already sits (and exclude the family's split items, which already have labels).</p>
+  <div class="tbl"><table><thead><tr><th>Facet</th><th>From the per-case metrics</th></tr></thead><tbody>
+  <tr><td>sex, age, vendor, slice thickness</td><td>the DICOM header (as the regulatory profile uses them)</td></tr>
+  <tr><td>scanner model, modality, spacing between slices, pixel spacing, institution</td><td>the same header, written since v1.5; older results were completed by a one-off header backfill</td></tr>
+  <tr><td>contrast</td><td>ai-pipeline's contrast classifier (sampled cases only)</td></tr>
+  <tr><td>population</td><td>the country rules on the patient ID prefix</td></tr>
+  </tbody></table></div>
+  <p><b>Only exact series.</b> A case is sent (<code>POST /svc/v1/cases/meta</code>, §3, source <code>metrics</code>, rank 1.5
+  in §11.2) only when its series UID is exact <i>and</i> its header was read from that very series: the case's own DICOM,
+  or the central PACS matched by series UID. When the central PACS could only be matched by patient, the header came
+  from some series of that patient, so those facets are not attached to any series. A header from the scanner
+  (<code>dicom</code>, <code>cfind</code>) or the executor's harvest (<code>pipeline_db</code>) outranks these values. No names,
+  birth dates or study dates are sent; the patient ID is. Values that ai-pipeline's case metadata registry filled
+  (cases without a readable header) are never sent as series facets: they are not a header fact of that series. The
+  hub reads that registry directly for its project rows (D138a, <code>/mnt/deploy/config/case_meta</code>).</p>
+  <p><b>Categories come from ai-pipeline.</b> The buckets a round uses (age &lt;49 / 50~70 / &gt;70, slice thickness
+  1–2 / 2–3 / ≥3 mm, sex, contrast, country, vendor as the first word of the manufacturer) are the regulatory
+  profile's own categories, published as data at ai-pipeline's <code>GET /api/v1/profile-categories</code> (§8.2, D82) with a
+  <code>sha256</code>. The hub reads its edges from there, so a round's coverage and the 인허가 프로파일 count the same
+  way; <code>unknown</code> is a cell of its own. The label "50~70" counts ages 49–70 (whole years), as the regulatory
+  profile always has.</p>
+  <div class="note"><b>Facets missing for many deployed series</b><span>Data versions deployed without DICOM whose
+  patients the central PACS finds only by ID contribute no series facets (see above); the hub's header sync or
+  scoped C-FIND fills those.</span></div>
+</section>
+
+<section id="record">
+  <h2>What is recorded, and where</h2>
+  <div class="tbl"><table><thead><tr><th>Record</th><th>Key</th><th>Written by</th></tr></thead><tbody>
+  <tr><td><code>labeling_round</code> (state, seed, quotas, source model, jobs, metrics)</td><td><code>(project_id, n)</code></td><td>hub</td></tr>
+  <tr><td><code>assignment.round_id</code>, <code>assignment.is_valid</code></td><td>assignment id</td><td>hub (commit)</td></tr>
+  <tr><td colspan="3"><i>Since v1.9 (U6) <code>is_valid</code> is tri-state: <code>true</code> valid, <code>false</code> train, <code>null</code> not stated. The sampler and the training cohorts treat <code>null</code> like train-eligible (<code>coalesce(is_valid, false)</code>); only a lead, a round or the data list sets it.</i></td></tr>
+  <tr><td><code>labeling_project.valid_set</code>, <code>round_policy</code></td><td>project</td><td>hub (round 1 commit, lead)</td></tr>
+  <tr><td><code>label_revision.round_id</code>, <code>model_version</code>, <code>job_id</code></td><td><code>rtss_sop_uid</code></td><td>hub (pre-label intake, deliverables)</td></tr>
+  <tr><td><code>imaging_case.case_meta</code> + <code>meta_sources</code></td><td><code>image_series_uid</code></td><td>hub (header sync, C-FIND, deploy sync) · executor and ai-pipeline via <code>cases/meta</code></td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note"><b>The pool is empty</b><span>the project has no <code>patient_regex</code>, or no case matches it and
+  the modality yet → set the regex, then 풀 새로고침 (scoped C-FIND) and wait for the header sync.</span></div>
+  <div class="note"><b>Commit refused (409)</b><span>the round is not in planning, or the leak guard left nothing to
+  sample; the message says which.</span></div>
+  <div class="note"><b>Pre-label refused</b><span>"executor speaks contract &lt; 1.5" (update the executor), no model
+  (round 1: give one), or "nothing to pre-label" (every non-validation series already has a human label).</span></div>
+  <div class="note"><b>Training did not start at 90 %</b><span>a validation-set case is not labeled yet → the round
+  page names it; label it (from scratch) or start training by hand.</span></div>
+  <div class="note"><b>"valid set not pinned"</b><span>the executor is older than contract 1.5 → the job trained with a
+  ratio split; DSC of this round is not comparable. Ask for the executor update.</span></div>
+  <div class="note"><b>Rounds of a deleted project</b><span>a project deleted with the admin action password (v1.19 §13, D157) is skipped by the round tick and by the pool header sync until an admin undeletes it; its rounds are kept.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/rounds.html</code> · owners: labeling-server / labeling-web (page), ai-training-web (§7), ai-pipeline
+  (§8), coordinator (§5, overview).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-pipeline Component</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Component · ai-pipeline</span>
+  <h1>ai-pipeline: regulatory metrics, packaging and the ROI registry</h1>
+  <p class="lede">After this page you can say what ai-pipeline computes and packages, how its GPU queue and leak guard work, what it registers in the hub, and how it is run in dev and production.</p>
+  <p class="meta">Last verified 2026-11-05 · CONTRACT v1.61 (§77 releases API added; §70 at v1.51; the rest verified at v1.4) · <span class="owner">owner: ai-pipeline</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="purpose">
+  <h2>What it is for</h2>
+  <p>ai-pipeline (모델 배포 파이프라인) is the release pipeline's metrics and packaging app. It measures every deployed model
+  version on its data versions (DSC and HD95 per ROI, the regulatory 성능 표), builds the release packages that ship to
+  clinics, owns the ROI registry file (official ROI names and their aliases), and tells the hub what it found:
+  evaluations with per-case rows, releases with their countries, split demographics, bundle-validation results and model
+  flags. The hub stores those figures and shows them; it never recomputes them. Leads open ai-pipeline pages inside the
+  hub (embedded, signed in by the hub), or directly at <code>http://10.101.1.183:5000</code> on the LAN.</p>
+  <div class="tbl"><table><thead><tr><th>Area</th><th>Main pages</th><th>Who uses it</th></tr></thead><tbody>
+  <tr><td>Regulatory metrics</td><td><code>/spec/overview</code>, <code>/spec/package/&lt;v&gt;</code>, <code>/spec/compare</code>, <code>/spec/profile/…</code>, <code>/spec/manage</code> (추론 관리)</td><td>research, leads, regulatory</td></tr>
+  <tr><td>Packaging</td><td><code>/packaging/</code> (모델 패키징, 새 패키지, per-model download)</td><td>admin builds; research downloads</td></tr>
+  <tr><td>ROI registry</td><td><code>/roi/</code> (ROI 관리, 카탈로그, 뷰어)</td><td>data team, research</td></tr>
+  <tr><td>Model visibility</td><td><code>/admin/models</code> (숨김)</td><td>admin</td></tr>
+  <tr><td>기타</td><td><code>/admin/misc</code> — nnInteractive 학습 데이터 Excel: the nnInteractive paper's public training
+    datasets (<code>data/nninteractive/public_datasets.json</code>; only those under a Creative Commons licence that allows
+    commercial use — CC0, CC BY, CC BY-SA, CC BY-ND; NC, non-CC and unknown licences are left out) + every train/valid case of our deployed models, by
+    model, source cohort, modality and country (<code>app/admin/nninteractive.py</code>)</td><td>admin</td></tr>
+  <tr><td>Reconciliation API</td><td><code>/api/v1/profiles…</code>, <code>/api/v1/evaluations/…/cases</code> (§8.2)</td><td>the hub (service token)</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="spec">
+  <h2>/spec: regulatory metrics</h2>
+  <p>An <b>evaluation</b> is one model version scored on one data version's validation cases: <code>inference/calculate.py</code>
+  runs the model on every case and writes one JSON per case under <code>/mnt/deploy/metrics/&lt;model&gt;/&lt;model
+  version&gt;/&lt;data version&gt;/VALID/</code>. Every page and every hub registration aggregates those files the same way
+  (<code>app/spec/metrics_reader.py</code>): per-ROI mean/median DSC and HD95 and <i>n</i>, after dropping hidden model
+  versions and leaked cases. A pair that already has results is shown, never recomputed.</p>
+  <ol>
+    <li><b>Queue.</b> 추론 관리 (<code>/spec/manage</code>) lists pairs that need numbers; 실행 enqueues them. Jobs live in a
+    durable SQLite queue (<code>instance/inference_queue.sqlite</code>): they run detached from the web server, survive a
+    restart (the worker re-adopts a running job by pid, start time and job tag) and run one at a time.</li>
+    <li><b>Admission.</b> Before a job starts the worker waits until the host has ≥ 12 GB free memory (D51) and takes the
+    shared GPU lock <code>~/.cache/onco-gpu/admission.lock</code> (§7.7, also used by the executor's GPU stages). The lock is
+    held by the job's process for exactly as long as it runs. Training is never pre-empted; evaluation waits.</li>
+    <li><b>Automatic jobs.</b> The hub's change feed (<code>GET /svc/v1/changes</code>, D36) wakes the worker when a model or
+    data version appears; it queues the new model on its family's latest data (or the new data with the latest model),
+    origin <code>auto</code>, capped at 8 GPU-hours per KST day. Manual jobs are never capped.</li>
+    <li><b>Leak guard.</b> A case the model version <i>trained</i> on is never scored. The training split comes from the hub
+    (looked up by the md5 of the weights, <code>GET /svc/v1/models/{md5}/training-split</code>), else a train manifest,
+    else the newest data version not newer than the model (marked 추정). Evidence is a shared DICOM series UID or
+    byte-identical image content (SHA-256), never a patient ID or name. Leaked cases are skipped, dropped from every
+    aggregate and listed on the pair's detail page. A pair whose every case leaked cannot be queued.</li>
+    <li><b>Profiles.</b> The 인허가 프로파일 pages cross-tabulate train and valid demographics (sex, age, vendor, slice thickness,
+    contrast, country) from the per-case JSONs, per package, per model × data version, or over <b>every deployed model</b>
+    (<code>/spec/profile/all</code>, each non-hidden model at its newest evaluated version; models never evaluated are listed
+    as 미평가). Since 2026-10-14 (RA request) a profile has: a 모델 정보 table (evaluated and newest model version, data
+    version, newest release that ships it, train/test N, ROI and permit-ROI counts, failures); CT and MR apart (Data
+    Summary per modality, the MR one without the contrast block; ROI Test CT and ROI Test MR tabs); ROI rows grouped into
+    <b>H&amp;N / Thorax / Abdomen / Pelvis / Whole Body&nbsp;/&nbsp;Others</b> (the ROI board's region classifier; brain counts as
+    H&amp;N); one row per modality × ROI × model, counted by the same rules as every other <code>/spec</code> number (per-patient
+    relevant classes, empty-GT cases out, leaked cases out), with a class nobody annotated still listed as N&nbsp;=&nbsp;0. A
+    package lists each ROI once, from the model its release presets name (CT <code>default_model</code>, MRI template); the
+    all-models profile lists every model's rows and stars the newest release's default. Each row shows the countries whose
+    permit list (Permit 동기화) names the ROI. <b>Criterion by mean GT volume</b> (GT voxels × voxel size from the metric
+    itself — the result's <code>volume</code> field misnamed or zeroed channels and is only a fallback) — Small &lt; 10&nbsp;cc: DSC ≥ 0.5 (RA's sheet);
+    Medium 10–150&nbsp;cc: DSC ≥ 0.65; Large ≥ 150&nbsp;cc: DSC ≥ 0.8 — <b>DSC only</b> (DSC 판정); 95%HD is reported, never
+    judged, as in RA's sheets. The <b>기준 미달</b> tab gives each failing row its spread
+    (median, minimum, share of cases meeting the limit, mean without Tukey outliers, DSC = 0 count), the worst cases, other
+    evaluations of the same ROI and modality that meet the DSC limit (N ≥ 3), and a <b>조치</b> record (status 미조치 / 조치 중
+    / 조치 완료 / 사유 기재 + note, by any logged-in user, with history; <code>data/profile_actions.json</code>, key
+    <code>&lt;modality&gt;|&lt;ROI&gt;|&lt;model&gt;</code>, so it follows the pair into every view). <b>Excel = RA's own US workbook
+    plus our new ROIs</b> (<code>app/spec/ra_template.py</code>, template <code>RA_PROFILE_TEMPLATE</code> =
+    <code>data/ra_profile/OncoStudio_AI_Model_Data_profile_202604.xlsx</code>): RA's four sheets
+    <code>CT|MR_2.2.0_US_Data Summary</code> / <code>_Test</code> as RA wrote them, plus one Test row per profile ROI RA does
+    not list (aliases resolved), from a 25-case test set of <b>13 US + 12 other</b> cases (&gt; 50&nbsp;% US, as every RA row)
+    drawn deterministically from the ROI's evaluated test cases. What the test cases cannot fill is topped up with
+    <b>training cases</b> (user's decision 2026-10-15; they are not independent test data, so such a row says so in
+    column P and with a 학습셋 보충 badge): <code>scripts/ra_train_topup.py select</code> picks them in a fixed order
+    (never by score) from the real cases carrying the ROI (generated <i>Synthetic</i> tumour images are never used), <code>run</code> evaluates them under the GPU lock into
+    <code>instance/ra_topup</code> (outside the deploy tree — /spec never shows them). Every deployed ROI gets a row (user 2026-10-16): one still short
+    (no more cases with ground truth, even in training) goes in with the cases it has (N &lt; 25, column P says what is
+    short), one no test case carries with N 0 and no metrics; the <b>RA 양식 추가</b> tab lists them and the US data
+    still needed. Generated training images (<code>synthetic: true</code> or a <i>Synthetic</i> dataset — the whole Brachy_Applicator
+    training set, TumorSynth) are never counted as training patients in the Data Summary. Added rows have a yellow background and every other cell is white (RA's own pink / yellow highlights are cleared,
+    its blue / gray header bands kept); the Excel button's link carries a
+    fresh <code>?v=</code> and downloads are sent <code>no-store</code>, so a browser never reuses an older copy.
+    A deployed ROI no deployed test case contours takes its model's <b>held-out research validation</b> cases when
+    they exist (<code>instance/ra_research</code>, user 2026-10-19: Bone_Marrow = CrossRegional 2.1.1's own valid split,
+    6 CT series of 2 patients, DSC 0.911), labelled in column P and counted in the Data Summary's Test Set; others stay N 0. The Boost workbook lifts such a
+    row like any short row, from the same research split's training cases (<code>instance/ra_boost</code>, user 2026-10-20:
+    the split's 66 Bone_Marrow training series, <code>ra_research_bm.py --train</code>; a research split counts CT series,
+    not patients: N 25, DSC 0.935).
+    The ROI page (<code>/spec/roi/&lt;roi&gt;</code>) keeps cases whose GT lacks the ROI out of N and the means
+    (listed as <i>GT 없음</i>), as the /spec tables already did.
+    The Excel dropdown also offers <b>전체 (Boost · FDA target(Ideal))</b> (<code>?boost=1</code>, user 2026-10-16; named
+    2026-10-18): an internal TARGET workbook — same sheets, file <code>…_FDA target(Ideal).xlsx</code> (last in the name,
+    after <code>_TG263</code>/<code>_&lt;permit&gt;</code>); every short added ROI is written as 13 US / 12 Korea + Others and its DSC
+    adds only already evaluated training cases (top-up results, <code>instance/ra_boost</code>) that score above its mean,
+    up to 25 — no GPU run for it — in red letters (Test sheet) with column P saying so. The RA file never contains these.
+    <b>TG-263 이름</b> (<code>?names=tg263</code>, also for Boost; file <code>…_TG263.xlsx</code>, user 2026-10-16): the Test
+    sheets' ROI names, RA's rows included, in AAPM TG-263 form from <code>data/tg263/roi_tg263.csv</code> (each name's basis:
+    on the TG-263 list, a list equivalent, the target rules, a rule fix, or kept; README there). ROIs on no permit list
+    were also renamed in the registry (old names kept as aliases); certified ones keep their registered names there
+    until RA changes the certification sheets.
+    <b>Official names</b> (user 2026-10-20): every variant writes the Test sheets' ROI names from
+    <code>data/ra_profile/official_names.csv</code> first (thoracic LN stations <code>LN_Thoracic_1_R</code> … <code>_11_L</code>,
+    liver segments <code>Liver_Seg_I</code> … <code>VIII</code>, <code>Thymus</code>); the TG-263 renaming leaves those rows alone.
+    Every download is built live from the current data (5–20 s). The page's Excel links start it as a job
+    (<code>?job=1</code> → <code>/spec/xlsx-job/&lt;id&gt;</code> progress, <code>…/file</code> once) and show a progress
+    bar (user 2026-10-20); a plain GET of the <code>.xlsx</code> address still returns the file.
+    A release page (<code>/spec/profile/&lt;version&gt;</code>) gives the same workbook — every deployed
+    ROI, not only the release's models; a single model's page adds only that model's ROIs. The Data Summary adds the drawn test
+    patients and the training patients of models RA does not list yet, and pools RA's DSC / 95%HD figures (size, total,
+    region, sub-group) with the added rows by counts. Without the template the Excel falls back to our generated sheets in
+    RA's format (<code>app/spec/ra_workbook.py</code>, label for label): <code>CT_&lt;tag&gt;_Data Summary</code>, <code>CT_&lt;tag&gt;_Test</code>, <code>MR_…_Data Summary</code>,
+    <code>MR_…_Test</code> (tag = package version, <code>All</code> or the model version; <code>?permit=KR|US|JP</code> keeps the
+    ROIs of that country's permit list and adds it to the tag) — RA's sheets only. Test = one row per ROI
+    with N &gt; 0 (the release default model's row when several models give it; a DSC Result under its size criterion
+    is bold red, the workbook's only highlight — RA's pink count cells are left plain); Data Summary = Training / Test Set
+    patients of those rows' models by KR / US / Others (CT image from each patient's own contrast result, not the page's
+    sample-scaled estimate; MR 영상종류 = T1/T2 × contrast and field strength), DSC and 95%HD by ROI size (mean of the
+    ROI means, population SD of those means), mean 95%HD and SD per region, and the sub-group analysis (per test patient
+    the mean DSC / HD95 over its ROIs, then mean and population SD per category). A CSV per modality
+    (<code>….csv?modality=CT|MR</code>) carries every row with its DSC verdict and 조치; the package page's CSV is split the same way. Vendor is the <b>scanner maker</b>: software names (an RTSTRUCT's writer
+    "Oncosoft Inc.", OncoStudio or Elekta XiO re-exports, plastimatch, the "oncosoft ai" placeholder) count as unknown
+    (<code>header_facets.scanner_vendor</code>).</li>
+  </ol>
+  <p>Only <b>standard</b> evaluations (a model version on its own family's data) are registered in the hub; cross-model and
+  custom-input runs (<code>OS_INPUT_DIR</code>) stay local (CONTRACT §3, <code>kind='standard'</code>).</p>
+  <p><b>What a per-case result holds</b> (<code>…/VALID|TRAIN/&lt;case&gt;.json</code>): the case's split row, per-ROI
+  DSC/HD95 (valid only), and from one DICOM header per case sex, age, vendor, slice thickness and, since v1.5, scanner
+  model, modality, study date, spacing between slices, pixel spacing and institution (only when the header has them),
+  plus <code>dicom_source</code> (<code>local</code> or <code>central:&lt;how matched&gt;</code>), population and contrast. A header
+  of a non-image object (an RTSTRUCT in a folder that holds nothing else) gives only patient and study fields: its
+  equipment fields name the software that wrote it, so the calculator looks up the image's own header on the central
+  SCP instead. Results written before that rule were corrected by <code>inference/fix_scanner_vendor.py</code> (2026-10-14,
+  681 results: the image header on the central SCP, else the scanner model name from the headers or the case metadata
+  registry, else unknown; audit log and <code>--revert</code>). MR results also carry <code>mr_weighting</code> (T1/T2 from
+  SeriesDescription, else TR/TE), <code>mr_contrast</code> (ContrastBolusAgent or a contrast keyword) and
+  <code>field_strength</code> (1.5T / 3.0T) for the workbook's 영상종류 rows; older results get them from
+  <code>backfill_dicom_meta.py --mr-series</code> (header reads only, 20:00–07:00 KST, marked <code>mr_series_source</code>). Readers
+  treat every key as optional, so results written before a key existed keep working. Results older than v1.5 got
+  the new keys from a header-only backfill (<code>inference/backfill_dicom_meta.py --facets</code>: no inference,
+  20:00–07:00 KST and ≥ 12 GB free before each model family; being CPU/IO-only it never takes the GPU admission
+  lock (D87), so it never delays a training or evaluation stage; it marks each case <code>facets_source</code>).</p>
+  <p><b>Case metadata registry.</b> Many deployed cases have no readable DICOM header (NIfTI-only public datasets,
+  internal data not on the central PACS). Their sex, age, vendor, slice thickness and population come from
+  <code>/mnt/deploy/config/case_meta/&lt;group&gt;.json</code>: one file per source group, matched by dataset name, patient-ID
+  or image pattern, every value stored with its source (<code>dicom:</code> original header, <code>clinical:</code> clinical
+  table, <code>dataset:</code> documented group-wide fact, <code>nifti:</code> original spacing; no image-based estimates are
+  adopted). Internal groups are keyed on the patient ID, never on names. <code>inference/case_meta.py</code> fills
+  <b>null fields only</b> (header values and population rules win) and records <code>meta_sources</code> in the result:
+  the calculator does it while scoring (<code>OS_CASE_META=0</code> turns it off) and
+  <code>inference/backfill_case_meta.py</code> does it for existing results (JSON only, no GPU; <code>--revert</code> undoes
+  exactly what it filled). The 인허가 프로파일 (page and xlsx) shows a <b>값 출처</b> table that counts each category's
+  values by origin (header/rules vs registry source kinds), and the 사용된 데이터 list shows demographics for every row
+  of the split (train rows too; never-evaluated rows straight from the registry) with each value's source as a
+  tooltip. The registry location is <code>CASE_META_DIR</code> (env <code>OS_CASE_META_DIR</code>); the hub reads the same
+  files to fill its project rows (D138a).</p>
+  <div class="note"><b>데이터 목록 and label states (v1.4)</b><span>The 사용된 데이터 list of a data version shows a 라벨
+  상태 column (CONTRACT §6.12). Deployed split files do not carry label states (D75), so their rows read
+  <code>unknown</code>; the label states of a hub-trained split are recorded in the hub's dataset page. The list
+  also shows each case's scanner model and slice thickness (v1.5) and, for train and valid rows alike, sex, age,
+  vendor and population with their source (header or case metadata registry).</span></div>
+</section>
+
+<section id="packaging">
+  <h2>Packaging, validation, flags</h2>
+  <p>How a release is built, validated and registered is in <a href="../guides/releases.html">Releases</a>. In short:</p>
+  <div class="tbl"><table><thead><tr><th>Function</th><th>What it does</th><th>Writes</th></tr></thead><tbody>
+  <tr><td>새 패키지 (admin)</td><td>assembles a release <code>&lt;version&gt;</code> from chosen model versions and the shared files of the latest package</td><td><code>/mnt/deploy/release/&lt;version&gt;/</code> — the only writer there; overwrite moves the old folder to <code>/mnt/deploy/trash/</code></td></tr>
+  <tr><td>Package build (admin)</td><td>copies a release, filters by modality and model, rewrites each model's <code>usage</code> against the country permit, zips</td><td><code>instance/packaging_workspace/</code>, published zips in <code>/mnt/deploy/packaged</code></td></tr>
+  <tr><td>Per-model download</td><td>one model version as a release-format zip for a country</td><td><code>instance/packaging_workspace/individual/</code></td></tr>
+  <tr><td>Permit 동기화 (admin)</td><td>country ROI permits from the certification sheet</td><td><code>data/permits/permit_&lt;KR|JP|US&gt;.csv</code> (git)</td></tr>
+  <tr><td>Bundle validation (D37)</td><td>checks every data version after deploy: validation cases exist, class lists, GT channel count, empty channels, valid/valid_gt order; masks are streamed</td><td>result at <code>/spec/validation/&lt;model&gt;/&lt;dv&gt;</code>, reported to the hub (§7.6)</td></tr>
+  <tr><td>Model flags (D38)</td><td>daily after 03:00 KST: duplicate weights (one md5 in several folders) and channel-swap suspects; the evidence names each family's <code>model_type</code></td><td>raised/cleared in the hub (§7.6)</td></tr>
+  </tbody></table></div>
+  <p id="model-type"><b>Family names and model type (§63, v1.47).</b> A family is the folder name under
+  <code>/mnt/deploy/models/&lt;name&gt;/&lt;version&gt;</code>, old names (<code>RIBS</code>, <code>Thoracic_LN</code>,
+  <code>MR_HNN</code>) and hub-trained <code>&lt;CODE&gt;_&lt;3d|2d&gt;</code> (<code>RIBS_3d</code>) alike: flags,
+  validation, packaging, the auto-queued evaluation and the hub registrations key on the name as it is, and
+  <code>RIBS</code> and <code>RIBS_3d</code> stay two families (nothing is renamed or merged). <code>model_type</code> is
+  parsed from the suffix (<code>3d</code> when there is none; <code>app/model_names.py</code>) and shown where families are
+  listed: <code>/spec/manage</code> 최근 배포, <code>/models</code>, <code>/packaging/release-models</code>,
+  <code>/api/v1/profiles</code> and the flag evidence. A model is evaluated on <code>data/&lt;its own name&gt;/</code>, as before.</p>
+</section>
+
+<section id="roi">
+  <h2>The ROI registry</h2>
+  <p><code>/mnt/deploy/config/roi_names.csv</code> is the platform's list of official ROI names and their aliases, exactly two
+  columns: <code>roi_name,alternative_names</code>. ai-pipeline is its only writer: the ROI 관리 page edits it (data team,
+  research) and writes it atomically, aliases joined with <code>|</code> (a <code>,</code> list inside one quoted field is also
+  read). The hub mirrors the file and is the single read endpoint for everyone else
+  (<code>/svc/v1/roi/registry.json|csv</code>, with <code>X-Registry-SHA256</code> headers, §3 and §6.5); a consumer that falls
+  back to the file while the hub is down records the source and hash in its run. There is no model column; which model delivers an ROI
+  comes from the model fingerprints.</p>
+</section>
+
+<section id="hub">
+  <h2>What it registers in the hub</h2>
+  <p>Every registration goes through a local outbox (<code>instance/hub.sqlite</code>): an intent is queued, a worker builds
+  the payload at send time and POSTs it with a service token (§2), retrying with back-off while the hub is down, so a user
+  action never fails because the hub is offline. Intents are kept per hub (prod and dev have separate registries).</p>
+  <div class="tbl"><table><thead><tr><th>What</th><th>When</th><th>Contract</th></tr></thead><tbody>
+  <tr><td>Evaluation + per-case rows</td><td>a queue job finished; bulk <code>hub_register.py backfill|reregister-all</code></td><td>§3 <code>POST /svc/v1/evaluations</code>, <code>…/{id}/cases</code></td></tr>
+  <tr><td>Evaluation withdrawal</td><td>a model (version) is hidden in <code>/admin/models</code>; unhiding re-registers</td><td>§6.3</td></tr>
+  <tr><td>Release (+ country)</td><td>새 패키지; a package build for a country</td><td>§3 <code>POST /svc/v1/releases</code>, §6.4</td></tr>
+  <tr><td>Release withdrawal</td><td>새 패키지 with overwrite, before the new content is registered</td><td>§6.3</td></tr>
+  <tr><td>Split demographics</td><td>after each evaluation; backfill</td><td>§6.11 <code>POST /svc/v1/splits/meta</code> (now with scanner model and institution); registry-filled values carry the source <code>metrics:case_meta:&lt;dicom|clinical|dataset|nifti&gt;</code> instead of a header label</td></tr>
+  <tr><td>Series facets (v1.5)</td><td>next to every split-demographics intent; <code>hub_register.py cases-meta --all --send</code></td><td>§3 <code>POST /svc/v1/cases/meta</code>, exact series only, header values only (never registry fills), ≤ 2000 per call; a v1.4 hub answers 404 → skipped (<a href="../guides/rounds.html#pipeline-facets">Rounds › facets</a>)</td></tr>
+  <tr><td>Bundle validation, model flags</td><td>automation (above)</td><td>§7.6</td></tr>
+  </tbody></table></div>
+  <p>Every hub principal gets one local account on first use (<code>hub:&lt;name&gt;</code>, <code>app:&lt;name&gt;</code>; role from the token on every call).
+  The hub often sends a new user's first calls in parallel; the one that loses the insert race reads the row the other created,
+  so both answer normally (before A11, 2026-10-30, it answered 500 <code>UNIQUE users.username</code>).</p>
+  <p>The other direction: the hub signs leads in with a 60-second hand-off token (<code>POST /auth/hub</code>, §2) and embeds
+  ai-pipeline pages in a frame (<code>frame-ancestors</code> = the hub origins, §8.1). A framed page drops the site's navigation for a slim
+  <i>허브에서 보는 중</i> bar. Chrome sends no <code>Sec-Fetch-*</code> headers to the non-secure <code>:5000</code>, so the frame's first
+  URL <code>?embed=1</code> sets a session flag that keeps every later click and redirect in the frame embedded, until <code>?embed=0</code> (the
+  bar's <i>새 탭에서 열기</i> link always sends it). The frame and a <code>:5000</code> tab share that session cookie, so each GET page also
+  checks in the browser whether it is framed, and reloads once with the matching <code>embed</code> when its layout does not fit (A2b). It pulls spec profiles and per-case rows
+  from <code>/api/v1</code> with a service token (§8.2, D60), and since v1.5 the profile's categories and bucket
+  edges as data (<code>GET /api/v1/profile-categories</code>, D82: one table that the profile itself reads, with a
+  <code>sha256</code>; a copy for the hub's drift test is <code>tests/fixtures/profile_categories.json</code>). The leak guard reads the hub's training split; from v1.4 its
+  items carry <code>label_state</code> (§6.12), which ai-pipeline accepts and shows as <code>unknown</code> when absent, and never
+  uses to refuse anything. <code>split_hash</code> ignores label states (D75).</p>
+  <p><b>Mock of the hub:</b> <code>scripts/mock_hub.py</code> (strict <code>/svc/v1</code>: tokens, evaluations, releases, splits with
+  the v1.4 label fields, training-split, splits/meta, changes, validation, flags, <code>GET
+  /svc/v1/projects/MOCK/label-set</code> with a five-state fixture, and v1.5 <code>POST /svc/v1/cases/meta</code> (strict, recorded
+  under <code>/_mock/state</code>) with <code>GET /api/v1/health</code> reporting <code>contract_version</code>; <code>--contract 1.4</code>
+  plays an older hub). Other roles can use it:
+  <code>HUB_APP_SECRET=s python3 scripts/mock_hub.py --port 18799 --exec-secret e</code> accepts ai-pipeline tokens signed
+  with <code>s</code> and executor tokens (<code>iss=aitw</code>) signed with <code>e</code>.</p>
+</section>
+
+<section id="run">
+  <h2 id="deploy-api">The hub's 배포 section: the JSON API of every page (§70, v1.51, U134)</h2>
+  <p>Since 2026-10-29 the hub web has a <b>배포</b> section that offers every feature of this site in the hub's own UI; this site stays as it is (legacy, in use; D310). ai-pipeline publishes one JSON endpoint per feature under <code>/api/v1/deploy/…</code> — the same numbers and lists the HTML page shows, computed by the same functions, never a second implementation — and the document <code>GET /api/v1/deploy/openapi.json</code> that describes them (OpenAPI 3, with its own sha256). Auth: the hub service Bearer token (<code>iss=hub, aud=aipipeline</code>, §2) plus <code>X-Hub-User</code> and <code>X-Hub-Role: general|data|research|admin</code> — the pair is the acting user (<code>by = hub:&lt;username&gt;</code>), the endpoint's role rule is the page's. Groups and phases (programme <code>plans/2026-10-29-u134-deploy-tab</code>): <b>A1</b> openapi + 대시보드 · 모델 · 다운로드; <b>A2</b> 스펙 문서 (profiles, packages, compare, release, roi, data, validation, 조치, xlsx as jobs) + 추론 관리 (manage, queue, enqueue, cancel, rules); <b>A3</b> 모델 패키징 (builds as jobs), Config 관리 (apply/rollback admin-only from the hub), ROI registry + exports, ROI 뷰어; <b>A4</b> 릴리즈 노트 · 변경 이력 · 관리 (model visibility, logs read-only, 기타). Files stream with their <code>Content-Type</code>, <code>Content-Disposition</code>, <code>Cache-Control: no-store</code>. The hub forwards from <code>/ui/api/deploy/{path}</code> (hub page: <a href="hub.html#s40-deploy-proxy">S40</a>). User administration of this site is not exposed (D310). <i>Status: A1–A4 live (below): every feature group of the site has its endpoints.</i></p>
+  <p id="deploy-api-d4"><b>No patient names (D4, A6).</b> The deployed datasets' <code>patient_name</code> is a pseudonym code in most deploys (<code>CA_P0043</code>), but a real romanized or Korean name in 14 data versions (MR_Brachy, Prostate, MR_Prostate, ProstateCTV, GTV_MR_Cervical, …). Their image file names often embed it too (955 of 1,490 such items). Every deploy reply therefore drops the <code>patient_name</code> field. It also replaces any key or string that contains a known real name with a stable <code>redacted:&lt;12 hex&gt;</code> token, so the same image still joins across replies (data list, demographics, metrics detail). Pseudonym codes such as <code>patient_id</code> are kept. A real name is one with no digit, or one in Hangul. The names are read from <code>/mnt/deploy/data/*/*/train_valid_dict.json</code> and held only in the server's memory; they are never written to a cache file. <code>openapi.json</code> says so in <code>info.description</code> and <code>x-redacted-fields</code>. The :5000 pages are unchanged.</p>
+  <p><b>Rules every endpoint follows</b> (<code>app/api/deploy.py</code>). The acting role is <code>X-Hub-Role</code>, checked like the page's <code>role_required</code> (admin passes everywhere), and never higher than the role of the token itself: the hub signs <code>sub=user:&lt;name&gt;</code> with the user's hub role, so a viewer's token cannot claim <code>admin</code>, and a dev-hub token stays <code>general</code> (§8.2, D60). <code>X-Hub-User</code> must be the token's user. An <code>app:</code> token must send both headers (400 otherwise); a logged-in <code>:5000</code> session needs no headers. Replies: 401 without a valid token, 403 <code>{ok:false, detail:"role"}</code>, and unknown paths and methods answer JSON (404/405), never the site's HTML error page. Every write (non-GET) leaves an <code>audit_logs</code> row <code>deploy_api &lt;METHOD&gt; &lt;path&gt; by=hub:&lt;user&gt; role=&lt;role&gt; status=&lt;code&gt;</code>, a write refused for its role (403) too (A14b). The hub's anonymous 배포 tabs come as <code>X-Hub-User: public</code>, <code>X-Hub-Role: general</code> with the service token (§72.3–72.4, D321): they read what <code>general</code> reads, are refused anything above it, and get no account of their own (<code>by = hub:public</code>; pinned by <code>PublicPrincipalTests</code>). File paths in replies (<code>download_path</code>, <code>download_paths</code>) are relative to <code>/api/v1/deploy/</code>, so the hub URL is <code>/ui/api/deploy/&lt;path&gt;</code>. <code>openapi.json</code> is the plain OpenAPI document (no <code>ok</code> wrapper). Its <code>x-sha256</code> hashes the document without <code>x-sha256</code> and <code>x-app-version</code>, so it changes only when an endpoint or a shape changes (the hub's banner), not on every commit. It is also sent in the <code>X-OpenAPI-SHA256</code> header, and the endpoint accepts a token without the <code>X-Hub-*</code> headers.</p>
+  <div class="tbl"><table><thead><tr><th>A1 endpoint (GET, every role)</th><th>Same function as</th><th>Reply</th></tr></thead><tbody>
+  <tr><td><code>/openapi.json</code></td><td>the registered deploy routes</td><td>OpenAPI 3.0.3, <code>x-roles</code> per operation, <code>x-sha256</code>, <code>x-app-version</code> (<code>mlops-phase1@&lt;sha&gt;</code>), <code>x-contract</code></td></tr>
+  <tr><td><code>/dashboard</code></td><td><code>/</code> (<code>main.routes.dashboard_context</code>)</td><td><code>latest</code> (version, date, release with <code>download_path</code>: the highest <i>released</i> package, D333 — never a candidate; every release row carries its <code>state</code>), the page's first six <code>standard_releases</code> / <code>custom_releases</code> + <code>has_more_*</code>, <code>roi_count</code>, <code>total_release_count</code>, <code>families</code> (the <code>/models</code> list: family, <code>model_type</code>, modality, latest and all versions), <code>queue</code> {running, queued_count}, <code>inference_bar</code> (the admin bar's queue state; null for other roles)</td></tr>
+  <tr><td><code>/models</code></td><td><code>/models</code> (<code>downloadable_models</code>)</td><td>the page's rows: hidden families and scratch folders are not listed, so <code>count</code> is the page's. Per family: model_type, modality, ROIs, the newest version's size and date, <code>versions[]</code> {version, latest, hidden (a hidden single version), <code>released_in</code> (the newest <i>released</i> standard release that ships it, D333)}, <code>download_paths[KR|JP|US]</code>, plus <code>download_path_template</code></td></tr>
+  <tr><td><code>/downloads</code> · <code>/downloads/{name}.zip</code></td><td><code>/downloads/&lt;name&gt;.zip</code> (<code>release_zip_response</code>)</td><td>every bundle under <code>/mnt/deploy/release</code>; the zip is streamed uncompressed as on the site</td></tr>
+  <tr><td><code>/packaging/model-download/{name}/{version}/{country}.zip</code></td><td>the <code>/models</code> 받기 button (<code>build_single_model_zip</code>)</td><td>one model with its release-format fingerprint for the country (400 bad country, 404 unknown model); the build takes as long as on the site (≈ 20 s for a large model)</td></tr>
+  </tbody></table></div>
+  <p><b>A2: 스펙 문서 and 추론 관리</b> (<code>app/api/deploy_spec.py</code>). Each reply is the context the <code>/spec</code> page renders (the <code>*_context</code> helpers of <code>app/spec/routes.py</code>, which the pages now use too), or the JSON the page fetches. Writes leave an <code>audit_logs</code> row <code>deploy_api … by=hub:&lt;user&gt;</code>. A refusal answers <code>{ok:false, detail, …the site's fields}</code> with the site's status code (e.g. enqueue of a pair whose numbers exist → 409 <code>already_computed</code>; force with <code>force:true</code>).</p>
+  <div class="tbl"><table><thead><tr><th>A2 endpoint</th><th>Roles</th><th>Reply = the page's</th></tr></thead><tbody>
+  <tr><td><code>/spec/overview</code> · <code>/spec/extraction</code> · <code>/spec/packages/status</code></td><td>all</td><td><code>packages</code>, <code>models</code> · same (the site redirects extraction to the overview) · <code>status</code></td></tr>
+  <tr><td><code>/spec/package/{v}</code> (<code>?format=csv&amp;modality=</code>) · <code>/spec/package/{v}/metrics</code></td><td>all</td><td><code>data</code> (ROI structure), <code>packages</code>, <code>release_note</code>; the page's CSV · <code>metrics</code></td></tr>
+  <tr><td><code>/spec/compare?base=&amp;target=</code> · <code>/spec/release/{v}</code> · <code>/spec/release/{v}/model/{m}</code> · <code>/spec/roi/{roi}</code></td><td>all</td><td><code>versions, base, target, result</code> · <code>body</code> (the authored RELEASE_REPORT.html) or <code>data</code> (generated) · <code>data</code> · <code>data</code></td></tr>
+  <tr><td><code>/spec/data/{m}/{dv}</code> (+ <code>/demographics</code>) · <code>/spec/inference/metrics/{m}/{mv}/{dv}</code></td><td>all</td><td><code>data</code> (사용된 데이터, per-case demographics) · <code>data</code></td></tr>
+  <tr><td><code>/spec/validation/{m}/{dv}</code> GET · POST</td><td>all · admin</td><td>the record (404 <code>never</code>) · queues a re-validation</td></tr>
+  <tr><td><code>/spec/profile/all</code> · <code>/spec/profile/{v}</code> · <code>/spec/profile/model/{m}/{mv}/{dv}</code></td><td>all</td><td>what <code>_profile_body.html</code> renders: <code>profile</code> (모델 정보 <code>models_info</code>, Data Summary <code>by_modality</code>, ROI rows with <code>diag</code> spread/worst cases and <code>alternatives</code>, <code>criteria_table</code>, provenance), <code>actions</code> (조치), <code>statuses</code>, <code>ra_plan</code> (RA 양식 추가), plus <code>tabs[CT|MR]</code> = the ROI Test tabs by region (row indices into <code>profile.rois</code>), <code>fails</code> = the 기준 미달 rows, <code>exports</code>, <code>packages</code> (the page's release dropdown). <code>?format=csv&amp;modality=</code> or <code>?format=xlsx[&amp;permit=&amp;boost=1&amp;names=tg263]</code> return the page's files</td></tr>
+  <tr><td>POST <code>/spec/profile/action</code> {key, status, note}</td><td>all</td><td>the 조치 record, <code>by = hub:&lt;user&gt;</code>, history kept</td></tr>
+  <tr><td>POST <code>/spec/xlsx-jobs</code> {target: <code>all</code> | <code>&lt;v&gt;</code> | <code>model/&lt;m&gt;/&lt;mv&gt;/&lt;dv&gt;</code>, variant: <code>ra|boost|tg263|boost_tg263</code>, permit?} → 201 {job_id, name} · <code>/spec/xlsx-jobs/{id}</code> · <code>/spec/xlsx-jobs/{id}/file</code></td><td>all</td><td>the page's background workbook build: progress {pct, stage, done, error, file_path}; the file is handed out once (then 404). The name is the page's (e.g. <code>data_profile_1.7.0_TG263_FDA target(Ideal).xlsx</code>). Jobs live in the server's memory for 10 min; a restart forgets them</td></tr>
+  <tr><td><code>/spec/release-figures/{file}.png</code></td><td>all</td><td>a release figure: <code>/spec/release/{v}/model/{m}</code> lists <code>data.figures</code> as {roi, file, path}, where path is this endpoint (none are rendered yet)</td></tr>
+  <tr><td><code>/spec/manage</code> · <code>/spec/inference/queue</code> · <code>/spec/inference/jobs/{id}</code> · <code>/spec/inference/package-status/{v}</code> · <code>/spec/inference/unknown-prefixes</code></td><td>admin</td><td><code>needed, recent, run_options, packages, rules, unknown_prefixes, queue</code> · the queue state · status, <code>log</code> (a list of the newest lines), return code, note, origin, <code>created_at</code> / <code>started_at</code> / <code>finished_at</code> · coverage · <code>prefixes</code></td></tr>
+  <tr><td>POST <code>/spec/inference/enqueue</code> {model, model_version, data_version, force?, valid_only?, skip_con?} · POST <code>/spec/inference/jobs/{id}/cancel</code></td><td>admin</td><td>the site's admission (leak guard, existing numbers, memory) and durable queue unchanged, as are the GPU lock and the 8 GPU-hour cap of automatic jobs → {job_id, position, duplicate} · cancelled (404 unknown job)</td></tr>
+  <tr><td>POST <code>/spec/inference/rules</code> {match_type, value, population} → 201 · DELETE <code>/spec/inference/rules/{order}</code></td><td>admin</td><td>the population rules after the change (404 unknown order)</td></tr>
+  </tbody></table></div>
+  <p><b>A3: 모델 패키징, Config 관리, ROI and ROI 뷰어</b> (<code>app/api/deploy_tools.py</code>). Reads are the pages' contexts (<code>packaging_context</code>, <code>config_context</code>, <code>roi_context</code>, <code>viewer_context</code>) or the JSON views the pages fetch, relayed as <code>{ok, …}</code>. Writes call the site's functions. <code>roi_names.csv</code> is still replaced atomically by <code>write_roi_names_csv</code> and the hub's <code>roi_sync</code> mirrors it as before, and the release and packaged writers of §7 are unchanged. Roles are the site's per route, except Config apply and rollback, which are admin through the hub.</p>
+  <div class="tbl"><table><thead><tr><th>A3 endpoint</th><th>Roles</th><th>Reply</th></tr></thead><tbody>
+  <tr><td><code>/packaging</code> · <code>/packaging/release-models?version=</code></td><td>all</td><td>page state: releases (with their real <code>size_bytes</code> from the dashboard's cached scan), countries, modalities, permits, catalog models, <code>version_audit</code> (admin only, as on the page) · the release's model picker</td></tr>
+  <tr><td><code>/packaging/new-package/options</code> · POST <code>…/diff</code> {prev_version, selections} · POST <code>…/create</code> {version, selections, overwrite}</td><td>admin</td><td>models, releases, each release's models · added / removed / changed / unchanged per model · 201 with the package (hub registration as on the site). An existing version without <code>overwrite:true</code> answers <b>409</b> <code>{detail:"needs_overwrite_confirm", needs_overwrite_confirm:true, version}</code> and writes nothing</td></tr>
+  <tr><td>POST <code>/packaging/build</code> {version, new_version?, country, modalities?, model_folders?} → 202 {job_id} · <code>/packaging/builds/{id}</code> · <code>/packaging/download?job_id=</code></td><td>all (as <code>build.json</code>)</td><td>the dashboard modal's build as a job (cached zips reused, registered in the hub); when done <code>result.download_path</code>. Only the job's user (or an admin) can download. A later build clears older zips from the workspace, as on the site; the download then answers 404</td></tr>
+  <tr><td><code>/packaging/model-download/{name}/{version}.zip</code> · <code>/packaging/permits/{country}.csv</code> · POST <code>/packaging/sync-permit</code></td><td>all · all · admin</td><td>the folder as is · the permit list · Permit 동기화 (per-country results, then <code>permits</code>)</td></tr>
+  <tr><td><code>/packaging/config-status/{v}</code> · POST <code>/packaging/config-upload/{v}</code> (multipart) · POST <code>/packaging/config-commit/{v}</code> · <code>/packaging/spec-coverage</code></td><td>research</td><td>the site's config registration of a package version. <code>spec-coverage</code> = <code>coverage[model]</code>, the model versions with a visible evaluation, plus <code>pairs[model][version]</code>, their data versions. It used to read the Notion-era <code>spec_data</code> cache, which no longer exists, so the page's coverage dots were all grey; the page and the API now share the new source (A8)</td></tr>
+  <tr><td><code>/config</code> · <code>/config/versions/{v}</code> · <code>/config/diff?a=&amp;b=</code> · <code>/config/download/{v}/{file}</code> · POST <code>/config/analyze/{target}</code> (multipart, one field per config file)</td><td>research</td><td>versions (who / when / note), files, latest (the highest standard tag <code>x.y.z</code> or sub-revision <code>x.y.z.n</code> by its numbers, so <code>1.7.0.2</code> &gt; <code>1.7.0.1</code> &gt; <code>1.6.4</code>; prefixed custom tags such as <code>vwsch_…</code> never count; it marks <code>is_latest</code> and is the base of the stage/commit diff; before D318 only <code>x.y.z</code> counted and latest stayed at 1.6.4) · files at a version · diff · the file · the entry-level diff against the current config + <code>next_version</code> (staged in the packaging workspace)</td></tr>
+  <tr><td>POST <code>/config/apply/{target}</code> {selection, note, models} · POST <code>/config/rollback</code> {source, new_version, note}</td><td>admin</td><td>the next sub-revision / the new tag; the git author is the hub user's account</td></tr>
+  <tr><td><code>/roi</code> (= <code>/roi/management</code>) · <code>/roi/aliases</code> · <code>/roi/best-metrics</code></td><td>all</td><td>registry rows, catalog, region board with planned ROIs (<code>board.order</code>, <code>board.regions</code>), 인허가 제외 rows, certification meta · alias map · per-ROI best evaluation</td></tr>
+  <tr><td>every <code>roi/*</code> reply</td><td>—</td><td>header <code>X-Registry-SHA256</code>, plus <code>registry_sha256</code> in a JSON body: the sha256 of the bytes of <code>roi_names.csv</code> the reply was computed from, or, after a write, the file it produced (A8)</td></tr>
+  <tr><td><code>/roi/catalog.csv</code> · <code>/roi/certification.csv</code> · <code>/roi/certification.xlsx</code> · <code>/roi/board.pptx</code></td><td>all</td><td>the page's files</td></tr>
+  <tr><td>POST <code>/roi/aliases</code> {roi_name, new_roi_name?, aliases[]} · DELETE <code>/roi/{name}</code></td><td>research, data</td><td>{action added|updated, roi_name, aliases}: the list replaces the row's aliases · the row deleted (404 unknown)</td></tr>
+  <tr><td>POST <code>/roi/planned</code> {id?, roi, region, expected, note} · DELETE <code>/roi/planned/{id or unique name}</code> · POST <code>/roi/excluded</code> {rois[], note} · DELETE <code>/roi/excluded/{name}</code></td><td>research, data</td><td>the planned list after the change (201 when added) · the 인허가 제외 list after the change</td></tr>
+  <tr><td><code>/sheets/roi-viewer</code> (<code>?format=csv|pptx</code>) · POST <code>/sheets/roi-viewer/fetch</code> · <code>/sheets/certification</code></td><td>all · admin · all</td><td>the fetched viewer sheets, raw and grouped by region (404 for the files before a fetch) · reads the Google Sheet again (read-only) · certification as the ROI page shows it: <code>countries</code> {label, version, approved}, <code>by_country</code>, <code>by_roi</code> (KR_ / FDA_ / Japan_ tabs resolved through the registry), and <code>fetched:false</code> when the sheet could not be read</td></tr>
+  </tbody></table></div>
+  <p><b>A4: 릴리즈 노트, 변경 이력 and 관리</b> (<code>app/api/deploy_admin.py</code>). Notion is only read (no write endpoint, §3). Model visibility goes through the site's helpers (<code>hide_model</code>, <code>hide_version</code>, <code>hide_models</code> in <code>app/admin/routes.py</code>). Each change writes <code>hidden_models.json</code>, invalidates the caches, adds an audit row (<code>hidden_by = hub:&lt;user&gt;</code>), and makes the hub withdraw or re-register the affected evaluations (§6.3). The audit log is read-only, and this site's user administration is not exposed (D310).</p>
+  <div class="tbl"><table><thead><tr><th>A4 endpoint</th><th>Roles</th><th>Reply</th></tr></thead><tbody>
+  <tr><td><code>/notion/release-notes</code> · POST <code>/notion/release-notes/fetch</code></td><td>all</td><td>the page's <code>grouped</code> lists (in progress, QA, dev, the 5 newest completed + older), <code>last_sync</code>, <code>authored_versions</code> + <code>authored_body</code> (releases documented here, left out of Notion's), <code>counts.total</code> = the notes the page lists · reads Notion again first (502 when Notion fails; the cache is kept)</td></tr>
+  <tr><td><code>/notion/release-notes/{page_id}</code> · <code>/notion/roi-data</code> · <code>/notion/change-history</code></td><td>all</td><td>one note read live · the Notion ROI database · <code>{moved_to: "config"}</code> (the page only points to Config 관리)</td></tr>
+  <tr><td><code>/admin/models</code></td><td>admin</td><td>every model folder: hidden, note, who/when, number of versions and hidden versions; <code>version_map</code>; <code>hidden_versions</code></td></tr>
+  <tr><td>POST <code>/admin/models/hide</code> {model, hidden?, note} · <code>/admin/models/hide-version</code> {model, version, hidden?, note} · <code>/admin/models/hide-bulk</code> {models[], hidden?, note}</td><td>admin</td><td><code>hidden</code> defaults to true; <code>hidden:false</code> unhides. The reply carries the registry result</td></tr>
+  <tr><td><code>/admin/logs?tail=&amp;action=&amp;username=</code></td><td>admin</td><td>the audit log, newest first (<code>tail</code> default 100, at most 500 as on the page), <code>actions</code> for the filter</td></tr>
+  <tr><td><code>/admin/misc</code> · <code>/admin/misc/nninteractive.xlsx</code></td><td>admin</td><td>the nnInteractive summary · the workbook</td></tr>
+  </tbody></table></div>
+  <p>Fixed on the site along the way: <code>POST /notion/release-notes/fetch</code> (the page's 불러오기 button) failed with a NameError after every successful fetch.</p>
+  <p>Latency and slow reads: replies come from the pages' stale-while-revalidate caches (warm: ≤ 3 s; <code>/spec/profile/all</code> ≈ 3 MB of JSON, gzip on). The first computation of something nobody opened before can take longer than the proxy's 30 s JSON timeout (a new <code>/spec/compare</code> pair took ≈ 45 s on dev; the page itself takes as long). Every read that can be slow is marked <code>x-async: true</code> in <code>openapi.json</code>: <code>/dashboard</code>, <code>/models</code>, the A2 GET reads above and the heavier A3 reads (<code>/packaging</code>, <code>/config</code>, <code>/roi</code>, <code>/roi/best-metrics</code>, …), never file downloads. It runs in the background and answers as usual if it finishes within 20 s; otherwise it answers <b>202</b> <code>{ok:true, job_id, state:"running", progress_path:"jobs/{id}"}</code>. <code>GET /jobs/{id}</code> → <code>{state: running|done|error, path, status, result}</code>, where <code>result</code> is the endpoint's normal reply. The job is kept 10 min after it ends, and only its user (or an admin) sees it. Identical calls while one runs share the job, and once it has finished the same call is fast and answers 200.</p>
+  <h2 id="releases-api">Releases: immutable packages, the new-release wizard's API, Jira, downloads (§77, v1.61, U152)</h2>
+  <p>A package is a folder <code>/mnt/deploy/release/&lt;version&gt;/</code> that <b>never changes</b> once written (D331). Every change, config, model or OD, becomes a <b>new folder</b> written by <code>app/packaging/releases.py</code>, the only writer there. The copy of a Config 관리 tag into an existing bundle (<code>config_manager._deploy_to_release</code>, the cause of D317) is gone: a tag registered in Config 관리 alone changes no bundle. Each new folder carries <code>RELEASE.json</code> with its state: <b>candidate → released → superseded</b>, or <b>withdrawn</b>. A folder without the file (every package before 2026-11-05) is <code>released</code>. <b>Latest</b> is the highest <i>released</i> standard package (<code>x.y.z</code> or the fix <code>x.y.z.n</code>, compared by their numbers) on the dashboard (hero and LATEST badge), in <code>/downloads</code>, in <code>/models</code> <code>released_in</code>, and in the hub registration (D333). 1.7.0.3, made by hand on 2026-11-03, got its <code>RELEASE.json</code> as a <code>candidate</code> (base 1.7.0, fix, <code>changes</code> computed against 1.7.0: 40 renames, no ROI added), so 1.7.0 stays latest until QA marks 1.7.0.3 released.</p>
+  <p><b>The flow</b> (all under <code>/api/v1/deploy/releases</code>; guide: <a href="../guides/release-flow.html#create">release flow</a>). (1) <code>POST uploads</code> opens a staging area <code>instance/packaging_workspace/release_uploads/&lt;id&gt;/</code>. It expires after 24 h; a sweeper runs at start and hourly. (2) <code>PUT uploads/{id}/files/{path}</code>, once per file of the person's folder (raw body, ≤ 2 GiB, sha256 on the way). The path is recognised as <code>config</code> (the four JSON files), <code>od</code> (<code>od_ct</code>/<code>od_mr.torchscript</code>), <code>model_weights</code> / <code>model_fingerprint</code> (<code>&lt;Family&gt;/3d_final_model.pt</code>, <code>&lt;Family&gt;/global_fingerprint.json</code>), or <code>ignored</code> (recorded, never used). (3) <code>analyze</code> compares base + upload with the base. Per config file it gives the Config 관리 entry-level diff; per uploaded family new / changed / unchanged with md5 (identical weights are recognised by md5, the model version by the catalog's weights, never by <code>git_tag</code>) and the classes added or removed. It also gives a summary. ROI names are compared through the new presets' <code>alternative_names</code>, so a rename that keeps the old name as an alias is <code>rois_renamed</code>, not a removal plus an addition. Then the <b>proposal (D332)</b>: any ROI new to the bundle (a preset or a fingerprint class) → <b>patch</b> <code>x.y.(z+1)</code>; otherwise → <b>fix</b> <code>x.y.z.(n+1)</code>, with n counted over the folders <i>and</i> the config tags; <b>minor</b> <code>x.(y+1).0</code> only when the person ticks <i>major</i>. (4) <code>create</code> checks the rules synchronously, then runs as a job. It writes the new folder, hardlinking the base's weights and config files as 새 패키지 does: uploaded files are copied over them, and each fingerprint's <code>version</code> becomes the package version. It writes <code>RELEASE.json</code> (candidate) and <code>RELEASE_NOTES.md</code>. Then <code>config/</code> gets the six files with a commit of those paths only, the annotated tag <code>v&lt;version&gt;</code> (message = summary, change lines, tickets; author = the hub user) and a best-effort push. Last, the outbox queues <code>POST /svc/v1/releases</code>. A failure moves the partial folder to <code>/mnt/deploy/trash/release_&lt;v&gt;_failed_&lt;ts&gt;</code>. The base folder is never written. (5) <code>state</code>: <code>released</code> needs a QA pass. It turns every older released standard package <code>superseded</code> (a legacy folder gets its <code>RELEASE.json</code> then), re-registers each changed folder, fills the QA section of the generated notes, and posts one Jira comment per ticket. <code>withdrawn</code> of a released package gives the packages it superseded back their <code>released</code> state.</p>
+  <p><b>Jira</b> (<code>app/jira/client.py</code>, D334): REST v3 with basic auth. <code>JIRA_SITE</code>, <code>JIRA_EMAIL</code>, <code>JIRA_API_TOKEN</code>, <code>JIRA_PROJECT</code> and optional <code>JIRA_READONLY</code> come from the environment, else from <code>~/.config/aipipeline/env</code> (or <code>JIRA_ENV_FILE</code>). The token is only ever in the <code>Authorization</code> header, never in a log line, an error text, a reply or a fixture. Jira answers a wrong login as an anonymous user (an empty search, not a 401), so every read first checks <code>/rest/api/3/myself</code> (cached 5 min). Ticket reads are cached 5 min. Any failure becomes <code>unavailable: "jira_auth" | "jira_unreachable" | "jira_http_&lt;n&gt;"</code> with the keys as plain links; it never fails a release or answers 5xx. <code>JIRA_READONLY=1</code> (the dev instance) reads live but only logs the comment (<code>jira comment (readonly) KEY: …</code>).</p>
+  <div class="tbl"><table><thead><tr><th>Endpoint (<code>/api/v1/deploy/…</code>)</th><th>Who</th><th>Reply</th></tr></thead><tbody>
+  <tr><td><code>GET releases</code></td><td>everyone, the public principal too</td><td><code>{releases:[{version, kind, state, legacy, base_version, bump, created_at, created_by, released_at, size_bytes, notes_summary, jira_keys[], download_path, country_download_paths{KR,JP,US}}], latest_released, latest_candidate}</code>, every folder, newest first</td></tr>
+  <tr><td><code>GET releases/{v}</code></td><td>everyone, the public principal too</td><td>the <code>RELEASE.json</code> fields (a legacy folder: state released, <code>legacy:true</code>) + the row above + <code>release_notes_md</code> + <code>jira:[{key, url, summary, status, type, assignee, updated}]</code> live, <code>jira_unavailable</code> when Jira failed</td></tr>
+  <tr><td><code>GET releases/latest?channel=released|candidate</code></td><td>named users</td><td>the row, or 404 <code>no_release</code></td></tr>
+  <tr><td><code>POST releases/uploads {base?}</code> → 201 · <code>GET</code> / <code>DELETE releases/uploads/{id}</code></td><td>named users (their own upload; admin any)</td><td><code>{upload_id, base (default: latest released), expires_at}</code> · the files · discarded</td></tr>
+  <tr><td><code>PUT releases/uploads/{id}/files/{path}</code></td><td>named users</td><td><code>{path, size, sha256, kind}</code>; 400 <code>bad_path</code> (<code>..</code>), 411 <code>length_required</code>, 413 <code>too_large</code></td></tr>
+  <tr><td><code>POST releases/uploads/{id}/analyze</code> (<code>x-async</code>)</td><td>named users</td><td><code>{base, base_state, files[], diff:{configs[], models[]}, summary:{rois_added, rois_removed, rois_renamed, routing_changed, channel_rules_changed, landmarks_changed, od_changed, presets_modified, models_changed, roi_models}, proposal:{bump, version, versions:{minor, patch, fix}, reason}, warnings[]}</code>; 422 <code>empty_upload</code></td></tr>
+  <tr><td><code>POST releases/uploads/{id}/create {version, major, notes:{summary, jira[], lines[]}}</code> → 202</td><td>named users</td><td><code>{job_id}</code>; <code>jobs/{id}</code> result <code>{version, path, config_tag, commit, pushed, release_notes_path, registered}</code>. Refusals: 400 <code>bad_version</code> · <code>major_required</code> · <code>empty_summary</code> · <code>bad_jira_key</code> · <code>too_many_keys</code> · <code>bad_config</code> (an uploaded JSON that does not parse), 409 <code>exists</code>, 422 <code>empty_upload</code></td></tr>
+  <tr><td><code>POST releases/{v}/state {state: released|withdrawn, qa:{verdict, note?, jira?[]}, comment_jira?}</code></td><td>named users</td><td>the row + <code>changed[]</code> (the folders whose state moved), <code>registered[]</code>, <code>jira_comments:[{key, result: sent|logged|failed:&lt;reason&gt;}]</code>; 400 <code>qa_required</code>, 409 <code>already_released</code> / <code>already_withdrawn</code></td></tr>
+  <tr><td><code>GET releases/jira/issues?keys=</code> · <code>GET releases/jira/search?q=&amp;max=20</code></td><td>named users</td><td><code>{issues:[…], unavailable}</code>. JQL <code>project = "OS" AND (text ~ "q" OR key = "Q") ORDER BY updated DESC</code>: the key clause only for a key-shaped q (Jira refuses the whole query for <code>key = "foo"</code>), no text clause for an empty q</td></tr>
+  <tr><td><code>GET releases/{v}.zip</code> · <code>GET releases/{v}/country/{KR|JP|US}.zip</code> · <code>GET releases/latest.zip?channel=&amp;country=</code></td><td>named users</td><td>the bundle streamed (as <code>downloads/</code>) · 200 the cached CT+MR country zip (<code>find_cached_zip</code>), else <b>202</b> <code>{job_id, retry_after:30}</code> after starting the §70.2 build (one build per version × country; a failed build answers its error once) · <b>307</b> to the concrete path. <code>Cache-Control: no-store</code></td></tr>
+  </tbody></table></div>
+  <p>"Named users" = every hub role from <code>general</code> up, with a real <code>X-Hub-User</code>. The public principal (<code>X-Hub-User: public</code>) gets 403 <code>role</code>, which is audited like any refused write (A14b); <code>openapi.json</code> marks these operations <code>x-named-user: true</code>. The hub registration (§77.4) adds <code>state, base_version, bump, notes_summary, jira_keys, created_by, released_at</code> to <code>POST /svc/v1/releases</code>. A hub before v1.61 refuses them as unknown keys (400/422); the outbox then resends the old payload, and <code>hub_register.py reregister-all --apply</code> sends the states once the hub knows them. Country builds never ship <code>RELEASE.json</code>, because the state changes after the build. <b>Dev instance</b> (<code>scripts/run_dev.sh</code>, :5001): a scratch <code>RELEASE_ROOT</code> <code>instance/dev/release/</code>, seeded once with a copy of 1.7.0's six config files and <code>MR_AbdChest</code> (a copy: <code>/drive</code> is another filesystem than the NFS share, so no hardlink); a scratch config repository <code>instance/dev/config_repo</code> (<code>CONFIG_REPO_ROOT</code>, tag <code>v1.7.0</code>) for the release writer and 설정 관리, so dev tags never land in production's tree; trash <code>instance/dev/trash</code>; <code>JIRA_READONLY=1</code>. <code>DEV_HUB_PAIR=1</code> pairs it with the dev hub (the pair is read from the env file inside the script, not from a command line). Tests: <code>scripts/test_releases.py</code> (a temp tree and git repo, the mock hub, a mock Jira).</p>
+  <h2>Run, test, deploy</h2>
+  <div class="tbl"><table><thead><tr><th></th><th>Command (in <code>/drive/project/ai-pipeline</code>)</th><th>Notes</th></tr></thead><tbody>
+  <tr><td>Production :5000</td><td><code>scripts/prod_window.sh &amp;&amp; ./restart_server.sh</code></td><td>runs from this working tree; restart only when the window check says YES (20:00–07:00 KST, or no hub session for 30 min, and the queue idle); log <code>logs/server.log</code></td></tr>
+  <tr><td>Dev :5001</td><td><code>scripts/run_dev.sh [start|stop|status]</code></td><td>own users DB, outbox, queue and caches in <code>instance/dev/</code>; no queue worker; hub off, the mock with <code>DEV_HUB_URL=…</code>, or the dev hub with <code>DEV_HUB_PAIR=1</code>; a scratch release root and config repo (<a href="#releases-api">above</a>); still reads the real <code>/mnt/deploy</code> models, data and metrics</td></tr>
+  <tr><td>Tests</td><td><code>scripts/run_tests.sh</code></td><td>unit/contract suites against the mock, the smoke test (real data, read-only) and the docs gate; ≈ 1 min</td></tr>
+  <tr><td>Hub outbox</td><td><code>python3 scripts/hub_register.py status</code></td><td>read-only; targets the production hub unless <code>AIPIPELINE_HUB=dev</code></td></tr>
+  <tr><td>Health</td><td><code>curl http://127.0.0.1:5000/</code></td><td>200; <code>/spec/inference/queue</code> (login) for the queue</td></tr>
+  <tr><td id="backup">Nightly backup (§65)</td><td><code>scripts/backup_nightly.sh</code> (cron <code>20 0</code>, block <code>ai-pipeline-backup</code>) · <code>scripts/backup_nightly.sh verify &lt;folder&gt;</code></td><td><code>/mnt/ai-pipeline/backups/ai-pipeline/&lt;YYYY-MM-DD&gt;/</code>: the <code>instance/</code> SQLite databases, RA evaluation rows, <code>data/</code>, logs, a daily copy of <code>/mnt/deploy/config</code> (registry, hidden list, manifests), registry history, a releases/models index, a git bundle, <code>manifest.json</code> with <code>ok</code>; 14 daily + 12 month-firsts; secrets never copied; restore in the repo's README (백업과 복원)</td></tr>
+  </tbody></table></div>
+  <p>Secrets live in <code>~/.config/aipipeline/env</code> (mode 600, never under <code>/drive</code>). Configuration is by
+  environment variables with defaults; the table is in the workspace's <code>CLAUDE.md</code> §5.</p>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note warn"><b>The first /spec page after a restart is slow</b><span>Aggregates are cached (memory, then
+  <code>data/*_cache.json</code>) and refreshed in the background; the first build after a restart or on a fresh dev
+  instance reads ~1200 files over NFS (tens of seconds to minutes). Later loads are instant; a number may lag one
+  refresh after result files change.</span></div>
+  <div class="note warn"><b>Odd numbers → suspect the data first</b><span>Wrong channel names in a fingerprint, a
+  collapsed deployed data version, or a leaked validation split explain most surprises (e.g. MR_HNN 2.1.0 swapped
+  Midbrain/Medulla, flagged as a channel-swap suspect). Check labels, bundle metadata and aggregation before blaming the
+  model.</span></div>
+  <div class="note"><b>Outbox shows pending 404s</b><span><code>splits/meta</code> and validation intents answered
+  <code>404 no split of … with file_sha256</code> wait until the hub registers that split; they converge by themselves.
+  Only <code>failed</code> intents (400/413/422) need a person (<code>hub_register.py retry-failed</code> after the fix).</span></div>
+  <div class="note"><b>Evaluation cannot start</b><span>"all cases leaked", a hidden model version, less than 12 GB free
+  memory, or the GPU lock held by training — the queue page says which.</span></div>
+  <div class="note"><b>External sources are read-only</b><span>Notion (release notes) and Google Sheets (ROI viewer,
+  certification) are only read; the central PACS index is only queried for DICOM headers.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/components/ai-pipeline.html</code> · owner: ai-pipeline · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

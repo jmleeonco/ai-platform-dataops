@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roles and Visibility</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-root="./">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Roles · orchestrator (matrix) + labeling-web (screens)</span>
+  <h1>Who sees what</h1>
+  <p class="lede">After this page you know the four scopes, which hub pages and APIs each one reaches, how patient IDs
+  are shown (since v1.9 nothing is masked — U5), and how a labeler's OncoStudio login is tied to a hub account.</p>
+  <p class="meta">Last verified 2026-09-30 · DECISIONS D76, D94–D96 · enforced server-side on <code>/ui/api</code>, not by hiding tabs</p>
+  <div class="toc"></div>
+</header>
+
+<section id="scopes">
+  <h2>The four scopes</h2>
+  <p>A hub account has a role (<code>viewer</code>, <code>lead</code>, <code>admin</code>) and a flag <code>is_labeler</code>.
+  Together with "not logged in" they form four scopes; every <code>/ui/api</code> route declares exactly one, and a
+  test walks the route table so no route can be undeclared.</p>
+  <div class="tbl"><table><thead><tr><th>Scope</th><th>Who</th><th>Sees</th><th>Patient IDs</th><th>Writes</th></tr></thead><tbody>
+  <tr><td><span class="pill bad">admin</span></td><td>role <code>admin</code></td><td>everything, plus 관리: users, enums, ingest, system, account links (hub user ↔ NAS account), a project's validation-set reset</td><td>full</td><td>everything</td></tr>
+  <tr><td><span class="pill warn">data</span> (lead)</td><td>role <code>lead</code></td><td>all projects, assignments, the review queue, deliverables, sessions, labelers, patients, analytics, exports, datasets/splits, models, evaluations, releases, runs, reconciliation, training (new job, jobs, pipeline, policies), labeling rounds (pool, sampler, commit, pre-label, train, close, round policy), import</td><td>full</td><td>reviews, assignments, rounds, jobs, policies, import, deploy</td></tr>
+  <tr><td><span class="pill warn">data</span> (viewer)</td><td>role <code>viewer</code> without <code>is_labeler</code></td><td>the same pages, read-only</td><td>full (U5)</td><td>none</td></tr>
+  <tr><td><span class="pill info">own</span> (labeler)</td><td>role <code>viewer</code> with <code>is_labeler</code></td><td>내 작업: own assignments (project, patient, series, status with the round badge / pre-label mark / review-note mark, due) and their drawer (ROI set vs delivered, the hub review text, comments); 계정: own password and OncoStudio login binding. <b>No other person's name or count anywhere</b> (D95): reviewer, comment author and actor names are blanked by the server, the unbound-alias list is not sent. The former 추천 · 결과물 · 세션 · 라벨러 pages send a labeler back to 내 작업 (the APIs keep their own-row filtering)</td><td>full (U5)</td><td>change own password, bind own OncoStudio login, comment on own assignment, acknowledge a review comment</td></tr>
+  <tr><td><span class="pill ok">public</span></td><td>not logged in</td><td>v1.55 §72 (U141, D321): the hub shell and nav as after a login, limited to 개요 (로드맵, ROI 카탈로그, 릴리즈 노트 — moved there from 배포 on 2026-11-02) and the five other 배포 tabs a general user may see (대시보드 · 스펙 문서 · 모델 다운로드 · ROI · ROI 뷰어), and this documentation; GET only, no usernames or display names in any reply (<code>PUBLIC_READ</code>, S47), the deploy reads forwarded as <code>X-Hub-User: public</code> / <code>X-Hub-Role: general</code>; model / release zips and every other route → 401 → the login</td><td>none shown; no usernames either</td><td>none</td></tr>
+  </tbody></table></div>
+  <div class="note"><b>Why "their projects" means all projects for the data scope</b><span>The hub has no project-membership
+  table (a project's lead is a free-text name). Every lead and data-team member sees every active project; a membership
+  table is the path if narrower scoping is wanted later (D76).</span></div>
+</section>
+
+<section id="masking">
+  <h2>Patient identity (no masking since v1.9)</h2>
+  <p>U5 (2026-10-02): labelers see every patient's id, name and data. <code>sees_patient_ids</code> is true for every
+  role and <code>mask_patient</code> is not applied anywhere (lists, details, live snapshot, feed, exports, error
+  messages). Patient <em>names</em> are kept as an attribute of the case (<code>imaging_case.patient_name</code>, CONTRACT
+  §15): read from the DICOM header on the central share, sent by OncoStudio, or taken from the data list; phone numbers
+  are still never stored. The role rule (lead or admin) is kept in the code for the day the user flags an item that
+  must be treated securely.</p>
+</section>
+
+<section id="public">
+  <h2>The public view (v1.55 §72)</h2>
+  <p>Opening the hub without a login shows <b>the same shell as after a login</b> — top bar with a 로그인 button, theme and language toggles,
+  and a nav limited to what anyone may see: <b>개요</b> › 로드맵, ROI 카탈로그 and 릴리즈 노트 (in 개요 since 2026-11-02; its PDF reports
+  open for everyone), <b>배포</b> › 대시보드 · 스펙 문서 · 모델 다운로드 · ROI · ROI 뷰어 (the entries the ai-pipeline site itself shows to a
+  <code>general</code> login, D321). <code>/</code> opens the roadmap; any other address
+  asks for a login and returns there afterwards. The view is read-only and nameless: every write and every model / release zip needs a login
+  (the pages show a 로그인 후 다운로드 link), the server blanks usernames in anonymous replies, and <code>GET /ui/api/meta</code> answers
+  <code>{me: null, now, version, contract_version, public: true}</code>. The hub forwards the public 배포 reads to ai-pipeline as
+  <code>X-Hub-User: public</code> / <code>X-Hub-Role: general</code> (<code>app/ui/routes_deploy.py</code> <code>deploy_read / public_path</code>, S47);
+  a labeler's session is forwarded the same way on those reads, except the job poll <code>jobs/{id}</code>, which goes as the person (S52b, v1.61). On the hub the public set is the scope <code>public-read</code>
+  (<code>app/ui/auth.py</code> <code>PUBLIC_READ / blank_names</code>) on exactly <code>GET /ui/api/meta</code>, <code>roi-board</code>,
+  <code>roi-board/{roi}/{modality}</code>, <code>roi-requests</code>, <code>registry/roi</code>, <code>deploy/_status</code> and the proxy's GET;
+  every other <code>/ui/api</code> route answers 401 without a session (<code>tests/test_public_view_v155.py</code> walks them all). Every signed-in account, labelers
+  included, sees the public set as well. The earlier public overview page (D76: project progress bars, releases, pipeline pin) is retired; its
+  route <code>GET /ui/api/public/overview</code> stays one version, unused (since v1.61 its <code>releases</code> are released bundles only).</p>
+  <p id="release-flow-roles">v1.61 §77.4 (S52): the proxy's <code>releases/*</code> is open to <b>every signed-in scope</b>, labelers included,
+  on every path and method (upload, analyze, create, mark released, withdraw, zips), forwarded as the person — a labeler as
+  <code>X-Hub-Role: general</code> with their own username, not as <code>public</code>; without a session only the release list
+  (<code>GET releases</code>) and one release page (<code>GET releases/{v}</code>) are read, as <code>public</code>. Personal API tokens
+  (<code>/ui/api/me/tokens</code>, any scope) open <code>/api/v1/releases…</code> as their owner and nothing else.</p>
+  <p>In the web (labeling-web, W37): <code>web/src/lib/publicview.js</code> (the role rank with <code>public</code> below <code>viewer</code>,
+  the public paths, the router's redirects, logout → <code>/roadmap</code>) and <code>web/src/lib/nav.js</code> (the eight entries carry the role
+  <code>public</code>); the top bar's 로그인 button in <code>web/src/components/Shell.svelte</code>, the zip links in
+  <code>web/src/components/ZipLink.svelte</code>, the login hint on a 401 in <code>web/src/components/ErrorBox.svelte</code>; checked by
+  <code>web/tests/publicview.test.mjs</code> and <code>web/e2e/public_view.mjs</code> (<a href="components/hub.html#web-public-view">hub › web-public-view</a>).</p>
+  <figure class="shot"><img src="assets/img/hub-public.png" alt="Public view: the hub shell with the roadmap, 개요 and 배포 entries, 로그인 button" loading="lazy"><figcaption>The public view on the dev hub (anonymous roadmap; re-taken by labeling-web W37). Owner: labeling-web — replace when the page changes.</figcaption></figure>
+</section>
+
+<section id="accounts">
+  <h2>Accounts, logins and NAS bindings</h2>
+  <div class="tbl"><table><thead><tr><th>Identity</th><th>Where it lives</th><th>Used for</th></tr></thead><tbody>
+  <tr><td>Hub account (<code>web_user</code>)</td><td>hub 관리 › 사용자 (admin creates; generated or typed password; since D94 the admin can also see and change every password); the user changes it on 계정 (<code>POST /ui/api/my/password</code>: current password checked, 10+ characters; every other session ends, the current one continues with a fresh cookie)</td><td>logging in to the hub; role + <code>is_labeler</code> (the admin can flag a labeler there too, without a binding)</td></tr>
+  <tr><td>OncoStudio login</td><td>OncoStudio's own authentication</td><td>identifies the labeler in every event OncoStudio sends; bound to a hub account through <code>user_alias</code> (계정 › OncoStudio 로그인 연결 by the user; an Excel name is linked for a labeler by a lead, 프로젝트 › board, or an admin)</td></tr>
+  <tr><td>Imported name → account (v1.23 §31, U30)</td><td>hub table of names (Excel, data list, C-FIND) → logins; a lead sees and adds them on 계정 › <i>이름 → 계정</i> (<code>GET / POST /ui/api/aliases</code> <code>{name, username}</code>; a refusal is the hub's sentence)</td><td>a re-import reads the name as that account, so a labeler stays <i>LJM</i> and never comes back as the Korean name; every page writes people by the account's display name (initials), pickers as <i>LJM (ljm)</i></td></tr>
+  <tr><td>NAS account (uid/gid)</td><td>the executor host</td><td>training runs as the NAS account bound to the hub user (관리 › 계정 연결); unbound users get a readable refusal when they try to train</td></tr>
+  <tr><td>Service tokens (HS256)</td><td><code>~/.config/…</code> on the platform host, never in a repo</td><td>ai-pipeline ↔ hub, hub ↔ executor calls; the token carries the acting user's role for deploy permission</td></tr>
+  </tbody></table></div>
+  <p>An OncoStudio login that is not bound to a hub account still records its work (events are never dropped), but
+  sees an empty 내 작업 list with the hint to bind at the hub.</p>
+
+  <h3 id="passwords">Passwords: admins can see them (D94)</h3>
+  <p>Login checks an argon2 hash as before. In addition the hub keeps an <b>admin-readable copy</b> of every password
+  (<code>web_user.password_vault</code>, AES-256-GCM). On 관리 › 사용자 (admin › users) each row has an eye button that
+  shows the password inline with a copy button and the time it was stored, a 변경 (change) button (type one of 10+
+  characters, or 생성 generate — the generated one is shown once and is also visible through the eye afterwards) and the
+  라벨러 (<code>is_labeler</code>) flag. The copy is written whenever a password is set: an admin creates, sets or
+  resets it, the user changes it on 계정, or — for accounts that existed before this feature — <b>the user's next
+  successful login</b>; until then the row shows "—" (tooltip: 다음 로그인 후 표시, shown after their next login) and no
+  reset is forced.</p>
+  <div class="tbl"><table><thead><tr><th>Fact</th><th>Where</th></tr></thead><tbody>
+  <tr><td>The key</td><td><code>HUB_PW_KEK</code> (base64, 32 bytes) only in <code>~/.config/oncolab/oncolab.env</code> (production) and <code>oncolab-dev.env</code> (dev, a different key) on the platform host, mode 600, generated by <code>deploy/setup.sh</code>; never in the database or a repo. Without it the feature is off: the eye answers <i>password vault not configured</i> (503) and nothing is stored.</td></tr>
+  <tr><td>The audit</td><td>every reveal (<code>GET /ui/api/admin/users/{u}/password</code>) inserts <code>admin_audit</code>: who, whose password, when, from which address (never the password itself). Read it with the DB shell or the read-only role.</td></tr>
+  <tr><td>Who</td><td>role <b>admin</b> only; leads and viewers get 403.</td></tr>
+  <tr><td>The trade-off</td><td>anyone holding the key file <i>and</i> the database can read every password, and a password reused elsewhere leaks with it. Accepted for a closed-LAN team whose accounts are hub-only; the login page and 계정 say so (관리자는 계정 비밀번호를 볼 수 있습니다 — 다른 서비스의 비밀번호를 재사용하지 마세요). Reversal: drop the column and the key.</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="screens">
+  <h2>Screens per scope</h2>
+  <div class="tbl"><table><thead><tr><th>Scope</th><th>Menu</th><th>Notes</th></tr></thead><tbody>
+  <tr><td><span class="pill info">own</span> (labeler)</td><td><b>개요 · 배포</b> (the public set of §72, read-only — v1.55) · <b>학습</b> (Dashboard · Training — v1.60 §76: every job and model as a viewer sees them (U5: nothing masked); start jobs; cancel / stop one's own; no deploy) · <b>Labeling</b> (My works · Projects · ↳ the opened project · Models) · <b>계정 · 문서</b> (D95; v1.23 §32 gives labelers the app's Labeling navigation)</td><td>opens on My works; only their own rows and no other person's name; no live stream (the feed carries everyone's events); 계정 = own password + OncoStudio login binding with the D94 notice that administrators can see passwords</td></tr>
+  <tr><td><span class="pill warn">data</span> (viewer)</td><td><b>학습</b> (새 학습 · 작업 · 데이터셋 · 모델 · 평가 · 릴리스 · 파이프라인 · 실행 기록 · ROI 레지스트리 · 인구통계 대조 · AI 파이프라인 ↗) · <b>Labeling</b> (My works · Projects · ↳ the opened project · Models — the app's Labeling tab, v1.23 §32) · <b>기록</b> · <b>도움말</b> (D96)</td><td>opens on 학습 › 작업; masked patient IDs; action buttons (review, assign, train, deploy) are hidden or refused; 기록 is one page whose tabs are the former 실시간 · 환자 현황 · 결과물 · 작업자 · 세션 · 분석 · 할당 pages (their old addresses still work as deep links); 계정 is in the user menu (top right)</td></tr>
+  <tr><td><span class="pill warn">data</span> (lead)</td><td>the same, plus <b>Hub</b> › Review · Import (web-only pages, moved out of Labeling by §32)</td><td>full IDs and all actions</td></tr>
+  <tr><td><span class="pill bad">admin</span></td><td>the same, plus 관리 (관리 · 계정 연결)</td><td>—</td></tr>
+  <tr><td><span class="pill ok">public</span></td><td><b>개요</b> (로드맵 · ROI 카탈로그 · 릴리즈 노트) · <b>배포</b> (대시보드 · 스펙 문서 · 모델 다운로드 · ROI · ROI 뷰어) · 문서, with a 로그인 button (v1.55 §72)</td><td>read-only, no names, no zips; any other hub address sends to the login page and back after login</td></tr>
+  </tbody></table></div>
+  <p>A route outside one's scope answers <b>403</b> with a short message ("not available to your role", "not your work");
+  the page shows it as an error box, never an empty page. The server is the enforcement: hiding a menu entry is only a
+  convenience (<code>tests/test_roles.py</code> in the hub checks every route and the masking).</p>
+  <p>v1.23 §32 (D179): a labeler's web Labeling area follows the app's rules — every project in the list and its page
+  (ids in full once they hold a row in it), the board and its label checks, adding rows, marking finished, taking a row;
+  creating a project stays a lead's on the web and in the app (D181: both show <i>New project</i>, the hub answers
+  <i>only a lead can create a project</i>). <code>GET /ui/api/me</code> — and, from hub 1.27, the <code>me</code> of <code>GET /ui/api/meta</code> alike — carries <code>can_review</code> (D187: a lead / admin, or a labeler whose account may review — the row's assigned reviewer gives its verdict) and <code>is_lead</code> and
+  <code>contract_version</code> (the health value, as <code>/api/v1/me</code>); <code>GET /ui/api/health</code> is the
+  login-free twin of <code>/api/v1/health</code>.</p>
+  <p>v1.27 §40 (U46): assigning — <i>Assign to…</i>, <i>Random…</i>, <i>Reviewer…</i> and the add-series preview — needs
+  an account that may review (<code>can_review</code> as above), not the lead role; the hub answers anyone else 403
+  <i>not available to your role</i>. Project status, delete, <i>Send to central</i>, split and settings stay the lead
+  role's.</p>
+  <p>v1.29 §42.3 (D211): <b>bulk approve</b> (<code>POST /ui/api/projects/{id}/review/bulk</code>, the training view's
+  <i>Approve selected / Approve all labeled</i>) needs the same <code>can_review</code>, else 403; a lead / admin approves
+  any row, a labeler only the rows they are the reviewer of (the others come back refused <i>not yours to review</i>);
+  since v1.30 (§43.1, U53) one's own items are approved like any other, and the row's own labeler may be set as its
+  reviewer. <i>Default pipeline</i> (<code>POST …/train-default</code>, §43.3) needs <code>can_review</code> too;
+  its summary (<code>GET</code>) is readable by every signed-in scope. The live feed (<code>/ui/api/live/feed</code>, data scope) shows a
+  batch as one <code>assignment</code> line with <code>d.origin "bulk"</code> and <code>d.n</code> (the rows approved);
+  patient IDs in the refusals are masked for viewers like everywhere.</p>
+  <p id="records-mine">v1.36 §51 (U66, D227, D229): <b>records are mine unless I am admin.</b></p>
+  <p id="release-flow-web">v1.61 §77.5 (W41, labeling-web): in the web, 배포 › 릴리즈 and 사용법 are in the public set (<code>web/src/lib/deploy.js</code> role
+  <code>public</code>, so anyone reads the list, a release page and the guide — zips still need a login); 새 릴리즈 carries <code>viewer</code> + <code>own</code>, so
+  every signed-in account sees it, labelers included, and an anonymous visitor is sent to the login; <code>web/src/lib/publicview.js</code> keeps
+  <code>/deploy/releases…</code> and <code>/deploy/howto</code> open to a labeler (<code>OWN_KEEP</code>). The release page's QA block (릴리즈로 표시, 철회) shows for
+  any signed-in user and never without a session. 계정 (<code>web/src/pages/Account.svelte</code>) has the <b>API 토큰</b> card for every account.</p>
+  <p id="training-for-labelers">v1.60 §76 (U151, D329): <b>training for every labeler.</b> Every route of <code>/ui/api/training/*</code> that was data scope is
+  <code>own + data + admin</code>, and so are the registry's read routes (datasets, models, evaluations, releases, runs, roi); a labeler sees every job
+  and model with the patient IDs a viewer sees (U5: nothing masked) and requester names, starts jobs (wizard, project page Train, default pipeline) and cancels /
+  stops / resumes / exports / reruns <b>their own</b> (the §58 / §69 requester rule; another person's job → 403). Still lead / admin: deploy
+  (<code>POST …/jobs/{id}/deploy</code>), pipelines, bindings (<code>GET/PUT/DELETE …/training/bindings</code>), <code>POST /ui/api/registry/rois</code>,
+  reconcile, the xlsx profiles, <i>Save as project split…</i>, valid-set reset. The hub submits every person's job under its service token with the
+  presser as <code>requested_by</code>; the executor runs a person without a NAS binding under the hub's binding (<a href="components/executor.html#hub-vouches">hub_vouches</a>),
+  so no per-person binding or <code>can_train</code> flag is needed. The web shows 학습 › Dashboard · Training to labelers, <i>Mine only</i> on by default.</p>
+  <ul>
+    <li><code>GET /api/v1/records</code> answers every non-admin account (labeler, viewer, lead) with its own records:
+    no scope or <code>scope=mine</code> → mine, <code>scope=all</code> → 403 <i>scope all is admin only</i>.</li>
+    <li>On the web's Records page, a lead or data account sees only its own rows on Live (feed, snapshot cards,
+    throughput, alerts, and the SSE stream's events, deliveries and claims), Deliverables, Sessions (and their detail
+    pages: another person's answers 403 <i>not your work</i>), Tasks and their CSV exports. Own rows are those of the
+    OncoStudio logins bound to the account, or done under its hub username.</li>
+    <li>Labelers and Analytics, and the labelers / roi_effort / activity exports, are admin-only (403
+    <i>requires role admin</i>). Patients, case history and project pages are unchanged.</li>
+    <li><code>/ui/api/me</code> and <code>/api/v1/me</code> carry <code>is_admin</code>.</li>
+  </ul>
+  <p><code>loop_label_states</code> (the training view's <i>Labels to train on</i> chips, §42.4) is a round-policy key:
+  saved by a lead (<code>PUT …/round-policy</code>); every signed-in scope reads it in <code>GET …/loop</code>.</p>
+  <p>Deleting a project (v1.19 §13, D157) needs a lead or admin <b>and</b> the admin action password; undeleting needs an admin and the password. The live feed and every list leave a deleted project out for every role. From v1.27 (§40, U47) its code may be taken by a new project; undeleting while a live project holds the code is refused (409).</p>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/roles.html</code> · owners: orchestrator (matrix), labeling-web (screens).</span>
+</footer>
+</div>
+<script src="./assets/site.js"></script>
+</body>
+</html>

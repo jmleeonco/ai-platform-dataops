@@ -1,0 +1,127 @@
+# DOCMAP.txt — which docs page documents which workspace paths (CONTRACT §10, D77).
+# Format: <role> <path-glob (relative to that workspace's repo root)> <docs page (relative to docs/)>
+# Roles as in workspaces.env (U10, 2026-10-08). Roles that share a repo (labeling-server + labeling-web) share their rows.
+# A commit in <role>'s workspace that changes a file matching a glob must also change the page (docs-gate.sh).
+# Globs: shell-style, matched against the full relative path (** = any depth). First column `*` = every workspace.
+# Shared repo (onco-mlops) itself:
+shared CONTRACT.md            architecture.html
+shared ARCHITECTURE.md        architecture.html
+shared WORKSPACES.md          architecture.html
+
+# labeling-server (FastAPI app/) + labeling-web (Svelte web/) — one repo, rows apply to both
+labeling-server app/svc/routes.py                     components/hub.html
+labeling-server app/svc/phase2.py                     components/hub.html
+labeling-server app/svc/exec_events.py                components/hub.html
+labeling-server app/ui/auth.py                        roles.html
+labeling-server app/ui/routes_live.py                 roles.html
+labeling-server app/ui/routes_public.py               roles.html
+labeling-server app/ui/routes_work.py                 guides/labeling.html
+labeling-server app/ui/routes_projects.py             guides/review.html
+labeling-server app/ui/routes_registry.py             guides/datasets.html
+labeling-server app/ui/routes_training.py             guides/training.html
+labeling-server app/ui/routes_phase2.py               guides/training.html
+labeling-server app/ui/routes_admin.py                components/hub.html
+labeling-server app/ui/routes_deploy.py               components/hub.html
+labeling-server app/ui/routes_import.py               guides/labeling.html
+labeling-server app/ui/routes_data.py                 components/hub.html
+labeling-server app/training.py                       guides/training.html
+labeling-server app/assignments.py                    guides/labeling.html
+labeling-server app/workflow.py                       components/hub.html
+labeling-server app/label_files.py                    components/hub.html
+labeling-server app/api_workflow.py                   components/hub.html
+labeling-server app/ui/routes_workflow.py             guides/labeling.html
+labeling-server app/claims.py                         guides/labeling.html
+labeling-server migrations/*.sql                      components/hub.html
+labeling-web web/src/pages/Training*.svelte        guides/training.html
+labeling-web web/src/pages/Dataset*.svelte         guides/datasets.html
+labeling-web web/src/pages/Review.svelte           guides/review.html
+labeling-web web/src/pages/MyWork.svelte           guides/labeling.html
+labeling-web web/src/pages/Project*.svelte         guides/labeling.html
+labeling-web web/src/pages/Releases.svelte         guides/releases.html
+labeling-web web/src/pages/Evaluations.svelte      guides/training.html
+labeling-web web/src/lib/publicview.js             roles.html
+labeling-web web/src/lib/nav.js                    components/hub.html
+labeling-web web/src/pages/Login.svelte            roles.html
+labeling-web web/src/App.svelte                    components/hub.html
+labeling-web web/src/components/Shell.svelte       components/hub.html
+labeling-web web/src/pages/Records.svelte          components/hub.html
+labeling-web web/src/pages/Account.svelte          roles.html
+labeling-web web/src/pages/Case.svelte             guides/labeling.html
+labeling-web web/src/components/AssignmentDrawer.svelte guides/labeling.html
+labeling-web web/src/lib/locales/*.json            components/hub.html
+labeling-server app/rounds/*.py                       guides/rounds.html
+labeling-server app/ui/routes_rounds.py               guides/rounds.html
+labeling-server jobs/round_tick.py                    guides/rounds.html
+labeling-web web/src/pages/Round*.svelte           guides/rounds.html
+labeling-web web/src/components/Round*.svelte      guides/rounds.html
+labeling-server app/api/prelabels.py                  guides/labeling.html
+labeling-server app/api_workspace.py                  components/hub.html
+labeling-server app/api_projects.py                   components/hub.html
+labeling-server app/label_states.py                   components/hub.html
+
+# executor (headless training executor + pipeline adapter)
+ai-training-web backend/app/execapi.py           components/executor.html
+ai-training-web backend/app/execauth.py          components/executor.html
+ai-training-web backend/app/execmodels.py        components/executor.html
+ai-training-web backend/app/execevents.py        components/executor.html
+ai-training-web backend/app/execspec.py          guides/training.html
+ai-training-web backend/app/graph.py             guides/training.html
+ai-training-web backend/app/graphrun.py          guides/training.html
+ai-training-web backend/app/stages.py            guides/training.html
+ai-training-web backend/app/templates.py         guides/training.html
+ai-training-web backend/app/training.py          guides/training.html
+ai-training-web backend/app/jobs.py              components/executor.html
+ai-training-web backend/app/scheduler.py         components/executor.html
+ai-training-web backend/app/lineage.py           guides/datasets.html
+ai-training-web backend/app/prelabel.py          guides/labeling.html
+ai-training-web backend/app/facets.py            guides/rounds.html
+ai-training-web backend/app/pipelinepin.py       components/executor.html
+ai-training-web backend/app/hubclient.py         components/executor.html
+ai-training-web backend/app/guards/*.py         components/executor.html
+ai-training-web pipeline_adapter/*.py            components/executor.html
+ai-training-web pipeline_adapter/pipeline.lock   components/executor.html
+ai-training-web pipeline_adapter/PIPELINE_UPDATE.md components/executor.html
+
+# ai-pipeline (formerly pipeline-catalog)
+ai-pipeline app/hub/*.py             components/ai-pipeline.html
+ai-pipeline app/spec/*.py            components/ai-pipeline.html
+ai-pipeline app/packaging/*.py       guides/releases.html
+ai-pipeline app/roi/*.py             components/ai-pipeline.html
+ai-pipeline app/api/*.py             components/ai-pipeline.html
+ai-pipeline app/model_visibility.py  guides/releases.html
+ai-pipeline inference/hub_client.py  components/ai-pipeline.html
+ai-pipeline inference/calculate.py   guides/training.html
+ai-pipeline inference/leak_guard.py  guides/datasets.html
+ai-pipeline scripts/mock_hub.py      components/ai-pipeline.html
+ai-pipeline app/hub/cases_meta.py    guides/rounds.html
+
+# oncostudio (formerly coordinator; C:\op, labeling build)
+oncostudio src/Infrastructure/Service/Activity/src/*.cpp                              components/oncostudio.html
+oncostudio src/Infrastructure/Service/Activity/inc/*.h                                components/oncostudio.html
+oncostudio src/Applications/OncoStudio/Controller/src/OncoStudio.Controller.Labeling*.cpp   components/oncostudio.html
+oncostudio src/Applications/OncoStudio/Controller/src/*LabelingProvenance*.cpp        components/oncostudio.html
+oncostudio src/Applications/OncoStudio/View/src/OncoStudio.View.Labeling*.cpp         guides/labeling.html
+oncostudio src/Applications/OncoStudio/View/src/*/*Labeling*.cpp                      guides/labeling.html
+oncostudio src/Applications/OncoStudio/View/src/*/*MyAssignmentsPanel*.cpp            guides/labeling.html
+oncostudio src/Applications/OncoStudio/LABELING.md                                    components/oncostudio.html
+oncostudio labeling_provenance/README.md                                              components/oncostudio.html
+
+# v1.61 §77 the release flow (2026-11-05)
+ai-pipeline app/api/deploy_releases.py       components/ai-pipeline.html
+ai-pipeline app/packaging/releases.py        guides/release-flow.html
+ai-pipeline app/jira/*.py                    guides/release-flow.html
+ai-training-web backend/app/release.py       components/executor.html
+labeling-server app/api_releases.py          guides/release-flow.html
+labeling-server app/ui/routes_tokens.py      guides/release-flow.html
+
+# ai-platform-dataops (v1.62 §78, 2026-11-09) — the data management DB and the dataset intake flow
+ai-platform-dataops dataops/db.py                    components/dataops.html
+ai-platform-dataops dataops/records.py               components/dataops.html
+ai-platform-dataops dataops/publish.py               components/dataops.html
+ai-platform-dataops dataops/local_send.py            components/dataops.html
+ai-platform-dataops dataops/legacy_import.py         components/dataops.html
+ai-platform-dataops dataops/deploy_import.py         components/dataops.html
+ai-platform-dataops dataops/web/*.py                 components/dataops.html
+ai-platform-dataops sql/migrations/*.sql             components/dataops.html
+ai-platform-dataops sql/deid_map_migrations/*.sql    components/dataops.html
+ai-platform-dataops ops/backup/*.sh                  components/dataops.html

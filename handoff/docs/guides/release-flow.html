@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release Flow Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · orchestrator (master) · ai-pipeline, labeling-server, labeling-web</span>
+  <h1>How to use 배포: versions, the QA loop, a new release, downloads and the API</h1>
+  <p class="lede">After this page you can read a package version, follow a bug from a JIRA ticket to the package that fixes it, make the next package from a folder on your PC with a diff you confirmed, mark it released after QA, and download any package in the browser or from a script. The hub's 배포 › 사용법 tab renders this very page.</p>
+  <p class="meta">Last verified 2026-11-05 · CONTRACT v1.61 §77 · <span class="owner">owner: orchestrator (master); ai-pipeline, labeling-server, labeling-web for their sections</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="versions">
+  <h2>Versions: what each number means</h2>
+  <p>A package version is <code>MAJOR.MINOR.PATCH</code> or <code>MAJOR.MINOR.PATCH.FIX</code> (policy of the user, 2026-11-05; CONTRACT §77.1). Which number goes up is <b>proposed by the tool from the difference</b> between your folder and the base release; only the <i>major</i> decision is a person's.</p>
+  <div class="tbl"><table><thead><tr><th>Change</th><th>Number</th><th>Example</th><th>Who decides</th></tr></thead><tbody>
+  <tr><td>A <b>new ROI</b> appears (a new preset entry or a new class in a model's fingerprint)</td><td>third (PATCH)</td><td>1.7.2 → 1.7.3</td><td>the tool (the diff shows <code>+ ROI</code>)</td></tr>
+  <tr><td>A <b>fix</b> after a packaged release: model weights, a preset's routing or template, a channel rule, a landmark, an OD model — anything that is not a new ROI</td><td>fourth (FIX)</td><td>1.7.0 → 1.7.0.1 → 1.7.0.2</td><td>the tool</td></tr>
+  <tr><td>A <b>major change</b>: architecture, a new pipeline, a changed output format</td><td>second (MINOR)</td><td>1.7.3 → 1.8.0</td><td><b>a person</b> — tick <i>큰 변경 (major)</i> in the wizard; any signed-in user may</td></tr>
+  </tbody></table></div>
+  <p>Rules the tool enforces: the new version is numerically greater than the base; a FIX version shares the base's first three numbers; a version that exists as a folder or as a config tag is refused. You may edit the proposed version within these rules. Names with a prefix (<code>wsch_1.3.0</code>, <code>smu_1.3.0</code>) are customer builds outside the policy.</p>
+  <p><b>States.</b> Every package has a state in its <code>RELEASE.json</code>: <b>candidate</b> (made, QA pending — 검증 중), <b>released</b> (QA passed — 배포됨), <b>superseded</b> (a newer one was released — 이전), <b>withdrawn</b> (철회). <b>"Latest" means the latest <i>released</i> package everywhere</b> — the dashboard, 모델 다운로드, the executor's default pipeline, the hub's model list (D333). Candidates are listed apart and are never defaulted; QA runs them on purpose. Packages made before 2026-11-05 (no <code>RELEASE.json</code>) count as released.</p>
+</section>
+
+<section id="qa-loop">
+  <h2>The QA loop, step by step</h2>
+  <ol>
+    <li><b>Make a candidate</b> with 배포 › 새 릴리즈 (below). It appears in 배포 › 릴리즈 as 검증 중 with its release notes and tickets.</li>
+    <li><b>QA downloads it</b> — 모델 다운로드 › 검증 중, or the API (<a href="#api">below</a>) — copies it into OncoStudio and tests. Problems become <b>JIRA tickets in project OS</b> (<code>https://oncosoft.atlassian.net/browse/OS-…</code>).</li>
+    <li><b>Developers fix</b> the model, preset or config, then make the next candidate from their folder. In the wizard's 릴리즈 노트 step they tick the tickets the package fixes (search by text or key; status and title come live from JIRA).</li>
+    <li><b>QA passes</b> → on the release page, any signed-in user presses <b>릴리즈로 표시</b> with the QA verdict, a note and the tickets; the state becomes released, the previous released package becomes superseded, and a comment <i>Released in &lt;version&gt;</i> with a link to the release page is posted on each ticket (untick <i>Jira 에 코멘트</i> to skip). <b>철회</b> withdraws a package at any state.</li>
+  </ol>
+  <p>The release notes (<code>RELEASE_NOTES.md</code> in the package folder, and the release page) are written by the tool from the diff and your summary, and list the tickets with title, status and link — so a reader can go from a package to the tickets it closed and back.</p>
+</section>
+
+<section id="new-release">
+  <h2>Making a new release from a folder</h2>
+  <p>You need a folder on your PC that holds what changed — any subset is fine; everything you do not include is taken from the base release:</p>
+  <div class="tbl"><table><thead><tr><th>In your folder</th><th>Recognised as</th></tr></thead><tbody>
+  <tr><td><code>default_roi_presets.json</code>, <code>channel_modifications_config.json</code>, <code>Landmarks.json</code>, <code>MR_Landmarks.json</code></td><td>config — compared entry by entry (ROI added / removed / renamed, routing, channel rules, landmarks)</td></tr>
+  <tr><td><code>&lt;Family&gt;/3d_final_model.pt</code> + <code>&lt;Family&gt;/global_fingerprint.json</code></td><td>a model (new family, or new weights of an existing one — the md5 and the class list are compared)</td></tr>
+  <tr><td><code>od_ct.torchscript</code>, <code>od_mr.torchscript</code></td><td>the OD models</td></tr>
+  <tr><td>anything else</td><td>ignored, listed as such</td></tr>
+  </tbody></table></div>
+  <ol>
+    <li><b>폴더 선택</b> — 배포 › 새 릴리즈, pick the folder (Chrome or Edge: the browser uploads the folder's files; the hub never reads a path on your PC). Choose the base release (default: the latest released). Upload runs per file with a progress bar; a file up to 2 GiB.</li>
+    <li><b>변경 사항</b> — read the diff: per config file the entries added, modified, removed; per model new / changed / unchanged; a summary line of ROIs and routings. Nothing is written yet.</li>
+    <li><b>버전</b> — the proposed version with the reason (<i>+1 ROI → 1.7.1</i>, <i>fix only → 1.7.0.4</i>). Tick <i>큰 변경 (major)</i> for a MINOR bump. Edit the number if you must; the rules above apply.</li>
+    <li><b>릴리즈 노트</b> — write the summary (required); edit the generated change lines; tick the JIRA tickets (search) or paste keys / links.</li>
+    <li><b>확인</b> — one card with everything; <b>만들기</b>. The tool creates <code>/mnt/deploy/release/&lt;version&gt;/</code> (the base's models with yours replacing or adding, the six config files), writes <code>RELEASE.json</code> (state candidate) and <code>RELEASE_NOTES.md</code>, cuts the config git tag <code>v&lt;version&gt;</code>, registers the release in the hub, and shows the links. <b>The base package is never modified</b> — every change is a new folder (D331).</li>
+  </ol>
+  <p>If a step fails, fix the cause and retry: the upload is kept for 24 hours. An abandoned upload expires by itself.</p>
+  <p id="on-the-pages"><b>On the pages</b> (labeling-web, W41): 배포 › <b>릴리즈</b> lists every package with its state badge (검증 중 · 배포됨 · 이전 · 철회) and 최신 on the latest released one; a version opens its page — the notes, the difference against its base (config entries, a models table), the tickets with live title and status, the zip and the country builds, and for anyone signed in the QA block (<b>릴리즈로 표시</b> with the verdict, a note, more tickets and the <i>Jira 에 코멘트</i> tick; <b>철회</b>), both behind a confirm. <b>새 릴리즈</b> walks the five steps above in one page: the file list shows each path with its kind and a progress bar (two files at a time, a failed file retried alone), the version step proposes the number with the reason and keeps the field inside the rules as you type, the notes step searches Jira and takes pasted keys or links, and the done card links the release page, the zip and this page. <b>모델 다운로드</b> starts with the 최신 릴리즈 card (zip, KR · JP · US builds — a build not cached yet shows <i>빌드 중 · N초</i> and downloads by itself), then the packages grouped 배포됨 · 검증 중 · 이전 and the customer builds. <b>계정 › API 토큰</b> makes a token (shown once, with a copy button), lists name / created / last used and deletes one behind a confirm. <b>사용법</b> is this page, rendered in the hub (<code>/deploy/howto#versions</code>, <code>#api</code>, … link straight to a section). On 릴리즈 노트 the old bug-fix form is gone: a release card lists its fix packages with their state, each opening its release page.</p>
+</section>
+
+<section id="create">
+  <h2>What happens on create</h2>
+  <p>Written by ai-pipeline (the one writer of <code>/mnt/deploy/release</code>; details on its <a href="../components/ai-pipeline.html#releases-api">component page</a>). Before anything is written, the request is checked against the rules above. A refusal (<code>bad_version</code>, <code>major_required</code>, <code>empty_summary</code>, <code>bad_jira_key</code>, <code>exists</code>, <code>empty_upload</code>) comes back at once, and nothing is written. Then a background job, in this order:</p>
+  <ol>
+    <li><b>The new folder</b> <code>/mnt/deploy/release/&lt;version&gt;/</code>. Every model family of the base: its weights are hardlinked (no extra disk; they are the same bytes), unless you uploaded that family's weights, which are copied in. Each family's <code>global_fingerprint.json</code> is the uploaded one or the base's, with <code>version</code> set to the new package version (as 새 패키지 always did). A family you uploaded that the base lacks is added. The six config files: yours where you uploaded them, the base's (hardlinked) otherwise. Nothing else of the base is carried over: its <code>RELEASE_NOTES.md</code>, <code>RELEASE_REPORT.html</code> and <code>RELEASE.json</code> belong to the base. <b>The base folder is never written.</b></li>
+    <li><b><code>RELEASE.json</code></b>, state <code>candidate</code>: who, when, base, bump, <i>major</i>, the diff summary, your summary, lines and tickets (with the titles Jira gave at that moment).</li>
+    <li><b><code>RELEASE_NOTES.md</code></b>: <code># &lt;version&gt;</code>, date, by, base; <b>Summary</b> (yours); <b>Changes</b>, the generated lines in a code block (<code>+ ROI X (model Y)</code>, <code>- ROI …</code>, <code>~ ROI renamed: A → B</code>, <code>~ routing: X MR_WholeBody → MR_AbdChest</code>, <code>~ preset X: fields</code>, <code>~ channel rule …</code>, <code>~ landmarks …</code>, <code>* model Family 2.1.1 → 2.1.2 (md5 …)</code> or <i>fingerprint changed, same weights</i>, <code>* OD …</code>), then your own lines; <b>Jira</b> (<code>- OS-12 — title — (status) — link</code>); <b>QA</b>, pending until the package is marked released.</li>
+    <li><b>The config tag</b>: the ai-pipeline repository's <code>config/</code> gets the bundle's six files, in a commit of those files only, plus the annotated tag <code>v&lt;version&gt;</code>. Its message holds the summary, the change lines and <code>Jira: OS-…</code>, and its author is you. The tag is then pushed. Config 관리 lists it like any other version.</li>
+    <li><b>The hub registration</b> (<code>POST /svc/v1/releases</code> with state, base, bump, summary, tickets), sent by ai-pipeline's outbox; it retries by itself when the hub is away.</li>
+  </ol>
+  <p>If a step after the folder was started fails, the partial folder is moved to <code>/mnt/deploy/trash/release_&lt;version&gt;_failed_&lt;time&gt;</code> (nothing is deleted) and the job answers the error; fix the cause and create again from the same upload. <b>Marking released</b> rewrites only state: the package's <code>RELEASE.json</code> (released, QA verdict), the <b>QA</b> section of the notes this tool wrote, and <code>RELEASE.json</code> of every older released package, which becomes superseded. A package made before 2026-11-05 gets its first <code>RELEASE.json</code> then; its hand-written notes are not touched. <b>Withdrawing</b> a released package gives the packages it superseded back their released state.</p>
+</section>
+
+<section id="download">
+  <h2>Downloading a package</h2>
+  <ul>
+    <li><b>In the browser</b>: 배포 › 모델 다운로드 — the 최신 릴리즈 card at the top (the whole bundle as a zip, or a country build KR / JP / US with the permitted ROIs), then every package grouped 배포됨 · 검증 중 · 이전. A country build that is not cached yet is built first (a progress line, usually a few minutes for ≈ 2.5 GB) and the download starts by itself when it is ready. Zips need a login (D321); the lists do not.</li>
+    <li><b>One model</b>: 모델 다운로드 › the family's row → the version's zip (release format, usage for a country).</li>
+    <li><b>From a script</b>: the API below with a personal token.</li>
+  </ul>
+</section>
+
+<section id="api">
+  <h2>The API (for QA scripts and automation)</h2>
+  <p>Make a token once in <b>계정 › API 토큰</b> (any signed-in user; the token is shown once — copy it; revoke it there when it leaks). Send it as <code>Authorization: Bearer olt_…</code>. The token works only on <code>/api/v1/releases…</code>; every call is logged with your name. Base URL: <code>http://10.101.1.183:8790</code>.</p>
+  <div class="tbl"><table><thead><tr><th>Call</th><th>Answer</th></tr></thead><tbody>
+  <tr><td><code>GET /api/v1/releases</code></td><td><code>{releases:[{version, state, base_version, bump, created_at, released_at, size_bytes, notes_summary, jira_keys[], download_path, country_download_paths}], latest_released, latest_candidate}</code></td></tr>
+  <tr><td><code>GET /api/v1/releases/{version}</code></td><td>the package: <code>RELEASE.json</code> fields, <code>release_notes_md</code>, <code>jira[]</code> with live title and status</td></tr>
+  <tr><td><code>GET /api/v1/releases/latest?channel=released|candidate</code></td><td>the newest package of that channel (404 when none)</td></tr>
+  <tr><td><code>GET /api/v1/releases/{version}.zip</code></td><td>the whole bundle, streamed</td></tr>
+  <tr><td><code>GET /api/v1/releases/{version}/country/{KR|JP|US}.zip</code></td><td>200 the country build when cached; <b>202</b> <code>{job_id, retry_after}</code> while it is being built — call again after <code>retry_after</code> seconds</td></tr>
+  <tr><td><code>GET /api/v1/releases/latest.zip?channel=released&amp;country=KR</code></td><td>307 to the concrete version's path (follow redirects)</td></tr>
+  </tbody></table></div>
+  <pre><code>TOKEN=olt_…   # from 계정 › API 토큰
+H="Authorization: Bearer $TOKEN"
+B=http://10.101.1.183:8790/api/v1
+
+curl -s -H "$H" $B/releases | jq '.latest_released, [.releases[] | {version, state}]'
+V=$(curl -s -H "$H" "$B/releases/latest?channel=released" | jq -r .version)
+curl -L -H "$H" -o "$V.zip" "$B/releases/$V.zip"
+
+# a country build: poll until 200
+until curl -s -L -H "$H" -o "$V-KR.zip" -w '%{http_code}' "$B/releases/$V/country/KR.zip" | grep -q 200; do sleep 30; done</code></pre>
+  <p>A bad or revoked token answers <code>401 {detail:"bad_token"}</code>. The same calls work in the browser under <code>/ui/api/deploy/releases…</code> with your session (what the pages use).</p>
+  <p id="api-hub"><b>How the hub treats a token</b> (labeling-server, S52): the token is <code>olt_</code> + 40 characters and is shown only in the reply that makes it — the hub keeps its SHA-256, so a lost token cannot be shown again: revoke it and make a new one. You may hold at most <b>10</b> live tokens (the eleventh answers <code>409 too_many_tokens</code>); an admin can list and revoke anyone's under 관리. A call acts as <b>you, with your current role</b>: a deactivated account's tokens stop working at once. Only <code>channel</code> and <code>country</code> are passed on from the query; a <code>307</code> points at the hub's own <code>/api/v1/releases/…</code> path (so <code>curl -L</code> keeps your token on the same host), a <code>202</code> is passed on unchanged. Each call — a refused one too — is one line in the hub's audit log (your name, the path, the status, the token's number); the token's <i>last used</i> time is shown in 계정 › API 토큰. The token opens nothing else: every other <code>/api/v1</code> route and the web ignore it.</p>
+</section>
+
+<section id="roles">
+  <h2>Who may do what</h2>
+  <div class="tbl"><table><thead><tr><th>Action</th><th>Who</th></tr></thead><tbody>
+  <tr><td>Read the release list, a release page, this page</td><td>everyone, signed in or not (no zips without a login)</td></tr>
+  <tr><td>Download a package or a model zip</td><td>any signed-in user; a personal token</td></tr>
+  <tr><td>Make a candidate (upload, diff, version, notes), decide <i>major</i></td><td><b>any signed-in user</b> (user 2026-11-05)</td></tr>
+  <tr><td>Mark released (QA verdict), withdraw</td><td>any signed-in user</td></tr>
+  <tr><td>Country builds, Permit 동기화, 새 패키지 (the old assembly), Config 관리, ROI registry writes</td><td>as before (§70.1: lead = research + data, admin)</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="record">
+  <h2>What is recorded, and where</h2>
+  <div class="tbl"><table><thead><tr><th>Record</th><th>Where</th><th>Written by</th></tr></thead><tbody>
+  <tr><td>the package files</td><td><code>/mnt/deploy/release/&lt;version&gt;/</code> — models, the six config files</td><td>ai-pipeline's writer, new folders only</td></tr>
+  <tr><td>state, base, bump, who / when, the diff summary, notes, QA verdict</td><td><code>RELEASE.json</code> in the folder (no file = a package from before 2026-11-05 = released)</td><td>ai-pipeline (a state change rewrites it; a legacy folder gets its first one then)</td></tr>
+  <tr><td>the release notes</td><td><code>RELEASE_NOTES.md</code> in the folder; the release page</td><td>ai-pipeline, from the diff + your summary + the tickets; its QA section is filled when the package is marked released (hand-written notes of older packages are never rewritten)</td></tr>
+  <tr><td>the config history</td><td>git tag <code>v&lt;version&gt;</code> in the ai-pipeline repo (Config 관리 lists it)</td><td>ai-pipeline, author = you</td></tr>
+  <tr><td>the release in the registry (state, countries, models)</td><td>the hub's 릴리스 page, <code>POST /svc/v1/releases</code></td><td>ai-pipeline → hub</td></tr>
+  <tr><td>JIRA comments <i>Released in …</i></td><td>the tickets in project OS</td><td>ai-pipeline, on 릴리즈로 표시 (skippable; the dev instance only logs them)</td></tr>
+  <tr><td>a failed create</td><td><code>/mnt/deploy/trash/release_&lt;version&gt;_failed_&lt;time&gt;/</code></td><td>ai-pipeline (moved, never deleted)</td></tr>
+  <tr><td>who wrote through the API</td><td>ai-pipeline's audit log (<code>deploy_api … by=hub:&lt;you&gt;</code>), a refused call too</td><td>ai-pipeline</td></tr>
+  <tr><td>your API tokens (hashed) and every token call</td><td>the hub (<code>user_api_tokens</code>, the audit log)</td><td>labeling-server</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note"><b>"version must be greater than the base" / "shares the base's x.y.z"</b><span>you edited the version against the rules above → take the proposal or fix the number.</span></div>
+  <div class="note"><b>"exists"</b><span>a folder or a config tag already has that version → the proposal skips it; choose the next.</span></div>
+  <div class="note"><b>"major_required"</b><span>a MINOR bump without the <i>큰 변경</i> tick → tick it (a person decides major).</span></div>
+  <div class="note"><b>"qa_required"</b><span>릴리즈로 표시 without a QA verdict → choose pass (or fail, which leaves the state).</span></div>
+  <div class="note"><b>Jira unavailable</b><span>the release page shows ticket keys as plain links and the wizard's search is empty → the Jira settings on the platform host are missing or refused (401); ask the platform owner. Nothing else is blocked.</span></div>
+  <div class="note"><b>The folder picker is greyed</b><span>your browser has no directory upload (Safari, Firefox without the flag) → use Chrome or Edge, or pick the files one by one.</span></div>
+  <div class="note"><b>A country zip answers 202 for long</b><span>the build is running (≈ 2.5 GB); keep polling as in the example. A 5xx means the build failed — the release page shows the job.</span></div>
+  <div class="note"><b>The dashboard still says LATEST 1.7.0 although 1.7.0.3 exists</b><span>that is the rule: 1.7.0.3 is a candidate until QA marks it released.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/release-flow.html</code> · owner: orchestrator (master); ai-pipeline, labeling-server, labeling-web · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

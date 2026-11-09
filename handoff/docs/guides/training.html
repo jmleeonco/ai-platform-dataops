@@ -1,0 +1,1047 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · labeling-web / labeling-server (wizard, jobs, policies) + ai-training-web (execution) + ai-pipeline (evaluation)</span>
+  <h1>Training a model from the hub</h1>
+  <p class="lede">After this page a lead can start a training job with the cohort they mean (including unreviewed or pre-labeled samples), follow it live, resume or cancel it, arm a policy, and read the evaluation that comes out.</p>
+  <p class="meta">Last verified 2026-10-14 · CONTRACT v1.28 (§41 the loop; the wizard v1.4) · <span class="owner">owner: labeling-server, labeling-web, ai-training-web, ai-pipeline</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="loop">
+  <h2>Train on the project page: the training loop (v1.28)</h2>
+  <p>The team's workflow is one loop per project (CONTRACT §41, U50): <b>add items → label / correct → Train → the new
+  model pre-labels every item that still has no human label → repeat</b>. There is no pool or sampling step, and no form
+  to fill: <b>Train</b> is one button with a fixed recipe. An iteration whose model is good enough is <b>deployed
+  automatically</b> (U51).</p>
+  <h3 id="loop-strip">The strip</h3>
+  <p>The project page shows one line between the Target ROIs panel and the action row, with one button, <b>Train</b>
+  (the app shows the same line; its Train opens this page in the browser — training runs on the web only, D141):</p>
+  <div class="tbl"><table><thead><tr><th>When</th><th>The strip says</th></tr></thead><tbody>
+  <tr><td>no model yet</td><td><i>No model yet · 4 labeled of 30 items · label at least 10 items, then Train</i> — Train stays disabled until enough items are labeled</td></tr>
+  <tr><td>a model exists</td><td><i>Model &lt;family&gt; &lt;version&gt; · DSC 0.87 on 5 validation items · trained &lt;date&gt; from 24 labels · 6 new labels since · pre-labels 12/14 ready</i> — the model text opens the job page</td></tr>
+  <tr><td>running</td><td><i>Training… stage 3/12 Split</i> · <i>Evaluating…</i> · <i>Pre-labeling 14 items…</i> · <i>Deploying &lt;family&gt; &lt;version&gt;…</i> (Train disabled: <i>A job of this project is running</i>)</td></tr>
+  <tr><td>after the evaluation</td><td><i>Deployed &lt;family&gt; &lt;version&gt; to /mnt/deploy (DSC 0.91 ≥ 0.85)</i>, or <i>Not deployed: DSC 0.79 &lt; 0.85</i> with the lead's <i>Deploy anyway…</i> (the job page's deploy, memo required)</td></tr>
+  <tr><td>failed</td><td><i>&lt;stage&gt; failed: &lt;the executor's reason&gt; — Train again</i></td></tr>
+  </tbody></table></div>
+  <p>Who may press Train: every account that may review (lead, admin, or a labeler whose account may review — the
+  rule of §40). Others see the strip without the button working. <span id="training-for-labelers">v1.60 §76 (U151, D329):
+  the whole 학습 section is open to labelers too — the Dashboard, the wizard (project, <i>From items anywhere</i>), the
+  default pipeline, job pages, logs of one's own jobs; patient IDs exactly as a viewer sees them (U5: nothing masked); a labeler cancels, stops,
+  resumes, exports or reruns <b>their own</b> jobs only; deploy, pipelines, 계정 연결 and <i>Save as project split…</i>
+  stay lead / admin. No NAS binding and no <code>can_train</code> flag is needed: the hub submits the job under its
+  service token with the presser as <code>requested_by</code>, and the executor runs a person without a binding under
+  the hub's binding (<a href="../components/executor.html#hub-vouches">hub_vouches</a>). The Dashboard opens with
+  <i>Mine only</i> on for labelers. Until the executor lists <code>hub_vouches</code> the old rule holds — an unbound
+  labeler's banner and Submit say <i>ask an admin to bind your NAS account (관리 › 계정 연결) before you can train</i> —
+  and a job is sent with the person's own identity; once it does, the job page still names the presser as the
+  requester (<a href="../components/hub.html#s51-training-for-labelers">hub, S51</a>).
+  <span id="deploy-forced-off">D330 (S51b): a job a labeler (or any account below lead) starts from the wizard
+  (<i>From a project</i>, <i>From items anywhere</i>), <i>Advanced</i> or <i>Rerun</i> <b>never deploys</b> — the hub
+  turns its deploy step off whatever was asked, answers <code>deploy_forced_off: true</code> and the job page and the
+  Dashboard show deploy <i>none</i> with <i>deploy is for leads and admins</i>; the training itself runs. A lead's or
+  admin's job deploys as chosen. Not affected: the project page's Train (the loop, incl. its DSC-threshold
+  auto-deploy) and the default pipeline (<i>train-default</i>) — they run the project's recipe a lead configured,
+  as for every account that may review.</span></span></p>
+  <p id="training-for-labelers-web">The web for a labeler (v1.60 §76.4, W40): the menu shows <b>학습 › Dashboard ·
+  Training</b> above Labeling; the Dashboard opens with <i>Mine only</i> ticked (untick it to see everyone's jobs — the
+  address then reads <code>?mine=0</code>; nothing else is remembered); Cancel and <i>Stop after this epoch</i> appear only
+  on one's own live jobs (the hub's <code>can_cancel</code> / <code>can_stop_training</code>). A labeler's wizard has no
+  <i>Deploy to the server</i> section and no <i>Add as a new ROI</i> offer: the job is sent with deploy off
+  (<code>deploy: {enabled: false}</code> from a project, <code>deploy.enabled: false</code> from <i>From items
+  anywhere</i>) whenever the pipeline or template has the switch, so a labeler's job never deploys. The job page shows no
+  Deploy (nor <i>Deploy anyway…</i>); <i>Approve all labeled</i> and <i>Save as project split…</i> stay a lead's. The
+  pipeline page is read-only as for a viewer.</p>
+  <h3 id="loop-recipe">What one Train does (the fixed recipe)</h3>
+  <ul>
+    <li><b>One iteration = one job</b> of the template <code>hub_loop</code> with its default parameters (plus the
+    project's <i>Automation… › Training loop</i> overrides), trained on the project's <b>target ROIs</b> in the project's
+    <b>modality</b> (<code>start.modality</code> = the project's CT or MR, whatever the settings say — the executor
+    otherwise defaults to CT; a sampler round's job gets it when its policy names none); the job's own
+    pre-label hand-off (<code>prelabel.hub_push</code>) is off, whatever the settings say (pre-labels come from the step
+    below); the trainer image is always pushed so the GPU cluster can run it. The model is filed under the
+    project's <b>model name</b> everywhere — the strip, the Models pages, the app's model list — and shows
+    <i>Model &lt;name&gt; iteration &lt;n&gt;</i> until it is deployed and gets a version (§41.10).</li>
+    <li id="train-defaults"><b>How long it trains</b> (v1.38 §53, U69, 2026-10-20): the defaults are
+    <b>Oncostudio-Research's own</b> — the executor reads <code>TrainingConfig</code> from the pinned Research clone
+    (<code>configs/training_config.py</code>) instead of carrying values of its own, so a Research update changes them
+    with it. At the pin (767b753, unchanged from 1ef108b) that is <code>train.num_train_epochs</code> 1000, a patch validation every epoch
+    (<code>train.eval_interval</code> 1 — the best model is picked from these), a <b>full</b> sliding-window validation
+    every 50 epochs (<code>train.full_eval_interval</code> 50), early stopping after two full validations in a row
+    without improvement (<code>train.full_eval_patience</code> 2), 8 data-loader workers, <code>AdamWConfig</code> (its own learning rate, 1e-4 at the pin)
+    and <code>LinearDecayLRConfig</code>, mode 3d, 1 × RTX_A6000. Every parameter of <code>GET /exec/v1/templates</code>
+    says where its default came from — <code>source: "research"</code> or <code>"executor"</code> — and the reply names
+    the commit (<code>research: {commit, path}</code>). The executor's own are only what the cluster needs:
+    <code>train.n_gpus</code>, <code>train.gpu_model</code>, <code>train.push</code>, the wait's
+    <code>wait.timeout_hours</code> (336 h = 14 days, since 1000 epochs at ALTJ's ~14 min each is ~10 days unless the
+    early stop ends it) and <code>wait.poll_seconds</code>, and <b><code>train.batch_size</code> 2</b> (v1.39 §53.3,
+    U88, D251 — 2026-10-21) for every template and mode: Research's 8 (3d; 32 for 2d) ran out of GPU memory on the
+    RTX A6000 (47 GiB) for ALTJ jobs 62 and 66 and Thoracic_LN job 65; you may raise it. Each has its reason in the
+    help. A value changed on the
+    Parameters step reaches the generated <code>training_config.py</code>; an unchanged one is Research's. Before
+    (job 61), the executor's own 200 epochs, Adam, batch 2 and 4 workers ran, and until U68 a full validation after
+    every epoch.</li>
+    <li id="train-mode"><b>3D or 2D</b> (v1.47 §63, U128, D292, 2026-10-27): <code>train.mode</code> (enum, options <code>2d</code>, <code>3d</code> in that order on every template, default <code>3d</code>) is a parameter of <code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code> and <code>example</code>. <code>2d</code> runs the pinned pipeline's own 2d training — <code>TrainingConfig(mode='2d')</code> picks the Auto2DDefault network, the 2d loss and 512 × 512 slice patches (32 per volume) — and the batch size becomes the 2d default, <b>16</b> since v1.48 (§68; 32, the pipeline's own 2d value, under v1.47), unless the request sets one (3d stays at the cluster's 2, §53.3; a CUDA out-of-memory still halves it, §48.2). On <code>hub_checkpoint</code>, which trains nothing, it names the type of the checkpoint being evaluated. A mode the pinned pipeline cannot train is refused when the job is created (<code>422 mode_unsupported</code>, <i>train.mode 2d: the pinned pipeline (…) cannot train 2d models</i>), never mid-run. The job's <code>model_type</code> travels to the hub (events, model and deploy registrations), which names the family <code>&lt;CODE&gt;_&lt;type&gt;</code>.</li>
+    <li id="default-by-mode"><b>2d defaults load with the model type</b> (v1.48 §68, U130-3, D300, E18): a parameter whose default depends on the mode carries <code>default_by_mode: {"2d": …, "3d": …}</code> in <code>GET /exec/v1/templates</code> (keys = the template's <code>train.mode</code> options; <code>default</code> stays the default mode's value). Today that is <code>train.batch_size</code>: <b>3d 2 / 2d 16</b>, both executor values for this cluster (<code>source: executor</code>). The 16 is the user's value; it overrides Research's 2d rule of 32 as §53.3's 2 overrides its 3d 8. Nothing else in the pin's parameters depends on the mode: the 2d network, loss and 512 × 512 patch follow from <code>mode='2d'</code> inside <code>TrainingConfig</code> and are not parameters. A request that sets <code>train.mode</code> and leaves the parameter out gets the mode's value. <code>GET /exec/v1/jobs/{id}</code> then says so in <code>params_changed: {"train.batch_size": {value: 16, reason: "mode_default", mode: "2d"}}</code> (an out-of-memory retry, §48.2, replaces it with <code>reason: "cuda_oom"</code>). A batch size the request sets always wins.</li>
+    <li id="default-by-mode-hub"><b>The hub applies the model type's defaults</b> (v1.48 §68, S36, D300): the
+    wizard's <code>…/train-default/preview</code> and its submit, and the loop's <b>Train</b>, give every parameter with a
+    <code>default_by_mode</code> the chosen type's value unless the user typed one (in this body, or in the loop's
+    policy) or the pipeline sets it — an admin's recipe value stands. The value is sent with the job, so
+    <code>params_changed</code> shows it (2d: <code>train.batch_size: 16</code>, from 2) and the job page lists it as a
+    change. The preview also lists the type's defaults as <code>defaults_for_mode</code> (2d:
+    <code>{train.batch_size: 16}</code>, 3d: <code>{train.batch_size: 2}</code>); <code>params</code> keeps each entry's
+    <code>default_by_mode</code> so the page can reload the field when the type changes (W22). An executor without
+    <code>default_by_mode</code> gives an empty <code>defaults_for_mode</code> and changes nothing.</li>
+    <li id="default-by-mode-web"><b>On the web: switching the model type reloads its defaults</b> (v1.48 §68, W22): in
+    <i>Parameters &amp; submit</i> the form shows the chosen type's defaults — with <b>3D</b> <code>batch_size</code> reads 2,
+    click <b>2D</b> and it reads 16 (the <i>changed</i> marks, the summary's changed count and what is sent all compare
+    with the chosen type's default, so 16 under 2D is not sent and the hub applies it). A field you changed keeps your
+    value when you switch, and says the type's own default under it (<i>2D default: 16</i>, <i>3D default: 2</i>);
+    <b>Reset to defaults</b> resets to the current type's values. A field still at the old type's default counts as not
+    changed. <b>From items anywhere</b> (once <i>From scratch</i>) does the same when the template takes <code>train.mode</code>. The Train strip's 3D | 2D
+    has no parameters to show: the hub applies the type's defaults to the loop's job.</li>
+    <li id="model-type-hub"><b>Model type and the family name on the hub</b> (v1.47 §63, S32, D292): the wizard's
+    <i>Parameters &amp; submit</i> step and the Train strip choose <b>3D</b> (the default) or <b>2D</b>; the hub sends it as
+    <code>train.mode</code> on every job of a template that lists it (the preview's <code>model_type</code>, and
+    <code>params_changed</code> shows <code>train.mode: 2d</code>). The deploy family defaults to <b>the project code
+    sanitised + <code>_3d</code> / <code>_2d</code></b> (<code>RIBS_3d</code>, editable; a project whose loop policy names
+    its own <code>model_name</code> keeps it), and its next version continues the old <code>&lt;CODE&gt;</code> family and
+    the project's live jobs: <i>RIBS/1.0.2</i> deployed and a job deploying <i>RIBS/1.0.3</i> → <i>RIBS_3d/1.0.4</i>.
+    Families deployed before 1.47 keep their names and versions; a running job is never changed. A 2D request on an
+    executor whose template has no <code>train.mode</code> is refused with <i>the executor's hub_loop cannot train 2d yet
+    (its template has no train.mode)</i>. The job page's Deploy dialog and <code>GET /api/v1/models</code> rows and
+    families carry <code>model_type</code> (from the name's suffix; a name without one is 3D). Health says
+    <code>contract_version</code> <b>1.47</b> from this deploy on (the app's v1.47 behaviour — notes, the Train strip's
+    3D / 2D — switches on with it). Proof: <code>tests/test_model_type_v147.py</code> (wizard, executor without
+    <code>train.mode</code>, loop policy) and the expectations of v1.38–v1.44 tests (<code>RND</code> → <code>RND_3d</code>).</li>
+    <li id="progress-web"><b>Progress across jobs</b> (v1.48 §67, W21): open a project in Training › Training and a
+    <b>Progress</b> card sits under the wizard — how the project's model improved job after job as more items were
+    labeled. The line is each job's mean validation DSC (x axis: <i>#79 · 31</i> = job id · training items), the grey
+    bars behind it the items labeled when the job was submitted (right scale); deployed jobs are diamonds, a running job
+    is a bar without a point until it is evaluated. The class chips (lowest DSC of the latest job first, eight shown,
+    <i>+N more</i>) each add that class's line; <b>HD95</b> adds a panel under the chart with mean HD95 (mm) on its own
+    scale, on the same jobs. A job whose validation set differs from the job before it gets a dashed <i>new valid set</i>
+    mark and ⚠ in the table — its DSC is not directly comparable. The table under the chart lists every job (newest
+    first: status, model and type, train / valid, labeled at submit, DSC, HD95, stop reason and best epoch);
+    <i>Show as table</i> adds a column per class, CSV downloads the rows. No finished job yet: an empty state. The
+    Iterations panel of the project page links here. The card fetches again only while one of its jobs runs (every
+    30 s, earlier on that job's live event — §57). A hub before 1.48 shows no card.</li>
+    <li id="progress-dashboard"><b>Progress from the Dashboard, and the learning curve by sample count</b> (v1.49 §67.1,
+    W24): on the Training <i>Dashboard</i> every project name — in the live-job cards, the finished-jobs table and the
+    <i>latest DSC</i> tile — is a link to the project's progress view (<code>/training/progress/{pid}</code>): the project
+    code with links to its page and to <i>Train this project</i>, the Progress card, and the project's jobs under it, each
+    row opening its job page. The Progress card (here and on the project's training view) has a <b>By job | By samples</b>
+    switch: <i>By samples</i> plots mean validation DSC against the number of training items (one point per job, deployed
+    jobs marked, class chips and HD95 as before, a changed valid set flagged), with an optional <b>target DSC</b> line
+    you type (kept per project in your browser). The switch is remembered in the browser. Hub routes unchanged.
+    On the web (W24): the target box appears in <i>By samples</i> only (a value above 0 up to 1; empty clears it); a job
+    without a training-item count is left out of <i>By samples</i> with a note, a running job appears once it is
+    evaluated; hovering a point names its job, model, items and DSC. The live-job card still opens its job when you click
+    its body — only the project name opens the progress view. A project whose jobs are all still running shows the empty
+    state with its job table.</li>
+    <li id="model-type-web"><b>Model type on the web</b> (v1.47 §63, W19): in <i>Parameters &amp; submit</i> a
+    <b>Model type: 3D | 2D</b> choice sits under the pipeline cards (3D — volumes, the default; 2D — slices, the pinned
+    pipeline's 2d rule, batch 32); the parameter <code>train.mode</code> leaves the parameter form because the choice owns
+    it. The summary names the type, and <i>Deploy to the server</i> shows the hub's family for it (<code>RIBS_3d</code> →
+    <code>RIBS_2d</code> when you switch) and its next version, until you type your own model name, which then stays.
+    <b>From items anywhere</b> (once <i>From scratch</i>) shows the same choice when the template takes <code>train.mode</code>;
+    its required family name is <code>&lt;job name&gt;_&lt;type&gt;</code> unless typed (shown under the field). A hub before 1.47 shows neither.</li>
+    <li><b>Which labels</b>: per image series the newest human label as of the press whose state is one of the
+    project's <b>labels to train on</b> (v1.29 §42.4, setting <code>loop_label_states</code>) — by default all four
+    human states, <i>approved</i>, <i>unreviewed</i>, <i>changes requested</i>, <i>legacy</i>, so not-approved labels train
+    as well; a lead narrows it on the <a href="#training-view">training view</a> or in <i>Automation…</i> (e.g. approved
+    only: then an item whose newest label is unreviewed trains on its newest <i>approved</i> label, if it has one, else
+    not at all). <b>Only the project's own labels</b> (v1.31 §44, U54): a label saved for another project on the same
+    image series does not count, does not train and does not make the item labeled here — such an item gets this
+    project's pre-label like any unlabeled one. Own = delivered or corrected on one of this project's items (or saved
+    with one of them named), an Excel-era label of a series this project's workbook imported, and — where the hub cannot
+    tell (an early save that names no item, or whose item was re-created) — the projects that hold the series. The same
+    rule holds for every count on the strip, the training view, the wizard's cards and cohort preview and the
+    <a href="#default">Default pipeline</a>. An AI pre-label never enters; items without an image series are skipped. A label whose file exists nowhere — neither saved to the hub by the app (v1.20 and later) nor
+    on the PACS (an Excel-era or sent label) — is skipped too and not counted (§41.9): the strip's count is of usable
+    labels, and the project's <a href="rounds.html#iterations">Iterations…</a> lists the skipped items with
+    <i>label file not found on the hub or the PACS</i>; relabel them in OncoStudio to bring them back.
+    <span id="merged-source">An Excel-era row whose only label is a hub-built <i>merged</i> record (v1.33 §47: a record, no
+    file) trains from the one RTSTRUCT on the PACS that holds <b>every</b> target ROI — or every ROI picked in the
+    wizard's Target ROIs step, so a smaller pick can make more rows usable. It counts as a <i>legacy</i> label. When the
+    ROIs sit in two or more RTSTRUCTs, or one is in none, the row is skipped and Iterations… says
+    <i>target ROIs spread over 2 structure sets</i> or <i>missing target ROIs: &lt;list&gt;</i>. A label saved in
+    OncoStudio always wins over the merged record.</span></li>
+    <li><b>Validation set</b>: at the project's first Train the hub freezes it — the rows a lead marked <i>valid</i> when
+    there are any, else max(5, 15 % of the labeled patients) patients drawn stratified over the usable labeled items' facets
+    (sex, age, vendor, thickness, …). Every later Train evaluates on the same items, so DSC values are comparable across
+    iterations. Only an admin replaces it (<a href="rounds.html#hub-valid">reset</a>). A validation item without a label
+    blocks Train (<i>2 validation items are not labeled yet</i>).</li>
+    <li><b>Minimum</b>: 10 labeled items (setting <code>min_labels</code>; never fewer than twice the validation minimum),
+    counted in the chosen states — with approved only, <i>label at least 10 items first (4 labeled)</i> counts the 4
+    approved ones. The validation draw at the first Train is over those labels too, and a validation item counts as
+    labeled only with a label in the chosen states.</li>
+    <li>The job runs under the hub's service identity; the job page names <b>you</b> as the requester. It is listed on
+    <a href="#jobs">작업</a> like any job (template <code>hub_loop</code>, memo <i>iteration n</i>).</li>
+    <li id="zero-voxel">A target ROI nobody drew on any item stops the job before training (v1.34 §48): the job page
+    shows the executor's reason as it is, e.g. <i>zero_voxel_target: CTVn_LN_Ax_L2_L (requested as CTVn_L2_L)</i> —
+    the registry's official name, then the project's spelling. Label that ROI or leave it out of the Target ROIs step
+    and start again.</li>
+    <li id="roadmap-live">While a job runs or waits in the queue, the <a href="releases.html#roadmap">ROI roadmap</a>
+    shows its ROIs as <i>training</i> — also an ROI that is already released — and its project under <i>Projects in
+    progress</i>, with the current stage; each new stage reaches the page within seconds (v1.36 §49).</li>
+  </ul>
+  <h3 id="loop-prelabels">Pre-labels after every iteration</h3>
+  <p>As soon as the job has exported its model (before evaluation), the hub starts one <code>prelabel_only</code> job
+  for every item with an image series, no human label and not in the validation set (≤ 500 per job; more follow one
+  job after the other). OncoStudio pulls each pre-label when the item is opened and shows it as
+  <code>AI_PRELABEL</code>; the labeler's save replaces it. While the project has a model and <i>auto pre-label</i> is on,
+  items added later get a pre-label from the current model within 10 minutes (the hub's round tick batches them into one
+  job). An item with a human label never gets a pre-label, and a series is pre-labeled once per model.</p>
+  <h3 id="loop-deploy">Automatic deploy</h3>
+  <p>When the evaluation is in, the hub compares the mean DSC over the validation set (the mean of the per-ROI means)
+  with the project's <code>deploy_threshold</code> (0.85 by default). At or above it, and once the job has ended, the hub
+  deploys the model to <code>/mnt/deploy/models/&lt;model name&gt;/&lt;next version&gt;</code> — the family's highest
+  version plus one patch, <code>1.0.0</code> for a new family — with the memo <i>auto-deploy: project &lt;code&gt;
+  iteration &lt;n&gt;, DSC &lt;x&gt; on &lt;v&gt; validation items, job &lt;id&gt;</i>. An iteration deploys at most
+  once. The deployed model is registered by the next <code>sync_deploy</code> run, so it appears in the app's
+  <i>Auto-contour…</i> model picker and ai-pipeline evaluates it. Below the threshold nothing is deployed; a lead may
+  still deploy from the job page (<a href="deploy.html">Deploy</a>; since v1.38 the version and the memo are prefilled).
+  A failed deploy shows its reason. <b>v1.38 §55:</b> when the loop's <i>pipeline</i> (below) deploys
+  (<code>deploy.enabled</code> on, as the seeded <i>Default</i> does), the iteration's job deploys itself instead — its
+  <i>Deploy to the server</i> stage runs after <i>Evaluate</i> with the next version and the memo <i>loop: project
+  &lt;code&gt; iteration &lt;n&gt; · by &lt;presser&gt;</i>, whatever the DSC, at most once; the strip says
+  <i>deploying</i> while that stage runs and <i>deployed</i> / <i>failed</i> from its end, and the threshold deploy
+  above does not run for that iteration.</p>
+  <h3 id="loop-settings">Settings (<i>Automation… › Training loop</i>, lead)</h3>
+  <div class="tbl"><table><thead><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr></thead><tbody>
+  <tr><td><code>min_labels</code></td><td>10</td><td>labeled items needed before the first Train</td></tr>
+  <tr><td><code>loop_label_states</code></td><td><code>approved, unreviewed, changes_requested, legacy</code></td><td>the label states Train uses (v1.29 §42.4): at least one, never <code>prelabel</code> (422); also the chips of the <a href="#training-view">training view</a></td></tr>
+  <tr><td><code>valid_fraction</code> / <code>valid_min_patients</code></td><td>0.15 / 5</td><td>size of the validation set drawn at the first Train</td></tr>
+  <tr><td><code>deploy_threshold</code></td><td>0.85</td><td>mean validation DSC for the automatic deploy; empty (null) = never deploy automatically</td></tr>
+  <tr><td><code>model_name</code></td><td>the project code with every character outside <code>[A-Za-z0-9_]</code> as <code>_</code></td><td>the <code>/mnt/deploy/models</code> family the loop deploys to</td></tr>
+  <tr><td><code>auto_prelabel</code></td><td>on</td><td>pre-label items added after an iteration</td></tr>
+  <tr><td><code>template</code> / <code>params</code></td><td><code>hub_loop</code> / none</td><td>the job's template and parameter overrides (e.g. <code>train.num_train_epochs</code>) — used only while no <code>pipeline</code> is chosen</td></tr>
+  <tr id="loop-pipeline"><td><code>pipeline</code></td><td>none</td><td>v1.38 §55: the <a href="#pipelines">pipeline</a> Train uses (its template and parameters instead of the two above); a key that does not exist is refused (400 <i>pipeline: no pipeline &lt;key&gt;</i>); one hidden or deleted later makes Train answer <i>the loop's pipeline &lt;key&gt; no longer exists (Automation › Training loop)</i>. A pipeline with <code>deploy.enabled</code> deploys in the job (above)</td></tr>
+  </tbody></table></div>
+  <p class="note">They are stored in <code>labeling_project.round_policy</code> and saved with <code>PUT
+  /ui/api/projects/{id}/round-policy</code> (the rounds' own keys stay there too). The strip reads
+  <code>GET /ui/api/projects/{id}/loop</code> (the app: <code>GET /api/v1/projects/{code}/loop</code>); Train is
+  <code>POST /ui/api/projects/{id}/loop/train</code>. Each iteration is a <a href="rounds.html#iterations">round</a>
+  record with its metrics.</p>
+  <h3 id="train-page"><span id="training-view"></span>Training: Dashboard and the Training wizard</h3>
+  <p><b>Menu.</b> The Training group has two entries: <i>Dashboard</i> and <i>Training</i>. Models, Datasets,
+  Evaluations, Releases, Run records, ROI registry, Reconciliation and Pipeline are not in the menu; their pages open from
+  the links on the job, model and run pages.</p>
+  <p><b>Dashboard</b> (<code>/training</code>) shows the counts (running, queued, succeeded and failed in the last 7 days,
+  the latest DSC), a card per running or queued job with its stage bar, and the finished jobs. You can filter them by
+  state, search by project, template, person or number, and tick <i>Mine only</i>; each row has its DSC and model.
+  <i>New training</i> opens the wizard. Every project name is a link to the project's progress view (v1.49 §67.1, <a href="#progress-dashboard">below</a>).</p>
+  <p id="refresh"><b>How the Training pages stay current</b> (v1.39 §57). Each page fetches on its own schedule, and
+  only while something on it is live. The Dashboard asks for the job list every 15 s while a job runs or waits; with
+  nothing live it asks for nothing. A job page asks every 10 s while its job is live. A live event never adds a fetch:
+  it only brings the next one forward, at the earliest 2 s after the last, so a busy job costs no more requests. The
+  state chips and the search filter the list on the page; only ticking <i>Mine only</i> asks the hub again. A reload that brings the same data changes nothing on screen, and no reload shows a placeholder.
+  A failed reload keeps the page as it was. The job page fetches the loss curve and the evaluation again only when a
+  stage changes state, and adds new log lines to the end of the log. On a project page, while the loop's job runs,
+  only the loop strip refreshes every 10 s; the table keeps its own pace and reloads once when the run ends.
+  The wizard asks for each of its project's lists once when it opens, and the <i>Parameters &amp; submit</i> step
+  reloads its project only when that project's labels change; a reload that brings the same data changes nothing.
+  Its preview is asked again only when something you set changes (project, pipeline, items, ROIs, parameters, deploy). A job's
+  progress anywhere only re-checks the preview (a running job of the project blocks Submit), at most once every 15 s.
+  The project page's periodic reloads change nothing on screen when the data is the same (U78).</p>
+  <p><b>Training</b> (<code>/training/new</code>) is a wizard in five steps — Start from · Project · Target ROIs · Train / Valid items · Parameters &amp; submit; step 1 asks where to start from. The address it opens with (<code>/training/new/&lt;project id&gt;</code>, <code>?project=</code>, <code>?mode=project|anywhere</code>, <code>?mode=scratch</code> = anywhere) only sets where it starts; moving through the steps afterwards keeps the address in step without restarting it.</p>
+  <ol>
+  <li><b>From a project</b>:
+    <ul>
+    <li>Pick the project. The list starts with the projects that had activity most recently: a label saved or
+    approved, a training job event, an edit (v1.39 §45.5, U83). Projects without usable labels stay behind <i>Show
+    all</i>. Each row has an activity note: <i>job 70 running</i>, <i>4 labels this week</i> or <i>last activity 2 h
+    ago</i>. Searching filters the list without reordering it. The column headers <i>Project</i>, <i>Usable labels</i>
+    and <i>Activity</i> sort by code, by usable labels or by activity (the default).</li>
+    <li><b>Target ROIs</b>: the project's target ROIs — ticked are those drawn on at least one labeled item (the others start unticked with a note: each would be a class the model never sees); all when the hub cannot take a subset — each with a bar showing how many labeled items it is
+    drawn on (<code>roi_counts</code>). You can search, choose All or None, or pick the ROIs drawn on at least N labeled
+    items. A partly labeled item trains the ROIs it has: the trainer leaves the missing ones out of its loss, so they are
+    not taught as background. An item holding none of the picked ROIs is left out (<i>9 labeled items hold none of the
+    picked ROIs</i>). Submit sends <code>{rois}</code> when the hub's <code>GET …/train-default</code> says
+    <code>accepts: ["rois"]</code>.</li>
+    <li id="items-step">Its items are shown in three sections — <b>the job's own lists</b> (v1.41 §61.1, U109, D269):
+    <b>Train</b> (the model learns from these, labeled ones only), <b>Valid</b> (the model is scored on these; each needs
+    a label) and <b>Not used</b>. They start from the project's split: an item marked valid is in Valid, a labeled item
+    marked train or unspecified in Train, an unlabeled item in Not used (it can never be moved into Train or Valid —
+    <i>2 without a label stay in Not used (no label)</i>). The count line reads <i>46 train · 5 valid · 12 not used</i>. A lead can also approve the selected labeled items there (Approve). <span id="approve-any-stage">A lead or admin (v1.40 §60.3, U98, D261) approves every selected item that has a label of any kind whatever its stage — the labeler's own, an imported one, a legacy one — and <b>Approve all with a label</b> above the sections approves all of the project's such items at once (sent and excluded ones are left alone; one confirmation names how many).</span></li>
+    <li>Each row shows the label the job would use (with <i>External</i> for a label imported from outside, §59.2).
+    Select rows and move them between the sections: <b>this changes only this job's lists</b> — the project's split and
+    the items' stage stay as they are. <b>Save as project split…</b> (lead or admin) is the one way to write the
+    arrangement into the project: after a confirmation with the counts, Train items are marked train and Valid items
+    valid; Not used items keep their marks.</li>
+    <li id="items-filter"><b>The filter bar</b> (§61.2) above the sections: the chips <b>Approved · Unreviewed · Changes
+    requested · Legacy · External · Unlabeled</b>, each with its count (the state of the item's latest label as the
+    project page shows it; ticking several shows any of them), and <b>Has all target ROIs</b> — every ROI ticked in the
+    Target ROIs step is done on the item (off while none is ticked). The filter hides rows in every section;
+    <b>Use only the shown rows</b> moves every hidden Train / Valid item to Not used (they can be moved back). So
+    <i>only approved items</i> = the Approved chip + Use only the shown rows, and <i>only complete items</i> = the toggle
+    + the button. The count line adds <i>· 40 of them hold all 18 target ROIs</i>. Nothing is written by the filter.</li>
+    <li id="class-mode"><b>Classes to train</b> (§61.3), shown when the pipeline has the parameter
+    <code>train.class_mode</code>: <i>Relevant classes — each item trains only the ROIs it holds</i> (the default, the
+    Research behaviour: an ROI an item lacks is left out of its loss and Dice) or <i>All classes — every target ROI on
+    every item; an ROI an item lacks is taught as absent</i>. It is the same value as the parameter on the next step.
+    With All classes and items lacking a target ROI, a note says <i>6 items lack one or more target ROIs — turn on Has
+    all target ROIs and Use only the shown rows, or keep Relevant classes.</i> The job page shows <b>Classes</b>
+    <i>relevant</i> or <i>all</i> with the job's target ROIs.</li>
+    <li><b>Parameters &amp; submit</b> shows the job name (<i>LJM_MR_ABD_261015</i> = the user's initials, the code, the
+    date), the pipeline's parameters at their defaults, and what would train (<i>28 items train · 24 validate · 59
+    ROIs</i>) with the count line repeated. If the hub refuses, it shows the reason with a one-click fix (<i>Unmark the
+    18 unlabeled items marked valid in the project</i>). When no Train item has a label the hub trains on, that is said first (<i>No Train item of ALTJ has a
+    label the hub can train on yet (210 items in Train)…</i>) and no validation fix is offered — it would unblock nothing
+    (2026-10-18: ALTJ's only labels were hub-built merged ones; since v1.33 such a label trains from its single
+    source RTSTRUCT when one holds every target ROI — <a href="#merged-source">see above</a>).</li>
+    <li id="params-editable"><b>The parameters are editable</b> (v1.38 §53, hub 1.38): every parameter of the chosen
+    pipeline, grouped as the executor groups them, typed (number, on / off, a choice, text), prefilled with its default
+    and its help under it. Each says where its default comes from — <i>Oncostudio-Research a43172f</i> (Research's own
+    <code>TrainingConfig</code> at the pinned commit: 1000 epochs, a full validation every 50 epochs, batch size 8 for 3d,
+    AdamW, …) or <i>executor</i> (what the cluster needs, its help says why); <i>pipeline</i> when the chosen pipeline
+    sets a value of its own. The line <i>Defaults = Oncostudio-Research a43172f</i> sits above them with <b>Reset to
+    defaults</b> and how many you changed; the group with the epoch count is open, and a note says <i>1,000 epochs is
+    the Research default; the run stops early after 2 full validations without improvement</i>. The target ROIs, the
+    modality, the hub push and the deploy fields are not in the form — the hub sets them (listed under it as <i>Set by
+    the hub</i>; deploy has its own section). Only the values you changed are sent, with the job name; the job page
+    lists them under <b>Changed parameters</b> as <i>train.num_train_epochs 3 · changed from 1000</i>, with the job's
+    name and pipeline. The job name starts as your initials, the code and the date (<i>LJM_Heart_261020</i>) — the web
+    always sends it, so an account whose display name is not its initials still gets a name without spaces.</li>
+    <li><b>Submit job</b> opens the job page.</li>
+    <li id="items-lists-submit">Once the hub's <code>GET …/train-default</code> lists <code>train_ids</code> and
+    <code>valid_ids</code> in <code>accepts</code> (v1.41 §61.1), the preview and Submit send the Train and Valid lists
+    and the job trains exactly those items (the job page reads <i>items chosen in the wizard: 46 train · 5 valid</i>); the
+    hub's refusals (<i>not labeled: …</i>, <i>in both lists: …</i>) are shown as it words them. A listed item the hub
+    leaves out is counted on the summary with the reason (W12b, S14c): <i>46 train · 5 validate (2 left out: 2 label
+    file(s) found nowhere)</i> — the label file is on neither the hub nor ONCOPACS (§53.2) — or <i>… hold none of the
+    picked ROIs</i> (§45.3); the patients are named in the line's tooltip. The one-click fix for unlabeled items marked
+    valid counts only items with an image series, as the hub does. Before that the step says
+    in one line that the hub trains on the project's split (<i>… 3 items sit elsewhere here</i>) and that Save as project
+    split… writes it; the wizard never writes the split on its own.</li>
+    <li>Until the hub takes a selection (§45.2), Submit runs the <a href="#default">default pipeline</a> as it is: labeled
+    items outside Valid also train, the parameters are read-only and the job is named <i>default pipeline: &lt;code&gt;</i>.
+    Each of the three turns on by itself when the project's <code>GET …/train-default</code> lists it in
+    <code>accepts</code> — <code>assignment_ids</code> (only the Train section trains), <code>params</code> (editable
+    parameters), <code>name</code> (the job name) — never by the hub's contract version; the step's notes say which are
+    still off.</li>
+    </ul></li>
+  <li id="items-anywhere"><b>From items anywhere</b> (v1.58 §75, U149, D326–D327 — replaces <i>From scratch</i>; <code>?mode=scratch</code>
+    still opens it; built as executor E22, hub S49 and web W39):
+    <ul>
+    <li>Pick the target ROIs and the modality — the same <a href="labeling.html#roi-checklist">target-ROI checklist</a>
+    (v1.40 §59.1, U89) with <b>Add "&lt;name&gt;" as a new ROI</b> for a name the registry does not know (v1.39 §45.4, U82).</li>
+    <li>Search items from three sources at once — <b>Hub projects</b> (every project's usable labels, the newest label per
+    series; <i>also in</i> names the other projects holding it), <b>No project</b> (series the hub knows that are in no
+    project but have a structure set on the central PACS) and <b>Central SCP</b> (a live C-FIND on ONCOPACS by patient ID
+    with <code>*</code>, study date — one day or up to 31 days — and the modality; the hub reads the ROI names of the
+    structure sets it finds, 20 files per call, and caches them; rows still unread say <i>unknown — read</i>). Each row
+    shows which target ROIs its label holds and lacks; <b>Only rows with all target ROIs</b> hides the rest. Hub routes:
+    <code>GET /ui/api/training/items/search</code>, <code>POST …/items/roi-names</code>. A search writes nothing.</li>
+    <li>Add items to Train or Valid per item (one label per series; a patient's items stay on one side), or use <i>Pick
+    20 % automatically</i>. The count line says how many items hold all target ROIs and how many projects + central-only
+    items they come from.</li>
+    <li>Parameters &amp; submit: the chosen pipeline's parameters, the model type, the family name (required — there is no
+    project to name it), the class mode. <i>Preview</i> (<code>POST /ui/api/training/jobs/preview</code>) shows the counts
+    and the refusals; Submit sends a <code>hub_items</code> cohort — an inline label-set the executor pins exactly
+    (§53.1), fetching hub-held files from the hub and PACS-held ones with the download; the job has no project
+    (<code>project_code</code> null, no pre-label push). The job page lists the items with their source.</li>
+    <li id="items-anywhere-web">On the web (W39): <i>Start from</i> offers <b>From a project</b> and <b>From items anywhere</b>
+    (어디서든 항목 선택); the Items step's form is patient ID (<code>*</code> allowed), study date (one day, or a range —
+    more than 31 days with <i>Central SCP</i> on is refused before the hub is asked), series / description text (filters
+    the answer), project and label state, plus the three source chips. Each result row shows the label's state, its source
+    (<i>hub</i> / <i>central</i>) and labeler, and the target ROIs it holds (<i>all</i>, <i>n of r</i>, <i>lacks …</i>);
+    rows that cannot train — no target ROI, an unknown image series, a refusal — are greyed and never added; <i>unknown —
+    read</i> on a row, or <b>Read ROI names</b> for the selected rows (20 per call), asks the hub to read the files. A new
+    search is needed when the target ROIs or the modality change (the step says so). Parameters &amp; submit: the
+    pipeline (the templates whose cohorts take <code>hub_items</code>), the model type, the <b>family name</b> (required;
+    <code>&lt;job name&gt;_&lt;type&gt;</code> unless typed), <i>Classes to train</i>, the parameters; the summary previews on every
+    change and lists refused items with the hub's sentence and <b>Remove the refused items</b>; Submit stays off until the
+    preview is clean. While the hub or the executor does not take this cohort (a missing route, or <i>executor does not
+    take an item cohort yet</i>) the step says so and Submit stays off — it never falls back to the old patient cohort.
+    The job page shows <i>Items chosen anywhere: n train · v valid from p projects + c central-only</i> and the item list
+    with each item's side, project and source; the Dashboard lists such a job with project <i>—</i> and a chip per
+    project.</li>
+    <li id="executor-slow">A slow or unreachable executor (S49b, 2026-11-02) no longer makes the whole hub answer
+    <i>database unavailable</i>: no training page or action keeps a database connection while it waits for the
+    executor; its info, templates and account links are fetched once for all pages at a time (only the first 2 s of a fetch are waited for — later pages do not wait — then the page says <i>the training executor has not answered yet</i>), a failure is remembered
+    for 30 s (the banner says why), a stale answer is shown while it is refreshed, and the 30 s job poll uses a
+    connection of its own.</li>
+    <li id="items-anywhere-hub">What the hub checks (S49): every item must be a usable label the search would return — any human
+    or legacy revision of one of the series' projects whose file the hub or the PACS holds, or a structure set on the
+    central PACS that is not auto-generated and not already a hub label (<i>no usable label: &lt;patient&gt;</i>); each label must
+    hold at least one target ROI, read through the registry's aliases and, for a project's label, that project's own
+    (<i>holds none of the target ROIs: &lt;patient&gt;</i>); no series may be in both lists; at most 2,000 per list; at least 2
+    train and 1 valid (the §43.3 sentences); the target ROIs are registry names (<i>unknown ROI: &lt;name&gt;</i>); a family name
+    is required; the executor must list <code>hub_items</code> (<i>executor does not take an item cohort yet</i>). A
+    deploy version that is taken is raised to the next free one (§43.4). The patient ID sent per item is the DICOM
+    PatientID. The job record keeps the items as <code>cohort.entries</code> (each with its <code>source</code>
+    <code>hub</code> | <code>pacs</code>) and the summary <code>cohort.items</code> {train_n, valid_n, projects, central_only_n};
+    the Dashboard's <code>?project=</code> (an id or a code) also finds such a job by the projects of its items. A search
+    reads at most 20 unread structure sets per call (C-GET, kept as the hub's copy) and expands at most 100 PACS studies
+    per call (<code>truncated</code>); a PACS failure is reported in <code>pacs.error</code> and the hub rows are still
+    answered.</li>
+    </ul></li>
+  </ol>
+  <p><i>Advanced: any template, any cohort</i> opens the old wizard (<code>/training/advanced</code>). The old
+  <code>/training/projects/&lt;id&gt;</code> links open the wizard at that project's items.</p>
+  <p><b>The counts.</b> <i>Approved</i> in the Review column is the item's review state (for Excel-era rows, their labels
+  count as Legacy); the label-state counts are usable labels by the state of the newest human label of the project's own
+  (§44). The loop strip's <i>valid</i> is the validation set frozen at the project's first Train (empty until then); the
+  default pipeline's <i>validate</i> is the items marked Valid now.</p>
+  <p class="note">Hub routes: <code>GET /ui/api/training/jobs</code> (Dashboard); <code>GET /ui/api/training/projects</code>
+  (each row's <code>labels{human_n, unusable_n, approved, unreviewed, changes_requested, legacy, prelabel, valid_n, train_n,
+  unspecified_n}</code>); <code>POST /ui/api/training/cohort-preview</code> (the per-row label = the label-set the job
+  draws); <code>POST …/split</code>; <code>GET/POST …/train-default</code> (<a href="#default">below</a>); <code>GET
+  /ui/api/registry/roi</code>; <code>POST /ui/api/training/jobs</code> (items anywhere; its search, read-names and preview routes in <a href="#items-anywhere-hub">§75.2</a>); <code>POST
+  /ui/api/projects/{id}/review/bulk</code> (Review); <code>GET …/loop</code> (<code>labels{approved_n, unreviewed_n,
+  changes_requested_n, legacy_n, train_now_n}</code>, <code>policy.loop_label_states</code>).</p>
+    <p id="projects-activity"><b>v1.39 §45.5 — projects by recent activity (U83, D245).</b> <code>GET
+  /ui/api/training/projects</code> (the wizard's <i>From a project</i> list and Training › Projects) gives each project
+  <code>last_activity_at</code> and <code>labels_7d</code>. <code>last_activity_at</code> is the latest of: a label saved
+  or decided (the label each item resolves to, as on the roadmap), an event of one of the project's jobs, and an edit of
+  the project. <code>labels_7d</code> counts the items whose label was saved or decided in the last 7 days. The list
+  comes newest activity first; a project with no activity goes last, and ties are ordered by code.</p>
+<h3 id="advanced">Advanced</h3>
+  <p>Everything below — the <i>새 학습</i> wizard, the job list, policies, the pipeline page — is unchanged and stays
+  for training that does not fit the loop (several projects, another template, a chosen cohort).</p>
+</section>
+
+<section id="default">
+  <h2>New training · Default pipeline (v1.30)</h2>
+  <p><i>Training › New training</i> opens on <b>Default pipeline</b> (CONTRACT §43.3, U53), above the two other modes
+  (<i>Advanced — a hub project's labels: template, parameters, cohort</i> and <i>No project — explicit patient list</i>,
+  both unchanged below). It is one card with no steps: the project (preselected when you come from a project's
+  <i>New training job…</i>; the card sits above the project cards and names the chosen project), one summary line —
+  <i>Default pipeline · Hub project loop · 24 items train (approved 10 · unreviewed 14 · changes requested 0 · legacy 0)
+  · 5 items marked valid are the validation set · ROIs Bladder, Rectum</i> (every chosen label state with its count) —
+  and <b>Start</b>, which opens the new job's page. Start is greyed while the hub says it cannot start; the reason (e.g.
+  <i>mark at least one item as valid first</i>) stands under the line and as Start's tooltip; a refusal at Start
+  appears under the button. Anyone who may review can start it (as Train on the project page).</p>
+  <ul>
+    <li><b>What it runs</b>: the chosen <a href="#pipelines">pipeline</a> (v1.38; the default one when none is chosen):
+    its template (<code>hub_loop</code>) with Oncostudio-Research's default parameters, the pipeline's own defaults and
+    what you changed in the <a href="#params">Parameters</a> step (the project's <i>Training loop</i> overrides are
+    <b>not</b> applied since v1.38), the project's target ROIs, the job's own pre-label hand-off off — on the project's
+    labels in its <a href="#training-view">labels to train on</a> as of the
+    press (usable labels only). <b>Validation = the items you marked <i>Valid</i></b>, exactly as marked: nothing is
+    drawn, the loop's frozen validation set is not touched; <b>train = every other labeled item</b> (marked <i>Train</i>
+    or unspecified). The job is listed on <a href="#jobs">작업</a> under its <a href="#params">name</a> (memo and report
+    title; default <i>&lt;initials&gt;_&lt;CODE&gt;_&lt;yymmdd&gt;</i>).</li>
+    <li><b>What it is not</b>: not a loop iteration — no round record, no pre-labels afterwards, no threshold deploy. It
+    deploys only through its own <i>Deploy to the server</i> stage when the <a href="#deploy-section">deploy switch</a>
+    is on (the default pipeline's is), else from the job page (<a href="deploy.html">Deploy</a>). The loop strip shows
+    that a job is running, and <i>deploying</i> while its deploy stage runs.</li>
+    <li><b>What it needs</b> (Start stays disabled with the hub's sentence): <i>mark at least one item as valid first</i>
+    · <i>2 items marked valid are not labeled yet</i> · <i>label at least 2 items for training first (1 labeled)</i> ·
+    <i>a job of this project is running (job 51)</i>; the executor's own refusals (pipeline not verified, no linked
+    account) are shown as it words them.</li>
+  </ul>
+  <p class="note"><code>GET /ui/api/projects/{id}/train-default</code> → <code>{template {id, title}, rois, labels
+  {train_n, valid_n, valid_unlabeled_n, states, approved_n, unreviewed_n, changes_requested_n, legacy_n}, running_job_id?,
+  can_start, cannot_start_reason?}</code> (the per-state counts are of the train items and add up to
+  <code>train_n</code>); <code>POST …/train-default {}</code> → 201 <code>{job_id, executor_job_id}</code>, 409
+  <code>{detail}</code>.</p>
+  <p id="default-rois"><b>A subset of the target ROIs</b> (the wizard's <i>Target ROIs</i> step, USER 2026-10-15 — a
+  dataset may be partly labeled): <code>POST …/train-default {rois: ["Bladder"]}</code> trains only those
+  (<code>start.rois</code> = the subset, in the project's order). A label that holds only some of them still trains: the
+  trainer learns each ROI from the cases whose label holds it and leaves it out of the loss and the Dice of the others (it
+  is not taught as background). A label that holds <b>none</b> of them adds nothing: it is not counted on the train side
+  and leaves the validation set; if no item marked valid holds one, Start says <i>none of the items marked valid holds
+  the chosen ROIs</i>. Labels that name no ROIs (some Excel-era rows) count as holding them. ROI names match through the
+  registry and the project's alternative names.</p>
+  <p class="note"><code>GET …/train-default</code> adds <code>roi_counts {ROI: n}</code> (the labeled items, train and
+  valid, whose label holds it) and <code>accepts: ["rois"]</code> (the body fields the hub takes); <code>POST
+  …/train-default/preview {rois?}</code> answers what Start would do with that body, writing nothing — the GET shape for
+  those ROIs plus <code>skipped {no_roi_n}</code>; 422 <code>{detail}</code> for an empty list or a name that is not a
+  target ROI (<i>not a target ROI of this project: Liver</i>).</p>
+
+  <p id="explicit-lists"><b>v1.41 §61.1 — the job's own Train / Valid lists (U109, D269).</b> <code>POST …/train-default</code> and <code>…/preview</code> take <code>train_ids</code> and <code>valid_ids</code> (assignment ids, up to 2000 each); then those rows are the job's items and the project's marks are not read. The project's <code>is_valid</code> and the items' stages are never written. The hub refuses with 422 and the rows named (<code>ids</code>): <i>not in this project: 1 ids</i>, <i>in both lists: RND002</i>, <i>not labeled: RND008, RND009</i>. Every human state counts (approved, unreviewed, changes requested, legacy) whatever the loop's label states say. A listed row whose label file exists nowhere is left out, as in <a href="#rtss-unavailable-hub">§53.2</a>, and the preview names it per list in <code>skipped.unavailable</code>. The rows' ROI ticks (<i>Has all target ROIs</i>) are those of the same label the job trains on. A ROI subset still drops a label that holds none of the chosen ROIs, and the preview names those patients per list in <code>skipped.no_roi</code>. The §43.3 sentences apply to the counts. The job trains exactly those series: the cohort carries <code>series</code> (train ∪ valid), <code>valid_pinned</code> (the valid rows) and <code>max_patients: 0</code> (no patient cap, so a long list is never cut — the preview shows it in <code>cohort</code>), and the job page reads <i>items chosen in the wizard</i> (<code>items {train_n, valid_n, explicit}</code>). The GET lists the two fields in <code>accepts</code> only when the executor reports the capability <code>series_restriction</code>. Before that, a list is refused with <i>executor does not restrict a project cohort by series yet</i>. When the template lists <code>train.class_mode</code> (§61.3), the job always sends it, and the job page shows <code>class_mode</code>.</p>
+  <h3 id="params">Parameters, name (v1.38 §53, U69)</h3>
+  <p>The <i>Parameters &amp; submit</i> step shows <b>every parameter of the pipeline's template</b>, prefilled with
+  its default — Oncostudio-Research's own (<code>TrainingConfig</code> at the executor's pinned commit: 1000 epochs, a
+  full validation every 50 epochs, stop after 2 full validations without improvement, AdamW, …; marked
+  <i>Oncostudio-Research &lt;commit&gt;</i>) or the executor's (cluster settings, marked <i>executor</i>), with the
+  pipeline's own defaults over them. Change what you need; the wizard sends only what you changed and the job page shows
+  each as <i>changed from &lt;default&gt;</i>. The ROI list, the modality, the pre-label hand-off and the deploy fields
+  are the hub's (the ROI step, the project, off, the <a href="#deploy-section">deploy section</a>) and cannot be typed
+  here.</p>
+  <p class="note"><code>GET …/train-default[?pipeline=&lt;key&gt;]</code> adds <code>params {&lt;id&gt;: {type, default,
+  options?, help, group, source, required, hub_set?, template_default?}}</code> (the executor's schema; <code>default</code>
+  = the pipeline's when it sets one, then <code>template_default</code> = the executor's; <code>hub_set</code> = the
+  hub fills it), <code>research {commit}</code>, <code>name</code> (the default), <code>pipeline {id, key, name,
+  description, is_default, steps}</code>, <code>deploy {…}</code>, and <code>accepts: ["rois", "params", "name",
+  "pipeline", "deploy"]</code>. <code>POST …/train-default</code> and <code>…/preview</code> take <code>params
+  {&lt;id&gt;: value}</code> — 422 <i>unknown parameter &lt;id&gt;</i>, <i>&lt;id&gt;: expected int</i> (float, bool,
+  string, roi_list, patient_list alike; an enum: <i>&lt;id&gt;: expected one of […]</i>), <i>&lt;id&gt;: set by the
+  hub</i> — and <code>name</code> (1–80 characters, else 422 <i>name: 1–80 characters</i>). The preview adds
+  <code>params_changed</code> (what differs from the defaults) and <code>params_defaults</code> (their defaults); the
+  job keeps <code>name</code>, <code>params_changed</code>, <code>params_defaults</code> (the defaults at submission —
+  a later Research pin or pipeline edit does not change what the job page says) and <code>training_pipeline {id, key,
+  name}</code>, listed on <code>GET /ui/api/training/jobs</code> items as <code>name</code>, <code>pipeline</code>,
+  <code>params_changed</code>, <code>params_defaults</code> and on the job
+  page as the top-level <code>pipeline</code> (the job row's own <code>pipeline</code> stays the executor's
+  <code>{commit, image}</code> pin). A template with a <code>report.title</code> parameter gets the name as the report's
+  title unless you set one. POST answers 201 <code>{job_id, executor_job_id, name, pipeline, deploy?}</code>.</p>
+  <p id="rtss-fixed"><b>RTSTRUCTs: the project's label revisions</b> (v1.39 amendment §53.1, U77, D242 — executor
+  side). A job started from a project (<code>hub_loop</code>, <code>hub_checkpoint</code>) trains on exactly the
+  RTSTRUCTs the hub's label-set names: the select stage keeps those and nothing else — no fall-back to the newest file
+  (a machine pre-label the hub named but nobody saved stays hidden, D209). A pinned RTSTRUCT the download did not bring
+  (it copies what <code>scpdb</code> lists for the cohort's PatientIDs, so a series filed under another PatientID or
+  not indexed there is missed) is fetched by its own UIDs: first from the hub's label store
+  (<code>/svc/v1/labels/{sop}</code>), then from ONCOPACS — a C-FIND on the series UID alone and a series-level C-GET
+  (retrieval only, calling AE <code>AITW_EXEC</code>; never C-STORE) (§53.2, U86, D248). Only the pinned SOP is
+  accepted, never another file in its place. One found nowhere is <b>left out</b> (D247): listed in <code>missing[]</code>, named
+  in one log line (<i>left out — pinned but not found … &lt;image series&gt;/&lt;RTSTRUCT series&gt;, …</i>), and the
+  stage succeeds with the rest, so <code>n_kept</code> &lt; <code>n_pinned</code> is a normal outcome. Only an empty
+  set fails it (<i>no label revision of the cohort could be found</i>). A left-out series that is also a pinned
+  validation series still fails the split (D80: the round's DSC would not compare). So <code>GET /exec/v1/templates</code> lists <code>convert.mode</code>
+  for these templates with <code>fixed: true</code> and the help <i>the project's label revisions; not a choice</i>;
+  a job that sends it with another value gets 422 <i>fixed parameter convert.mode</i> (its own value
+  <code>most_recent</code> is accepted as a no-op, because hubs before §53.1 sent it with every job). A PACS-cohort
+  template (<code>once</code>, <code>example</code>) keeps the choice. The job (<code>GET /exec/v1/jobs/{id}</code>)
+  carries <code>rtss_selection {mode: pinned | newest_with_class, n_pinned, n_kept, as_of?, missing[]}</code> from the
+  run's <code>rtss_selection.json</code> (null before the select stage ran), and the select stage's log ends with
+  <i>RTSTRUCT selection: pinned · pinned &lt;n&gt; · kept &lt;n&gt; · missing &lt;n&gt;</i>. Checked on production:
+  hub job 61 (8add3654) ran pinned, 127 pinned = 127 kept, 0 missing, no kept file outside the label-set.</p>
+
+    <p id="rtss-project"><b>v1.39 §53.1 — the RTSTRUCTs of a project job (U77, D242).</b> A job started from a project
+  trains on the project's label revisions: the executor's select stage pins exactly the RTSTRUCTs of the label-set and
+  fails on a missing one, with no fall-back to the newest file. The executor marks the converter's <code>convert.mode</code>
+  <code>fixed</code>, so <code>GET …/train-default</code> leaves it out of <code>params</code> and adds <code>rtss: {mode:
+  "project", n, as_of}</code> (<code>n</code> = the items the job sends with a label: train plus the labeled valid items;
+  <code>as_of</code> = now, to the minute, so the same body gets the same reply). A wizard body or a pipeline that sends a fixed id → 422 <i>fixed parameter convert.mode</i>, and a stored
+  pipeline that holds one submits without it. The job payload (<code>GET /ui/api/training/jobs/{id}</code>) carries the
+  executor's <code>rtss_selection {mode, n_pinned, n_kept, as_of?, missing[]}</code> unchanged. It is null before the
+  select stage ran, when the executor cannot be reached and with <code>?live=0</code>.</p>
+  <p id="rtss-unavailable-hub"><b>v1.39 §53.2: a label revision the hub cannot find (U85 + U86, D247 + D248).</b> A
+  job from a project pins each series' label revision as it is; another save is never used in its place. When the hub
+  holds no file for a pinned revision and its ONCOPACS mirror (<code>pacs_rtss</code>) lacks the RTSTRUCT series, the
+  wizard and <i>Train</i> look for that exact series on ONCOPACS before they count or submit. If ONCOPACS has it, the
+  hub copies the file into its label store, with the patient's names removed, and the job uses it. If it is nowhere,
+  the series is left out and the job runs with the rest.
+  <code>GET …/train-default</code> lists these series as <code>rtss.unavailable [{patient_id, image_series_uid,
+  rtss_series_uid, sent_at, labeler, looked: ["hub", "pacs"]}]</code>. The job keeps the same list from submit
+  (<code>rtss_selection.unavailable</code> on the job page), and <code>GET …/loop</code> gives
+  <code>cohort.unavailable_n</code>. The label-set the executor fetches with the job's <code>as_of</code> holds only
+  the pinned revisions. You do not have to save anything again.</p>
+  <p id="rtss-web"><b>In the wizard and on the job page</b> (§53.1). For a project job the <i>Parameters &amp; submit</i>
+  step has no RTSTRUCT mode field. Above the parameters it shows the fixed line <i>RTSTRUCTs: the project's label
+  revisions (&lt;n&gt; as of &lt;date&gt;)</i>. A fixed parameter an older hub still sends is left out of the form too.
+  On the job page, under the select stage (or the convert stage when there is no select stage), the line reads
+  <i>RTSTRUCT selection: project labels · &lt;kept&gt; kept of &lt;pinned&gt; pinned</i>. When that stage failed, the
+  missing items are listed under it.</p>
+  <p id="rtss-unavailable-web"><b>Unavailable label revisions</b> (v1.39 §53.2, U85, D248). The hub pins the project's
+  revisions as they are and never uses another revision in place of one. A revision whose RTSTRUCT file is neither on
+  the hub nor on ONCOPACS (the hub and the executor both look for the exact series first) is left out, and the job
+  trains on the rest. The fixed line then reads <i>RTSTRUCTs: the project's label revisions (51 as of 2026-10-20, 2
+  unavailable — left out)</i>, and <i>Which 2</i> under it opens the list (hover shows it too): patient, labeler, date
+  sent, <i>not found on the hub, ONCOPACS — left out</i>. On the job page the same list stands under the select stage
+  (<i>2 label revisions unavailable at submit</i>), and the items the executor could not fetch are listed there as
+  <i>Not found, skipped</i>, also when the stage succeeded with the rest.</p>
+<h3 id="deploy-section">Deploy to the server (v1.38 §54, U70)</h3>
+  <p>The same step ends with <b>Deploy to the server</b>: the switch (on when the pipeline deploys — the default one
+  does), the model name (the project's loop model name), the <b>version, prefilled with the next one</b> (the family's
+  highest version plus one patch; <code>1.0.0</code> for a new family) and editable, the versions already deployed
+  listed under it, and an optional memo (empty = <i>wizard: &lt;name&gt; · by &lt;you&gt;</i>). Several jobs may run under
+  one project, each deploying its own version (v1.39 §43.4, U84). The versions that live jobs have reserved are listed
+  under the field (<i>Reserved by live jobs: 1.2.1 · job 62 running</i>, each a link to the job). The prefilled
+  version skips them, and typing one is refused on the spot (<i>Version 1.2.1 is reserved by job 62 — pick
+  another.</i>), as a deployed one is. The job then ends in a
+  <i>Deploy &lt;name&gt; &lt;version&gt;</i> stage after <i>Evaluate</i>; it runs only when the evaluation succeeded.
+  Switched off, the job has no such stage. On the web a version the family already has is refused under the field
+  before you submit (<i>Version 1.0.1 of ALTJ exists — pick another.</i>; not three numbers: <i>A version is three numbers:
+  1.2.3.</i>) and Submit stays off; a version you typed stays as typed, <i>use the next version</i> puts the hub's back;
+  changing the model name lists that family's versions and its next one. The summary adds <i>deploys &lt;name&gt;
+  &lt;version&gt;</i>. A pipeline whose template has no deploy step says so instead of the switch.</p>
+  <p class="note"><code>deploy {enabled, available, model_name, next_version, versions, version, modality, memo}</code>
+  (<code>available</code> false = the executor's template has no deploy step yet; then <code>enabled</code> is false and a
+  body asking to deploy gets 422 <i>deploy: the executor's hub_loop has no deploy step yet</i>). Body <code>deploy
+  {enabled?, model_name?, version?, memo?}</code>: 422 <i>version: 1.2.3 form</i>, <i>model_name: [A-Za-z0-9_], 1–64
+  characters</i>, <i>deploy.enabled: true or false</i>; a version the family has is raised to the next free one (v1.44, <a href="#deploy-version">below</a>;
+  before: 409 <i>version 1.0.3 of RND exists</i>); the executor refuses a version it finds on
+  <code>/mnt/deploy</code> (409, reason <code>deploy_version_exists</code>). The hub sends <code>deploy.enabled</code>,
+  <code>deploy.model_name</code>, <code>deploy.version</code>, <code>deploy.memo</code>; every other job the hub submits
+  carries <code>deploy.enabled: false</code> when the template lists it. A job that deployed lists on Models like a loop
+  deploy (the executor's stage registers it); the jobs list carries <code>deploy {model_name, version, state}</code> and
+  <code>deployed_versions</code> (the Dashboard's <i>deployed &lt;version&gt;</i> badge).</p>
+
+    <p id="jobs-per-project"><b>v1.39 §43.4 — several wizard jobs under one project (U84, D246).</b> The wizard's
+  <code>POST …/train-default</code> no longer refuses while a job of the project runs; the deploy version is the gate.
+  <code>deploy.next_version</code> is the next patch above the family's deployed versions <i>and</i> the
+  <code>deploy.version</code> of every live job (queued, pending or running) that deploys that family; those are listed
+  in <code>deploy.reserved: [{version, job_id}]</code>. A version that is deployed → 409 <i>version &lt;v&gt; of
+  &lt;family&gt; exists</i>; one a live job holds → 409 <i>version &lt;v&gt; is reserved by job &lt;id&gt;</i>. With
+  <code>deploy.enabled</code> false there is no version gate. A job that ends frees its version. The project loop's
+  <i>Train</i> still runs one iteration at a time, and <code>running_job_id</code> stays the newest live job. The
+  roadmap's <code>projects_active[]</code> keeps the newest job in <code>job</code> and counts every live one in
+  <code>jobs_live_n</code>. <b>Today's executor</b> still refuses a second <code>hub_loop</code> job of one project
+  (409 <code>in_flight</code>, passed on as is) until it scopes that rule by deploy version.</p>
+  <p id="deploy-version"><b>v1.44 §43.4 amendment — a colliding deploy version is raised, not refused (S22, U113, D277).</b>
+  With <code>deploy.enabled</code>, <code>POST …/train-default</code> and its preview take a <code>deploy.version</code>
+  that is equal to or lower than a deployed version of the family, or than the <code>deploy.version</code> of a live job
+  (queued, pending or running) of the same family <i>or of the same project</i> (another model name), as
+  <code>deploy.next_version</code>: the next patch above all of those. The answer's <code>deploy</code> (the preview's,
+  the POST's) and the hub's job record carry <code>version_requested</code> (as typed, null when none was given),
+  <code>version</code> (applied), <code>version_bumped</code> and <code>version_reason</code>: the equal one
+  (<i>1.0.2 reserved by job 74</i>, <i>1.0.2 deployed</i>), else the highest above it. The deploy memo gains
+  <i> · version raised to &lt;v&gt;</i>. <code>deploy.reserved</code> lists the live jobs of the family and of the
+  project as <code>{version, job_id, model_name}</code>. A version above all of them is taken as typed;
+  <code>deploy.enabled</code> false has no gate. The three record keys stay on the hub (<code>training_job.params</code>);
+  the executor gets the applied <code>deploy.version</code> and the memo, and its <code>in_flight</code> /
+  <code>deploy_version_exists</code> refusals stay as the backstop. The job page's own <i>Deploy</i> still refuses a
+  deployed version (409). Health <code>"1.44"</code>.</p>
+  <p id="deploy-version-raised-web"><b>v1.44 §43.4 — the raised version on the web (W14, U113, D277).</b> On a 1.44 hub a
+  deployed or reserved version you type is no longer refused under the field and Submit stays on: the hub raises it to
+  the next free patch, and as soon as the preview says so (<code>deploy.version_bumped</code>) the field is followed by
+  <i>Deploy version 1.0.2 → 1.0.3 (1.0.2 reserved by job 74)</i> (the reason is the hub's
+  <code>deploy.version_reason</code>), the summary's <i>deploys &lt;name&gt; &lt;version&gt;</i> names the applied
+  version, and the Submit confirmation repeats the line. The job page shows the same line under the memo (whose
+  <i> · version raised to &lt;v&gt;</i> the hub adds) from the job's <code>deploy.version_requested / version /
+  version_bumped / version_reason</code> params. A malformed version still stops Submit; an older hub keeps the refusal
+  under the field.</p>
+<h3 id="pipelines">Pipelines (v1.38 §55, U71) · 관리 › Pipelines</h3>
+  <p>A <b>pipeline</b> is a recipe the hub keeps: an executor template, parameter defaults over §53's and a name. The
+  wizard's last step opens with the pipeline cards (name, description, steps, <i>default</i>); choosing one reloads the
+  parameters and the deploy section. The seeded <b>Default — train, export, evaluate, deploy</b> (key
+  <code>default</code>: <code>hub_loop</code>, <code>deploy.enabled</code> on, the pre-label hand-off off) is the
+  default, editable and never deleted. An admin creates others in <b>관리 › Pipelines</b> (e.g. <i>Train only</i> =
+  <code>hub_loop</code> with deploy off), edits them, sets the default (exactly one) and deletes them — a pipeline a
+  job used is hidden instead (old jobs keep its name).</p>
+  <p id="pipelines-web">On the web the cards sit at the top of <i>Parameters &amp; submit</i>, one per visible pipeline
+  with its steps as chips (the optional ones tinted) and a green <i>default</i> mark; the default is chosen when the
+  step opens. Picking another card reloads the parameter list, the <i>Defaults =</i> line, the deploy section (a
+  pipeline without the deploy step shows the switch off) and the summary, and Submit sends that pipeline. <b>관리 ›
+  Pipelines</b> (admins only — others get <i>Admin only</i>) lists name, key, description, template, steps and how
+  many jobs used each, with <i>Show hidden</i>. <i>New pipeline…</i> and <i>Edit…</i> open one dialog: name,
+  description, base template (only templates that take a project's items), the steps it will run, a switch per optional
+  step (<i>Run the step 'Deploy model'</i>), and the template's parameter form with Research's defaults — what you change
+  there becomes this pipeline's default (the target ROIs, modality and deploy fill are never in it). <i>Set as
+  default</i> and <i>Delete</i> act at once (Delete asks first and says when a used pipeline is only hidden); a hidden
+  one has <i>Unhide</i>. The hub's refusals are shown as it words them. <b>Automation › Training loop</b> gains
+  <i>Pipeline Train runs</i>: <i>— the loop's own template and parameters</i> or any visible pipeline, with its steps
+  under it and a note when it deploys in the job instead of the threshold rule.</p>
+  <p class="note"><code>GET /ui/api/training/pipelines</code> (every account; admins add <code>?hidden=true</code>) →
+  <code>{items: [{id, key, name, description, template {id, title, known}, params_set, params, steps, is_default,
+  hidden, jobs_n, …}], research}</code> — <code>steps</code> = the template's minus the optional ones the pipeline
+  switches off. Admin only: <code>POST /ui/api/admin/pipelines {key?, name, description?, template, params?}</code> (201;
+  <code>key</code> defaults to the name in <code>[a-z0-9_]</code>; 422 <i>template: X is not an executor template that
+  takes hub_project cohorts</i>, the §53 parameter sentences, <i>&lt;id&gt;: set by the hub</i> for the ROI list,
+  modality and deploy fill — <code>deploy.enabled</code> and <code>*.hub_push</code> are a pipeline's to set; 409
+  <i>a pipeline &lt;key&gt; exists</i>), <code>PUT …/{id}</code> (name, description, template, params, hidden; 422
+  <i>key: cannot be changed (jobs record it)</i>), <code>POST …/{id}/default</code>, <code>DELETE …/{id}</code> → 409
+  <i>the default pipeline cannot be deleted</i>, <code>{ok, hidden: true, jobs_n}</code> when a job used it, else
+  <code>{ok, deleted: true}</code>. <code>?pipeline=</code> / <code>{pipeline}</code> naming a hidden or unknown
+  pipeline → 404 <i>pipeline not found</i>.</p>
+</section>
+
+<section id="new">
+  <h2>Advanced · 새 학습 (new job): project → template → parameters → cohort → submit</h2>
+  <ol>
+    <li><b>Project</b>: pick a hub project (its approved-and-other labels become the cohort) or "프로젝트 없이" with an
+    explicit patient list (checked against the hub's cases).</li>
+    <li><b>Several projects at once (v1.12, CONTRACT §20.3, D127)</b> — from OncoStudio's Training page (the web form still takes one):
+    tick projects of the <b>same modality</b>; the cohort is the union of their label-sets per image series (the newest revision
+    wins), the <b>ROIs</b> default to those every chosen project labels (an ROI a project lacks is flagged — its patients would
+    train with an empty mask), the first project is the job's project for lineage and the job is listed under every member. A
+    project code names the live project: from hub 1.27 (§40) a deleted project's code may be reused, and the frozen
+    validation sets and a job the executor reports by code come from the live one.
+    The executor must report <code>capabilities.multi_project</code> (the hub's <code>GET /api/v1/training/status</code> echoes it as <code>multi_project</code>, so the app enables the project checkboxes only then); the in-flight rule keys on the sorted code list.
+    Since v1.13 the web form does it too: in step 1 tick the other projects of the same modality (<code>project_ids[]</code>); the required ROI list defaults to the ROIs every ticked project labels. The app's <b>Models</b> tab starts such a job without opening a project.</li>
+    <li><b>Template</b>: cards from the executor (what the template does, its steps, whether it can deploy).</li>
+    <li><b>Parameters</b>: a form generated from the template — only required fields (*) need a value; the project's ROI
+    set fills the ROI list; changed values are marked. The chosen ROIs go into the template's own ROI parameter (the
+    executor's <code>hub_loop</code> / <code>hub_checkpoint</code> call it <code>start.rois</code>), the same rule the rounds use (2026-10-08).</li>
+    <li><b>Cohort</b>: the per-series preview. <b>Label-state chips</b> (all on, approved first; the number on each chip is
+    how many series have a label in that state) decide which labels may enter; per series the newest label among the
+    chosen states is used. The table shows each series' state; demographics and exclusions are shown too. The preview's
+    time is sent with the job so the executor draws the same cohort. <b>Sample</b> (v1.5): <i>층화</i> (stratified, the
+    default) trains on the whole label set — the most representative choice; <i>첫 N명</i> with a patient cap takes the
+    executor's first N patients in ID order. A stratified subset of N patients is not in the executor contract yet, so
+    that combination is not offered (the page says so). When the project has a frozen <b>validation set</b> (a labeling
+    round, <a href="rounds.html#hub-valid">Rounds</a>) the step shows it, and every training job of the project — from this
+    wizard, a policy or a round — sends it as <code>valid_pinned</code> (to an executor on contract ≥ 1.5; the hub keeps it
+    on the job record either way). Templates that take a series cohort (<code>prelabel_only</code>) are started from a round
+    page, not here.</li>
+    <li><b>Submit</b> → the job page. Unbound users (no NAS account linked) and a red pipeline pin are refused with a readable
+    reason before anything runs.</li>
+  </ol>
+</section>
+
+<section id="jobs">
+  <h2>작업 (jobs) and the job page</h2>
+  <p>Since v1.28 a project normally trains with <b>Train</b> on its page (<a href="#loop">the loop</a>); <b>Training ›
+  Jobs</b> shows the wizard as the <i>Advanced</i> path (<i>Advanced: New training</i>; the wizard's crumb reads
+  Jobs / Advanced / …). A loop job's Cohort line names its iteration (<i>iteration 3 of ZZ_LOOP</i>, linked to the
+  iteration's page; the hub's job record carries <code>round {id, n, origin}</code>). The project page's loop strip
+  links a below-threshold model's job with <code>?deploy=1</code>: the job page then opens its Deploy dialog at once (a
+  lead; memo required, dry run first as always).</p>
+  <p><b>작업</b> lists every job (state, stage n/N, requester — ⚡ for a policy, model, DSC) with filters; a refused job
+  says why in a sentence under its state (a job of the project is still running, the cool-down has not passed, the
+  pipeline is not verified, no account linked, …; the code on hover — D153 W6), template names fit one line, and below
+  900 px the jobs are cards. The job page shows
+  the stages (state, duration, exit code, error), the <b>live log</b> of the running stage, the loss/metric curves, the
+  evaluation per ROI and per case, artifacts and links to the registered dataset, run and model, the <b>cohort</b> block
+  (states asked for, as-of time, and the per-state counts the executor actually used), and the event history.</p>
+  <p>Actions: <b>취소</b> (cancel), <b>재개</b> (resume from any stage), <b>같은 설정으로 다시</b> / <b>수정해서 다시</b>
+  (re-run as is / edit first), and <b>배포</b> (deploy; lead/admin, dry run by default — see
+  <a href="deploy.html">Deploy</a>). Runs imported from the old aitw are shown read-only.</p>
+  <p id="oom-retry-web"><b>v1.39 §48.2 — a smaller batch after an out-of-memory (D249).</b> When the training runs out
+  of GPU memory, the executor halves <code>batch_size</code> and retries the training in the same job, up to three
+  times. The job page shows <i>Batch size reduced to 4 after an out-of-memory (attempt 1 of 3)</i> under the training
+  stage (<i>Wait for training</i>), and the parameters block gains <i>Effective batch size: 4 · reduced from 8 after 1
+  out-of-memory retry(s)</i>. The retries come from the <code>training_retried</code> events, or from the job's
+  <code>oom_retries</code> when the events are not there. The hub passes the executor's <code>oom_retries</code> on the
+  job as it gives them, and while the executor is not asked (or not answering) it rebuilds the same list from the
+  <code>training_retried</code> events it stored, so the note shows as soon as the retry happens, not only when a stage
+  ends. After a third out-of-memory the job fails with the error as before.</p>
+  <p id="job-export"><b>v1.38 §54 — Export and Deploy on the job page.</b> A finished job with a trained checkpoint but
+  no export shows <b>Export</b> (the job resumes from its export stage); one with an export shows <b>Deploy to the
+  server…</b> with the version prefilled with the next one (editable; a taken one is refused: 409 <i>version 1.0.0 of
+  RND exists</i>, 422 <i>version: 1.2.3 form</i>) and the memo optional (empty = <i>job &lt;id&gt; · &lt;job name&gt; ·
+  by &lt;you&gt;</i>). A re-run of a job that deployed deploys the next version. On the web the stage list names the deploy
+  stage <i>Deploy ALTJ 1.0.2</i>; the dialog lists the deployed versions and the next one, refuses a taken or malformed
+  version under the field, says why when the hub will not deploy (<i>no export yet: export the model first</i>), and keeps
+  the dry run as the first tick. The job's name, its pipeline and its changed parameters stand in the artifacts card.
+  The Dashboard shows each job's name and pipeline, and a green <i>deployed 1.0.2</i> badge next to its model.</p>
+  <p id="polling"><b>v1.39 §57 — the polling budget, hub side.</b> A running job writes an event for every stage fact
+  and poll; the live stream now carries at most <b>one <code>training</code> event per job per 2 s</b> — the first of a
+  quiet job at once, the last of a burst at the end of the window (the pages read only the job id and the type; the
+  job page's event history still lists every event). <code>GET /ui/api/training/jobs</code> and
+  <code>GET /ui/api/training/jobs/{id}</code> answer an <code>ETag</code> (a hash of the body) with <code>Cache-Control:
+  private, no-cache</code>, and <code>304</code> without a body when <code>If-None-Match</code> names it — a quiet reload
+  of an unchanged list or job costs no body (the browser revalidates on its own; a page that sends the header itself
+  gets the 304). The job payload leaves out the poll stamps <code>last_polled_at</code> / <code>updated_at</code>, which
+  every live GET rewrites, so its ETag holds until something on the page changes. The web's side — one fetch per interval, no skeleton on a quiet reload — is labeling-web's W4.</p>
+  <p id="cancel"><b>v1.39 §58 — who may cancel.</b> <b>Cancel</b> is offered to the job's requester, to any lead and to
+  admin (the hub's lead role acts on every project, as it does for review and deploy), for a live job — queued, pending
+  on the cluster or running; never for a job imported from the old aitw. The job payload's <code>can.cancel</code> and
+  each <code>GET /ui/api/training/jobs</code> item's <code>can_cancel</code> say so for the signed-in account. A cancel
+  records who (the account's initials) and when — <code>cancelled_by</code> / <code>cancelled_at</code> on the job page
+  and the list — and its <code>requested_cancel</code> event reaches the live stream; once the executor reports its own
+  (it stops the Ray job too, E6) its values replace the hub's. A resume clears them. A finished job answers the
+  executor's 409 (<i>not_running</i>) verbatim; a repeated cancel the executor accepts keeps the first record.</p>
+  <p id="curve-full-valid-hub"><b>v1.48 §66 — the full-validation curve through the hub (S34, D298).</b>
+  <code>GET /ui/api/training/jobs/{id}/curve</code> asks the executor for <code>…/curve?detail=1</code> and answers
+  <code>{curve: {x, series}, source, error, best, stop_reason}</code>: the series <code>full_valid_dsc</code> holds the
+  sliding-window validation DSC on the epochs where it ran (every 50 by default; <code>null</code> between them) beside the
+  patch validation <code>valid_dsc</code>; <code>best</code> is <code>{epoch, full_valid_dsc}</code> of the best
+  full-validation point (or <code>null</code>), <code>stop_reason</code> why the training ended
+  (<code>early_stopping</code>, <code>manual_stop</code>, <code>epoch_limit</code>) or <code>running</code>. Without the
+  executor (a run registered from elsewhere) the run's <code>metrics_summary</code> answers the same; an older executor
+  that sends only the rows still draws the curve. The job keeps <code>best</code> and the final <code>stop_reason</code>,
+  so the job page (<code>GET …/jobs/{id}</code>: <code>best</code>, <code>stop_reason</code>) and the project's progress
+  (§67) show them after the run is gone.</p>
+  <p id="curve-full-valid-web"><b>On the web (W20):</b> the job page's <b>Validation metrics</b> chart draws the patch
+  validation DSC as before (<i>Validation DSC (patch)</i>, a thin line) and the <b>Full validation DSC</b> as a second
+  series in its own colour with a marker on every epoch where it ran, joined across the epochs between. The best
+  full-validation point carries a pin labelled <i>0.854 @ 350</i> (also in the card's subtitle: <i>best 0.854 @ 350</i>);
+  a training that ended by early stopping or a manual stop gets a dashed mark at its last epoch (<i>early stopping @
+  450</i>, <i>manual stop @ 12</i>) — the epoch limit is not marked. Click a legend entry to hide or show a series.
+  Hovering an epoch names it and both values; between two full runs the full value is the last one, <i>(as of epoch
+  400)</i>. A job whose executor sends no full validation shows the chart as before. The loss chart is unchanged.</p>
+  <p id="stop-training"><b>v1.48 §69 — stop after this epoch (hub, S37, D301).</b> When the curve has flattened, the
+  requester, a lead or admin can end the training early without losing the run:
+  <code>POST /ui/api/training/jobs/{id}/stop-training</code> <code>{reason?}</code> (at most 500 characters; the app:
+  <code>POST /api/v1/training/jobs/{id}/stop-training</code> <code>{user_id, reason?}</code>) asks the executor to let the
+  current epoch finish, then export the best checkpoint, evaluate, report and apply the deploy rule as if early stopping
+  had fired. The job payload's <code>can.stop_training</code> and each list item's <code>can_stop_training</code> say who
+  may (a running job, not imported). The hub records <code>stop_requested_by</code> (initials) and
+  <code>stop_requested_at</code> at once — on the job page and the list — and the <code>requested_stop-training</code>
+  event reaches the live stream; the executor's own facts replace them (also a stop written by a person as
+  <code>stop_training.json</code> in the run directory: event <code>training_stop_requested</code>), and when the training
+  ended the job carries <code>stop_reason</code> (<code>manual_stop</code>, <code>early_stopping</code> or
+  <code>epoch_limit</code>). Refusals are the executor's 409 verbatim: <i>not_training</i> (the job is not in its training
+  stage) and <i>no_epoch_completed</i> (before the first epoch ends); a second request answers
+  <code>already_requested: true</code> and keeps the first record. <b>Cancel</b> (§58) stays the hard stop: no export.</p>
+  <p id="stop-training-web"><b>On the web (W23):</b> while a job is in its training stage, its page has <b>Stop after this
+  epoch</b> beside <b>Cancel</b>, and its Dashboard card a stop icon beside the cancel icon (for the requester, a lead or
+  admin — <code>can.stop_training</code> / <code>can_stop_training</code>). The confirm names the epoch in progress (from a
+  fresh curve: its last epoch + 1) and the best full validation so far (<i>0.817 @ epoch 150</i>), and says what follows —
+  export of the best full-validation checkpoint, evaluate, report, the deploy rule — and that Cancel is the hard stop
+  without export. After OK the page and the card read <i>Stopping after epoch N · &lt;who&gt; · &lt;when&gt;</i> (N from the
+  reply, later from the executor's <code>training_stop_requested</code> event) until the export starts; the button is
+  gone. Once the training ended the page says <i>stopped by hand · &lt;who&gt;</i> and the Validation metrics chart marks
+  <i>manual stop @ N</i> (see <a href="#curve-full-valid-web">the full-validation curve</a>). A refusal reads in words:
+  not in its training stage, or no epoch completed yet.</p>
+  <p id="cancel-web"><b>Cancelling from the web</b> (v1.39 §58). The job page shows <b>Cancel</b> for every live state:
+  queued, waiting on the cluster and running, when you may cancel. The Dashboard's running and queued cards have the same
+  Cancel as a small ⊘ button at the top right. Both ask first: <i>Cancel this job? It stops the training on the
+  cluster; the job cannot be resumed from this stage.</i> A card reads <i>Cancelling…</i> at once; the job's own event
+  brings the next refresh forward, so it costs no extra requests. A card you cancelled stays on the Dashboard, and the
+  card, the finished row and the job page's header read <i>cancelled · &lt;who&gt; · &lt;when&gt;</i>. Without the
+  right to cancel (a viewer) there is no button. <b>Resume from a stage</b> stays for the requester and leads on a
+  finished job.</p>
+  <p class="note"><code>GET /ui/api/training/jobs/{id}/deploy-defaults</code> → <code>{model_name, next_version,
+  versions, modality, can_deploy, reason?}</code> (<i>the job is still running</i> · <i>no export yet: export the model
+  first</i> · <i>deploying is for leads and admins</i> · <i>the executor never accepted this job</i>);
+  <code>POST …/deploy</code> keeps its body, with <code>version</code>, <code>memo</code>, <code>model_name</code>,
+  <code>modality</code> optional (deploy-defaults' values) and answers <code>version</code>, <code>memo</code> too;
+  <code>POST …/export</code> (the requester, lead, admin) → <code>{ok, from_stage_id}</code>, 409 <i>already
+  exported</i> / <i>no checkpoint</i> / <i>the job is still running</i>.</p>
+</section>
+
+<section id="policies">
+  <h2>Policies (automatic training)</h2>
+  <p>On a project page, <b>자동화 › 학습 정책</b>: arm it, choose the <b>template</b> and its parameters, the <b>label states</b>
+  that enter a policy-started job and count as "new" (existing policies were migrated to <i>approved only</i>, which
+  behaves exactly as before; new policies start with all states), the minimum number of new labels, the cooldown and an
+  optional maximum number of patients. Every 10 minutes the hub checks armed policies and sends a job when enough new
+  labels arrived; <b>지금 실행</b> checks now. If a job of the same template is still running for the project, the executor
+  refuses and the refusal is shown on the policy; the next check tries again. Fires are listed below with links to their
+  jobs.</p>
+</section>
+
+<section id="pipeline">
+  <h2>파이프라인 (pipeline) page and 계정 연결 (account links)</h2>
+  <p><b>파이프라인</b> shows the research-pipeline commit and image the executor pins, whether that pin passed
+  verification (red blocks new jobs, with the reason), the executor's lanes, the update procedure and every pin the hub
+  has seen. <b>관리 › 계정 연결</b> (admin) links each hub user to a NAS account; training runs as that account. Leads
+  and admins need only the link; read-only viewers also need <i>학습 허용</i> (can train). A lead's <b>auto-contour</b>
+  (labeling project page) needs no link of their own: the hub submits it under its service identity <code>app:hub</code>
+  (which must have a link, as policies do) and records the lead as the requester (V1.20-AC-FIX).</p>
+</section>
+
+<section id="execution">
+  <h2>What happens on the executor</h2>
+  <p>When you submit, the hub sends the job to the executor, which turns it into stages and runs them in order on the platform host (details: <a href="../components/executor.html#jobs">executor</a>).</p>
+  <div class="tbl"><table><thead><tr><th>Stage</th><th>Reads</th><th>Writes (under <code>/mnt/&lt;account&gt;/</code>)</th></tr></thead><tbody>
+  <tr><td>Download DICOM</td><td>the cohort's patients from the PACS share</td><td><code>scp/dicom/</code> — one store per account, shared by its jobs</td></tr>
+  <tr><td>Choose RTSTRUCT</td><td>the chosen label of each series (its state does not matter)</td><td>hides every other structure set from the converter; nothing is deleted</td></tr>
+  <tr><td>DICOM → NIfTI</td><td>images + the chosen RTSTRUCTs, the ROI name table</td><td><code>oncostudio/data/&lt;experiment&gt;/nifti/</code>, <code>dataset.json</code>; the classes are the ROI registry's <b>official names</b> (v1.34 §48): a target asked for by an alternative name (<code>CTVn_L2_L</code>) trains, and comes back in the model, its DSC per ROI and its pre-labels, as the official one (<code>CTVn_LN_Ax_L2_L</code>)</td></tr>
+  <tr><td>Split train/valid</td><td><code>dataset.json</code></td><td><code>train_valid_dict.json</code> (by patient; valid never more than half the cohort)</td></tr>
+  <tr><td>Preprocess</td><td>the split</td><td><code>oncostudio/preprocessed/&lt;experiment&gt;/</code></td></tr>
+  <tr><td>Submit / wait for training</td><td>the preprocessed data</td><td>first a check: a target class with no drawn voxel in the whole cohort fails the job here, before any cluster time (<code>zero_voxel_target</code>, below); a full cluster is a wait, not a failure — a one-GPU training (the default) goes to the Ray cluster at once and <b>pends in Ray's queue</b> until a node is free, in cluster order: the stage stays running with <code>pending on the cluster: &lt;ray id&gt;</code> and <code>pending: true</code>, and succeeds when Ray starts it (v1.38, §48.1, D238; a request over one GPU still retries on the executor's side and gives up after 6 h, v1.35; a job failed here resumes here); then a trainer image built for the run and <b>always pushed</b> to the registry before the submit — the Ray node pulls it from there (<code>train.push=false</code> is ignored; it never meant the pre-label hand-off); a Ray job; checkpoint and <code>training_log.json</code> under <code>oncostudio/models/</code>. A training that runs out of GPU memory (<code>CUDA out of memory</code>) is sent again by the executor at half the batch size, up to three times (8 → 4 → 2 → 1; from the default 2 only 2 → 1, §53.3), on the same job with the same data and split; the job lists each retry (<code>oom_retries</code>) and the size it last ran at, and only the fourth out-of-memory fails it (v1.39 §48.2, D249)</td></tr>
+  <tr><td>Export · Evaluate · Report</td><td>the checkpoint, the valid set</td><td><code>models_export/…/3d_final_model.pt</code>, <code>eval/…/metrics.csv</code>, a report page</td></tr>
+  <tr><td>Predict · Pre-label</td><td>the model, the cases to pre-label</td><td>RTSTRUCTs marked <code>AI_PRELABEL</code>, handed to the hub</td></tr>
+  </tbody></table></div>
+  <ul>
+    <li><b>A cohort of mixed label states</b> becomes an ordinary split: the split file has the same format as always, and each item's label state travels with the split's registration at the hub (<a href="datasets.html#executor-provenance">datasets</a>). The job page's cohort block shows the per-state counts the executor actually used (<code>cohort_resolved.label_states</code>), the states you asked for and the time they were judged at.</li>
+    <li id="executor-items-anywhere"><b>Items chosen anywhere</b> (v1.58 §75.3): a <code>hub_items</code> job downloads
+      the items' patients by their DICOM PatientID and <i>Choose RTSTRUCT</i> keeps exactly each item's label and image
+      series — from whichever project, from none, or from the central PACS; a label found nowhere is left out and named in
+      the select log. There is no project: no pre-label hand-off, no in-flight project guard, and the family name
+      (<code>deploy.model_name</code>) is required (<a href="../components/executor.html#hub-items">executor</a>).</li>
+    <li><b>Cancel</b> stops the running stage; the stages after it are marked cancelled. <b>Resume from a stage</b> re-runs that stage and everything after it on the same job — same folders, same split, same pipeline version; it is refused while an earlier stage has not succeeded, and while the job is still running.</li>
+    <li><b>Logs</b>: every stage has its own log on the job page, followed live while it runs; a resumed stage appends to its old log.</li>
+    <li><b>Templates since v1.5</b>: <code>prelabel_only</code> pre-labels a list of series with an existing model and
+      never trains (<a href="rounds.html#executor-jobs">rounds</a>; params <code>model_job_id</code>,
+      <code>model_path</code>, <code>model_md5</code>, <code>round_id</code>, <code>round_n</code>); a training job may carry the project's frozen
+      validation set (<code>valid_pinned</code>) — then exactly those series are the validation set and the job page
+      shows <code>valid_pinned_n</code>.</li>
+    <li><b>Several models in one job (v1.21, CONTRACT §28.2)</b>: <code>prelabel_only</code> also takes
+      <code>model_paths</code> (a JSON list) or <code>release</code> + <code>modality</code> — the OncoStudio default pipeline,
+      every model of that modality in <code>/mnt/deploy/release/&lt;V&gt;</code>; the default is the latest <i>released</i>
+      package, a candidate runs only when named and a withdrawn one is refused (v1.61 §77.3,
+      <a href="../components/executor.html#latest-released">executor</a>) — and <code>requested_by</code> (who the hub
+      acted for), and <code>roi_filter</code> (only those ROIs, in the project's spelling or the registry's official name — both are
+      compared through the ROI registry, v1.34 §48; under a release only their owner models run). The job
+      converts each series once, runs one predict stage per model, and writes one RTSTRUCT per series
+      with every ROI from one model (the release's owner map, else the first listed). Details, the 422
+      <code>model_params</code> rule and <code>info.default_pipeline</code>:
+      <a href="../components/executor.html#several-models">executor</a>.</li>
+    <li><b>ROI names of a pre-label (v1.22, CONTRACT §29.1)</b>: the RTSTRUCT handed to the hub names each ROI exactly as
+      the model emits it — no <code>_pre</code> suffix, no prefix, no rename; it is told apart by its
+      <code>AI_PRELABEL</code> marking only, which is also how choosing an RTSTRUCT for training skips it
+      (<a href="../components/executor.html#roi-names">executor</a>).</li>
+    <li><b>The training loop (v1.28, CONTRACT §41)</b>: the project page's <i>Train</i> runs a plain
+      <code>hub_loop</code> job as <code>app:hub</code>. The executor tells the hub the exported model as soon as the
+      export stage ends (before Evaluate), so the pre-labels start while it evaluates (the hub's own jobs may run two
+      stages at once, never two on the GPU — D207), and it accepts the hub's automatic
+      deploy (<code>requested_by:"app:hub"</code>, memo <i>auto-deploy: …</i>) like a lead's
+      (<a href="../components/executor.html#training-loop">executor</a>). Labels saved in OncoStudio live on the hub
+      (§34); the job fetches each one the download did not bring from the hub before choosing the RTSTRUCTs
+      (<a href="../components/executor.html#hub-labels">executor</a>). The hub sends the iteration with
+      <code>prelabel.hub_push=false</code>, so the training job itself predicts nothing for the hand-off
+      (<a href="../components/executor.html#hub-push">executor</a>).</li>
+    <li><b>When a stage fails</b>: its row says why (the last error line of its log, with the research file and
+      line), each predict stage is named by its model (<i>Predict Abdomen 2.0.0</i>), and a pre-label job sets aside a
+      series the research converter cannot read (e.g. an empty SeriesNumber) instead of failing every series — it is
+      listed with the reason under <code>series_failed</code>
+      (<a href="../components/executor.html#series-failures">executor</a>).</li>
+    <li><b>The wizard's items and classes (v1.41, CONTRACT §61)</b>: when the Train / Valid items step sends its own
+      lists, the executor trains exactly those series. The cohort's <code>series</code> restricts the project's labels, a
+      listed series without a usable label is skipped and shown as <code>series_unknown</code>, and the valid rows are the
+      pinned validation set (<a href="../components/executor.html#series-restriction">executor</a>). Since v1.43
+      (D271) those series are picked from the person's DICOM store by series UID, under the PatientID ONCOPACS files
+      them by — a project whose hub ids differ from the DICOM ones (Thoracic_LN's <code>CT-C-…</code>) loses no case
+      (<a href="../components/executor.html#series-restriction-v143">executor</a>). A structure set whose
+      contours would be painted on every slice by the research converter (no <code>ContourImageSequence</code>, D272)
+      is an unsupported input: it is left out and listed under <code>series_failed</code> with the reason
+      (D278)
+      (<a href="../components/executor.html#smear-guard">executor</a>) — unless its missing references can be filled in
+      from the nearest CT slice: <code>select.repair_contour_refs</code> (<i>Repair missing contour image references</i>,
+      default on, v1.46, D281) does that on the executor's copy before the check, and only a set with a contour it cannot
+      place is still left out (<a href="../components/executor.html#contour-ref-repair">executor</a>). Every job keeps its own data, npz,
+      evaluation and exported model (<code>…/&lt;organ&gt;/&lt;job id&gt;/</code>, D275): a later job of the same project
+      never rewrites an earlier job's files or the model the hub registered for it
+      (<a href="../components/executor.html#run-layout">executor</a>).
+      <code>train.class_mode</code> <code>relevant</code> (default) trains each item only on the ROIs it holds;
+      <code>all</code> trains every target ROI on every item, and an ROI an item lacks is taught as absent. The train
+      stage's log says which mode ran and how many items lacked a ROI
+      (<a href="../components/executor.html#class-mode">executor</a>).</li>
+    <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
+    <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
+      evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
+      <code>report.eval_prerender_n</code> (<i>Prerendered evaluation samples</i>, integer, <code>min</code> 0, default
+      <b>5</b>, <code>source: executor</code>). When the report is written, the executor picks that many validation cases at
+      random — the same ones for the same job (the seed is the job id); 0 = none, more than the cases = all — and renders
+      every axial slice of each (image in the default window, ground truth, prediction), so the job page's viewer opens
+      them at once. The report never fails on it: a rendering problem is a line in the report's log
+      (<i>eval prerender: …</i>). A job created before v1.45 renders the default 5
+      (<a href="../components/executor.html#eval-prerender">executor</a>).</li>
+  </ul>
+</section>
+
+<section id="evaluation">
+  <h2>Evaluation and metrics</h2>
+  <p>A job's <i>evaluate</i> stage produces the executor's own quick check (a <code>metrics.csv</code> on the job page). The
+  figures that count for a release and for regulatory documents are computed once a model version is deployed, by
+  ai-pipeline's calculator on each data version's validation cases, and registered in the hub:</p>
+  <ol>
+    <li><b>Deploy triggers it.</b> When the hub's change feed announces a new model or data version, ai-pipeline queues a
+    <i>standard</i> evaluation (the model on its family's latest data, or new data with the latest model). It waits for
+    free memory and the shared GPU lock, so it never competes with a running training stage. A lead can also queue a pair
+    in ai-pipeline's 추론 관리.</li>
+    <li><b>Leaked cases are left out.</b> Validation cases the model trained on (same DICOM series, or identical image
+    content) are skipped and listed as excluded; the training split comes from the hub's record of the job that produced
+    the weights. Label states (§6.12) do not change what is scored.</li>
+    <li><b>Aggregated by ai-pipeline, never by the hub.</b> Per ROI: mean and median DSC and HD95 and <i>n</i>
+    (<code>POST /svc/v1/evaluations</code>, §3), plus one row per case and ROI (<code>…/{id}/cases</code>) for drill-down. The hub
+    shows the figures in 평가 and on the model and job pages exactly as sent.</li>
+    <li><b>Case facets on the way.</b> While scoring, the calculator also records each case's scanner model, modality,
+    study date, spacings and institution from the same DICOM header (v1.5); ai-pipeline passes the exactly identified
+    series to the hub's labeling pool (<a href="rounds.html#pipeline-facets">Rounds › facets</a>). Demographics the header
+    cannot give (NIfTI-only public data, cases not on the central PACS) are filled from ai-pipeline's case metadata
+    registry (<code>/mnt/deploy/config/case_meta</code>), each with its source in the result's <code>meta_sources</code>; the
+    인허가 프로파일 counts them apart from header values (값 출처). A header read from a non-image object (an RTSTRUCT
+    that is the only file of a case folder) gives sex, age and study date only — its manufacturer is the software that
+    wrote it, not the scanner — and the calculator then reads the image's header from the central SCP. For MR series it
+    also records T1/T2 weighting, contrast and field strength (the 인허가 프로파일 workbook's 영상종류 rows). GT volumes
+    (<code>volume</code>, ml per ROI) come from the metric's own per-label GT voxel counts × voxel size, the same channel
+    mapping as the DSC; results written before 2026-10-15 can hold misnamed or zero volumes, which readers ignore.</li>
+    <li><b>Regulatory criteria.</b> The 인허가 프로파일 judges each ROI by its mean GT volume — DSC ≥ 0.5 / 0.65 / 0.8 for
+    &lt; 10&nbsp;cc / 10–150&nbsp;cc / ≥ 150&nbsp;cc (95%HD reported, not judged), with CT and MR
+    apart and the 기준 미달 rows carrying diagnostics and a 조치 record
+    (<a href="../components/ai-pipeline.html">ai-pipeline › Profiles</a>).</li>
+    <li><b>Keys.</b> An evaluation is identified by model family and version, data version and the training split's
+    <code>split_hash</code> (<code>unknown</code> for historical results whose split may have been rewritten since). Registering
+    the same key again replaces it; hiding the model version withdraws it.</li>
+  </ol>
+  <p id="eval-viewer"><b>v1.39 §56.2 — the evaluation viewer, hub side.</b> The job page's Evaluation card shows the
+  evaluate stage's cases as pictures; the executor renders them (§56.1) and the hub only passes them on, for anyone who
+  can open the job page (lead, viewer, admin; not a labeler). <code>GET /ui/api/training/jobs/{id}/eval/cases</code> is
+  the executor's list — classes with their colours, the planes it serves, per case <code>i</code>, shape, spacing,
+  <code>n_slices</code>, DSC / HD95 per class, modality — with each case's file stem replaced by <code>label</code>: the id
+  the metrics table shows for that case (its patient ID, else its sample id). The stem itself never reaches the browser,
+  because elsewhere a stem can be a patient's name. The hub takes the case's own ids when the executor sends them, else
+  the longest patient or sample id of the job's metrics rows (or a manual cohort's patients) that the stem is or starts
+  with followed by <code>_</code> (our stems are <code>&lt;PatientID&gt;_&lt;n&gt;</code>), else <code>case &lt;n&gt;</code>.
+  <code>GET …/eval/cases/{i}/slices/{plane}/{k}.png?layer=image|gt|pred&amp;window=soft|lung|bone|mr</code> streams
+  one PNG layer from the executor with its <code>Cache-Control</code> (<code>private, max-age=86400</code> when it sends
+  none) and <code>ETag "&lt;job&gt;/&lt;i&gt;/&lt;plane&gt;/&lt;k&gt;/&lt;layer&gt;/&lt;window or -&gt;"</code>; a
+  rendered slice never changes, so a matching <code>If-None-Match</code> gets <code>304</code> from the hub without asking
+  the executor. A bad <code>layer</code>, <code>window</code> or plane name → 400 at the hub; the executor's 404 (no
+  evaluation yet, no such case, a slice outside <code>n_slices</code>), 410 (<i>evaluation files gone</i> — the run dir was
+  cleaned) and 416 (a plane it does not serve) are passed through with its text. An imported legacy run → 404 <i>no
+  evaluation</i> without asking the executor; the card then stays as before.</p>
+  <p id="eval-prerender-hub"><b>v1.45 §56.4 — prerendered samples, hub side.</b> The executor's parameter
+  <code>report.eval_prerender_n</code> (<i>Prerendered evaluation samples</i>, integer &ge; 0, default 5: the cases whose
+  viewer slices the report renders) reaches the wizard's Parameters step and 관리 › Pipelines like every §53 parameter:
+  the hub names no executor parameter but the ones it fills itself, so <code>GET /ui/api/training/pipelines</code> and
+  <code>GET …/train-default</code> serve the executor's entry as it is (title, help, group, default) with the pipeline's
+  own default over it (<code>template_default</code> = the executor's); the wizard and the admin pipeline routes check
+  the type and, when the executor states them, <code>min</code> / <code>max</code> (422 <i>report.eval_prerender_n:
+  expected int in [0, ]</i>). A pipeline may store its own number (e.g. 10) — its jobs send it; a job whose pipeline
+  keeps the executor's 5 does not send it, the executor applies its own default; a number changed in the wizard is
+  sent and listed in <code>params_changed</code>. <code>GET …/eval/cases</code> passes the executor's
+  <code>prerendered</code> (the case positions <code>i</code> it rendered) and <code>cases[].prerendered</code> as they
+  come; an executor before E9 sends neither and the hub adds nothing. Health <code>contract_version</code>
+  <code>1.45</code>.</p>
+  <p id="eval-slice-timeout"><b>S25 — a cold case's first slice (D280).</b> The executor reads a case's image volume
+  on the first slice asked of it (prod job 65: about 53 s); until then the hub's slice proxy gave up after its usual
+  30 s executor timeout and answered 502, so a case clicked for the first time showed nothing. The slice route alone now
+  waits up to <b>180 s</b> for the executor's answer (connect still 5 s; every other executor call keeps 30 s) and
+  streams the PNG as before; with no answer by then it answers <b>504</b> <i>the training executor did not answer within
+  180 s</i> (<code>reason: timeout</code>), which the viewer shows as <i>Could not load slice k (504)</i>. The first slice
+  of such a case still takes as long as the executor's volume read.</p>
+  <p id="eval-viewer-web"><b>The viewer on the job page</b> (v1.39 §56.3). Once a job's evaluate stage has succeeded,
+  its Evaluation card spans the page width and shows a <b>Viewer</b> under the tables (a job imported from the old aitw has
+  none). On the left are the validation cases: each shows its id, its overall DSC (the mean over the classes) and one
+  coloured chip per class with that class's DSC. Clicking a case opens it, and so does clicking one of its rows in
+  <i>Per case</i>. The centre shows one slice, with the CT image and the overlays drawn on top:</p>
+  <ul>
+    <li><b>GT</b> and <b>Prediction</b> switch the two overlays on and off. With both on, GT is drawn as an outline over
+    the filled prediction (both use the same class colours, so two fills could not be told apart); either one alone is
+    filled. <b>Opacity</b> sets how strong the fill is (0.45 by default). Click a class in the legend under the slice to
+    hide it, and click again to show it.</li>
+    <li><b>Changing the slice</b>: use the slider, the mouse wheel over the image, or, after clicking the image, ↑ / ↓
+    (one slice), PgUp / PgDn (ten slices) and Home / End (the first / last slice). Beside the slider: <i>k / n</i>
+    (counted from 1) and the slice's distance in mm from the first slice.</li>
+    <li><b>Plane</b> (Axial, plus Sagittal / Coronal when the executor serves them) opens the new plane at its middle
+    slice. <b>Window</b> (CT only): Soft tissue (400/40, the default), Lung or Bone. MR images are scaled to the
+    1st–99th percentile of each volume.</li>
+  </ul>
+  <p id="eval-viewer-web-v145"><b>Every clicked case renders; what the viewer is doing</b> (v1.45 §56.4, U115). The
+  slice you asked for is always fetched first: changing the case, the plane or the window stops what was still loading
+  for the old one, the slice number is kept inside the new case's slices, and the five slices on each side are fetched
+  only once the current one is drawn (in at most three of the browser's six connections, so a click never waits behind
+  them). A slice that is still on its way after one second shows <i>Rendering…</i> over the previous picture, dimmed
+  — the first look at a case whose image the executor has not read yet can take tens of seconds. A slice that the hub
+  could not deliver is asked once more; if that fails too the picture says <i>Could not load slice k (status)</i> (for
+  example 502 when the executor took longer than the hub waits) and the previous picture stays; moving the slider asks
+  again. Cases the report prerendered (<a href="#eval-prerender">Prerendered evaluation samples</a>) carry a
+  <i>ready</i> chip, are listed first and the first of them opens when the address names no case. The parameter's title
+  and its lower bound show in the Parameters step and in 관리 › Pipelines (group <i>Evaluation report</i>).</p>
+  <p>The case, slice and plane go into the address (<code>?case=&amp;slice=&amp;plane=</code>), so a copied link
+  opens the same picture. Nothing is kept in the browser's storage. The case is the executor's case number, the slice
+  number in the address starts at 0, and axial is left out of the address. The list and the slices are loaded once per
+  evaluate result and are not polled. If the run's files were cleaned up, the card says the images are gone and keeps
+  its numbers.</p>
+  <p><b>Standard only:</b> cross-model comparisons and runs on custom inputs stay in ai-pipeline and are not registered.
+  <b>Drift and comparisons:</b> ai-pipeline does not compute a drift score; version-to-version comparison is
+  <code>/spec/compare</code> (ai-pipeline) and the hub's 평가 page, which lists a family's evaluations over versions.</p>
+  <div class="note"><b>Where the numbers live</b><span>Per case: <code>/mnt/deploy/metrics/&lt;model&gt;/&lt;model
+  version&gt;/&lt;data version&gt;/VALID/*.json</code>. Pages: ai-pipeline <code>/spec/overview</code>, the pair's detail page (with
+  leak exclusions) and 인허가 프로파일 (demographics, xlsx). The hub pulls the same profiles through §8.2.</span></div>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="tbl"><table><thead><tr><th>What the hub shows</th><th>Why</th><th>What to do</th></tr></thead><tbody>
+  <tr><td>"ask an admin to bind your NAS account (관리 › 계정 연결)"</td><td>your hub user has no NAS account link (or, as a viewer, no <i>학습 허용</i>)</td><td>an admin links it on 관리 › 계정 연결</td></tr>
+  <tr><td>409 <code>in_flight</code> — "… is already running as job …"</td><td>one live job per project and template</td><td>wait, cancel it, or pick another template</td></tr>
+  <tr><td>409 <code>pipeline_unverified</code></td><td>the pinned research pipeline failed verification</td><td>see 파이프라인; the pipeline owners fix the pin</td></tr>
+  <tr><td>Submit training failed: <code>zero_voxel_target: CTVn_LN_Ax_L2_L (requested as CTVn_L2_L), …</code></td><td>no case of the cohort has a contour for that target under any of its names (v1.34 §48) — before 2026-10-18 this trained on a NaN loss and failed later with "exit 1"</td><td>label the target, add its spelling to the registry's or the project's alternative names, or train without it</td></tr>
+  <tr><td>422 "unknown template/params …", "missing required params"</td><td>the template changed on the executor, or a required field is empty</td><td>reload 새 학습; fill the fields marked *</td></tr>
+  <tr><td>a policy or round job refused, then accepted on a later tick under the same job number</td><td>automatic jobs keep one idempotency key (policy cursor, round <code>auto</code>), so a refused job is resubmitted as the same job; the job page shows the template, parameters and cohort of the last attempt</td><td>fix the policy (e.g. a required parameter); the next tick sends it again</td></tr>
+  <tr><td>"n patient(s) not in the hub's imaging cases"</td><td>a manual patient list names patients the hub does not know</td><td>check the IDs (masked IDs cannot be pasted back)</td></tr>
+  <tr><td>deploy: <code>missing_memo</code> / <code>deploy_version_exists</code></td><td>no memo, or the version is already in <code>/mnt/deploy</code></td><td>write why it ships; choose a new version</td></tr>
+  <tr><td>"training executor not configured" / "unreachable"</td><td>the hub instance has no executor address, or the executor is down</td><td>running jobs continue; the page catches up when it answers</td></tr>
+  </tbody></table></div>
+  <div class="note"><b>"… is already running as job …" (in_flight)</b><span>the same template runs for this project → wait, or cancel that job.</span></div>
+  <div class="note"><b>"pipeline … is failed / unverified"</b><span>the pinned pipeline has not passed its check → nothing to do on your side; the 파이프라인 page shows why.</span></div>
+  <div class="note"><b>"hub user is not bound to a NAS account"</b><span>no 계정 연결 for you → ask an admin. (Auto-contour never asks for yours; its <i>"the hub's service account (app:hub) has no NAS account"</i> means the hub's own link is missing → an admin links <code>app:hub</code>.)</span></div>
+  <div class="note"><b>A failed job whose error is a log line</b><span>the executor reported the job failed without saying why → the hub read the failed stage's log and shows its last error line (<i>stage 3 of 10 (dicom_to_nifti) failed (exit 1): TypeError: …</i>); the stage's 로그 has the whole traceback.</span></div>
+  <div class="note"><b>An auto-contour row still says the models are <i>pending</i> after its job ended</b><span>the executor wrote its per-series results just after the job finished → the hub asks again every 30 s for an hour after the end; the row then lists the models that ran.</span></div>
+  <div class="note"><b>One auto-contour item failed while the job succeeded</b><span>the executor could not read that series (for example an empty SeriesNumber in every file) and left it out — the row says the reason and the stage; the job's other items are ready. Fix the series' DICOM, then auto-contour that item again.</span></div>
+  <div class="note"><b>"다운로드할 환자가 없습니다" (no patients to download)</b><span>the chosen label states / time select nothing in this project → widen the states or check the project's labels.</span></div>
+  <div class="note"><b>A GPU stage waits</b><span>the GPU is shared with ai-pipeline and needs 12 GB free host memory → it starts by itself.</span></div>
+  <div class="note"><b>A project vanished from the wizard / its policy stopped</b><span>it was deleted (v1.19 §13, D157): a deleted project is in no training list, its <code>label-set</code> / <code>approved-set</code> / feed answer 404, its policy is not polled or ticked and pre-labels for it are refused, until an admin undeletes it.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/training.html</code> · owner: labeling-server, labeling-web, ai-training-web, ai-pipeline · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

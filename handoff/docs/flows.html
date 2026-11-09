@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Flows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-root="./">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Data flows · orchestrator</span>
+  <h1>The data's path, and what is recorded at each step</h1>
+  <p class="lede">After this page you can follow one image series from the labeler's first stroke to a shipped model:
+  which record is written where, what a label state is, why any labeled sample may enter a training split, and how the
+  split's provenance names every item.</p>
+  <p class="meta">Last verified 2026-10-11 · CONTRACT v1.24 (§1 identities, §5 status machine + display stages, §6.2 split hash, §6.12 label states, §27 the labeling workflow and the explicit central send)</p>
+  <div class="toc"></div>
+</header>
+
+<section id="chain">
+  <h2>The chain</h2>
+  <div class="flow" role="img" aria-label="Series → assignment → deliverable → label revision (state) → review → cohort → split (provenance) → training job → model → evaluation → release">
+    <svg viewBox="0 0 980 190" xmlns="http://www.w3.org/2000/svg">
+      <g font-size="12.5">
+        <rect class="box" x="10" y="30" width="120" height="50" rx="8"/><text x="70" y="52" text-anchor="middle" font-weight="600">image series</text><text x="70" y="70" text-anchor="middle" class="sub">imaging_case</text>
+        <rect class="box" x="150" y="30" width="120" height="50" rx="8"/><text x="210" y="52" text-anchor="middle" font-weight="600">assignment</text><text x="210" y="70" text-anchor="middle" class="sub">project × series</text>
+        <rect class="hot" x="290" y="30" width="130" height="50" rx="8"/><text x="355" y="52" text-anchor="middle" font-weight="600">label revision</text><text x="355" y="70" text-anchor="middle" class="sub">rtss_sop_uid · state</text>
+        <rect class="box" x="440" y="30" width="110" height="50" rx="8"/><text x="495" y="52" text-anchor="middle" font-weight="600">review</text><text x="495" y="70" text-anchor="middle" class="sub">verdict, one per RTSS</text>
+        <rect class="hot" x="570" y="30" width="120" height="50" rx="8"/><text x="630" y="52" text-anchor="middle" font-weight="600">cohort → split</text><text x="630" y="70" text-anchor="middle" class="sub">dataset_version</text>
+        <rect class="box" x="710" y="30" width="120" height="50" rx="8"/><text x="770" y="52" text-anchor="middle" font-weight="600">training job</text><text x="770" y="70" text-anchor="middle" class="sub">run · stages</text>
+        <rect class="box" x="850" y="30" width="120" height="50" rx="8"/><text x="910" y="52" text-anchor="middle" font-weight="600">model</text><text x="910" y="70" text-anchor="middle" class="sub">md5 of weights</text>
+        <path class="edge" d="M130 55 H150 M270 55 H290 M420 55 H440 M550 55 H570 M690 55 H710 M830 55 H850"/>
+        <rect class="box" x="710" y="115" width="120" height="50" rx="8"/><text x="770" y="137" text-anchor="middle" font-weight="600">evaluation</text><text x="770" y="155" text-anchor="middle" class="sub">per ROI, per case</text>
+        <rect class="box" x="850" y="115" width="120" height="50" rx="8"/><text x="910" y="137" text-anchor="middle" font-weight="600">release</text><text x="910" y="155" text-anchor="middle" class="sub">version · countries</text>
+        <path class="edge" d="M910 80 V115 M830 140 H850"/>
+        <text x="20" y="150" class="tag">OncoStudio → hub /api/v1</text>
+        <text x="300" y="150" class="tag">hub (record)</text>
+        <text x="600" y="150" class="tag">hub → executor /exec/v1 → pipeline → registrations /svc/v1</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<section id="steps">
+  <h2>Step by step</h2>
+  <div class="tbl"><table><thead><tr><th>Step</th><th>Who / what</th><th>Record (key)</th><th>Details</th></tr></thead><tbody>
+  <tr><td class="num">1</td><td>A series is known to the hub (C-FIND sync, an OncoStudio session, an import)</td><td><code>imaging_case</code> (<code>image_series_uid</code>)</td><td>PatientID is an attribute, never a key; no names.</td></tr>
+  <tr><td class="num">2</td><td>A lead assigns the <b>item</b> (one study's image series — never a patient, §27.0) to a person, explicitly or by a seeded random pick, or the labeler self-assigns; it appears in that person's My works (§27.3)</td><td><code>assignment</code> (<code>id</code>; unique project × series)</td><td>status machine: unassigned → assigned → in_progress → delivered → in_review → approved, with changes_requested → in_progress; excluded from any state (§5).</td></tr>
+  <tr><td class="num">3</td><td>The labeler draws in OncoStudio; every session, stroke and edit command is recorded; a save produces a deliverable and, from v1.20, uploads the RTSTRUCT itself to the hub de-identified (§27.1), which runs the label checks on it at once (§26)</td><td><code>deliverable</code>, <code>label_revision</code> (<code>rtss_sop_uid</code>, <code>kind=human</code>, <code>file_path</code>)</td><td>See <a href="guides/labeling.html">Labeling</a>. The labeler opens the item as the raw image, image + auto-contour, or image + the last save (§27.4); the app opens the project's own label when there is one, else the auto-contour, else the image (no choice, U25); from v1.22 (§29) the auto-contour is made <b>in OncoStudio on the labeler's PC</b> by the product's engine and only recorded by the hub, ROI names unchanged (no <code>_pre</code>); before, the auto-contour is either the <b>default OncoStudio pipeline</b> (the newest release, one executor job per modality, each ROI from its owner model) or up to 8 chosen models, requested by a lead and run under the hub's service identity (§28); a project never opens an RTSTRUCT from another project (§27.0). A pre-label pushed by the platform is a <code>label_revision</code> of <code>kind=prelabel</code>; imported workbook rows are <code>kind=historical</code>.</td></tr>
+  <tr><td class="num">4</td><td>A reviewer gives a verdict in the hub</td><td><code>review</code> (one sign-off per <code>rtss_sop_uid</code>, latest wins)</td><td>See <a href="guides/review.html">Review</a>. The verdict decides the revision's <a href="#states">label state</a> from that moment. A reviewer can be named per item (§27.6); any lead may still give the verdict.</td></tr>
+  <tr><td class="num">4b</td><td>A lead <b>sends</b> the approved label to the central SCP — explicit, never automatic; the hub C-STOREs its stored copy with the patient module restored</td><td><code>central_send</code>, <code>assignment.central_sent_at</code>; display stage <b>Sent</b></td><td>Final (§27.7, U13/U14): the item is view-only, verdicts and reassignment are refused; only a lead's explicit <i>reopen</i> starts a corrected revision, which is reviewed and sent again. Prod destination unset until the user names it; dev sends go to the PC's OncoPACS.</td></tr>
+  <tr><td class="num">5</td><td>Someone (or a policy) selects a training cohort</td><td><code>label-set</code> query (as of a time, over chosen states)</td><td>The latest revision per series among the chosen states; counts per state shown in the wizard (<a href="guides/training.html">Training</a>).</td></tr>
+  <tr><td class="num">6</td><td>The executor builds the split and registers it</td><td><code>dataset_version</code> (<code>model_family</code> × <code>split_hash</code>), <code>split_item</code> (per sample: role, series, RTSS, sha, <b>label_state</b>)</td><td>See <a href="#provenance">Provenance</a> and <a href="guides/datasets.html">Datasets &amp; splits</a>.</td></tr>
+  <tr><td class="num">7</td><td>Stages run: download → convert → split → preprocess → train → export → evaluate → predict</td><td><code>training_job</code> ↔ <code>run</code> (<code>run_id</code> = executor <code>job_id</code>), <code>model_artifact</code> (<code>md5</code>)</td><td>Live log, curve and artifacts on the job page; events and registrations flow back to the hub.</td></tr>
+  <tr><td class="num">8</td><td>Metrics are computed and registered</td><td><code>evaluation</code> (family, version, data version, split_hash)</td><td>Aggregates come from ai-pipeline's calculator, never recomputed by the hub; per-case rows optional.</td></tr>
+  <tr><td class="num">9</td><td>A model is deployed (memo, new version only) and a release is packaged</td><td><code>deploy</code>, <code>release</code> (<code>version</code>)</td><td>See <a href="guides/deploy.html">Deploy</a> and <a href="guides/releases.html">Releases</a>; withdrawal is soft and reversible.</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="states">
+  <h2>Label states (v1.4)</h2>
+  <p>Every label revision has exactly one state at a point in time <code>as_of</code>. Training cohorts may include any
+  of them; the state travels with the split so a model's training data can always be characterised afterwards.</p>
+  <div class="tbl"><table><thead><tr><th>State</th><th>Definition</th><th>Typical origin</th></tr></thead><tbody>
+  <tr><td><span class="pill ok">approved</span></td><td>a human revision whose latest hub review as of <code>as_of</code> is <code>approved</code></td><td>reviewed in the hub's 검수 page</td></tr>
+  <tr><td><span class="pill warn">changes_requested</span></td><td>a human revision whose latest hub review has any other verdict</td><td>the labeler has been asked to fix something; the RTSS still exists and is a valid label</td></tr>
+  <tr><td><span class="pill info">unreviewed</span></td><td>a human revision with no hub review as of <code>as_of</code></td><td>saved from OncoStudio, not yet reviewed</td></tr>
+  <tr><td><span class="pill info">prelabel</span></td><td><code>kind=prelabel</code>: an AI pre-label not yet replaced by a human deliverable</td><td>produced by a training job's predict stage and pushed to the project's destination</td></tr>
+  <tr><td><span class="pill info">legacy</span></td><td><code>kind=historical</code>, or a revision whose only reviews were imported (<code>origin=excel</code>)</td><td>the frozen labeling workbook, old RTSS files</td></tr>
+  </tbody></table></div>
+  <div class="note"><b>Selection rule</b><span>"Latest revision per image series among the requested states": revisions whose
+  state is in the request, ordered by <code>labeled_at</code> (sent time, else creation) descending, ties human &gt;
+  historical &gt; prelabel. So <code>states=approved</code> yields the latest <em>approved</em> revision even when a newer
+  unreviewed one exists (exactly the pre-v1.4 approved set), and "all states" yields the newest label of any kind.</span></div>
+  <div class="note"><b>Prefer, never refuse</b><span>A training policy lists the states it includes (existing policies keep
+  <code>approved</code> only, so nothing changed for them; new ones default to all states). The wizard starts with all
+  states selected, approved first. No hub or executor path refuses a job because of a label state (D74).</span></div>
+</section>
+
+<section id="provenance">
+  <h2>Split provenance</h2>
+  <p>A registered split (<code>dataset_version</code>) is identified by <code>model_family</code> and <code>split_hash</code>.
+  The hash is computed the same way by the executor, ai-pipeline and the hub's deploy sync (golden vector in all three
+  test suites):</p>
+  <pre><code>line   = role \t sample_id \t image_series_uid \t rtss_series_uid \t image_sha256   (one per item, sorted)
+split_hash = sha256("\n".join(lines))
+sample_id  = the pipeline's sample id, else "img:" + sha256(normalised image path)[:20]   (never a file stem)
+image_sha256 = SHA-256 of each decompressed input file</code></pre>
+  <p>The label state is <b>provenance about</b> the RTSS the hash already names (a different revision is a different
+  RTSS series UID), so it is stored per item (<code>split_item.label_state</code>, <code>label_kind</code>) and as a
+  histogram on the version (<code>dataset_version.label_states</code>, plus the cohort request: <code>as_of</code>,
+  states, policy), <b>without changing the hash</b> (D75). Splits registered before v1.4 show <code>unknown</code>.</p>
+  <div class="tbl"><table><thead><tr><th>Where you see it</th><th>What</th></tr></thead><tbody>
+  <tr><td>hub › 학습 › 새 학습, step 4</td><td>counts per state, state selector, each candidate's state</td></tr>
+  <tr><td>hub › job page</td><td>the request (states, as_of) and the executor's resolved histogram</td></tr>
+  <tr><td>hub › 데이터셋 › a version</td><td>histogram strip and a state column per item; profile xlsx carries the column</td></tr>
+  <tr><td><code>GET /svc/v1/models/{md5}/training-split</code></td><td>the items with <code>label_state</code> for ai-pipeline's lookup from weights to training data</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="prelabel-loop">
+  <h2>The pre-label loop</h2>
+  <ol>
+    <li>A policy (or a person) starts a job; its predict stage produces RTSTRUCTs marked <code>AI_PRELABEL</code> (ROI names end in <code>_pre</code>).</li>
+    <li>The executor posts them to the hub (<code>POST /svc/v1/prelabel</code>); the hub stores a <code>label_revision(kind=prelabel)</code>, flags the assignment, and C-STOREs to the project's configured destination (dev: the Windows OncoPACS; production: none unless a lead enables it).</li>
+    <li>OncoStudio shows the suggestion; the labeler opens it, corrects, saves — the human deliverable supersedes the pre-label and the hub measures the correction.</li>
+    <li>The corrected revision is <code>unreviewed</code> until reviewed; it can already enter a training cohort if the policy or wizard includes that state.</li>
+  </ol>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/flows.html</code> · owner: orchestrator.</span>
+</footer>
+</div>
+<script src="./assets/site.js"></script>
+</body>
+</html>

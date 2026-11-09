@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OncoMLOps Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-root="./">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Start here · orchestrator</span>
+  <h1>The OncoMLOps platform, in one page</h1>
+  <p class="lede">One registry records which image series was labeled by whom, how it was reviewed, which training
+  split it entered and in what label state, which model came out, how that model scored, and what shipped. This site
+  explains the pieces, the data's path through them, who sees what, and how each function is used.</p>
+  <p class="meta">Last verified 2026-09-30 · CONTRACT v1.4 · source <code>onco-mlops/docs</code> · served by the hub at <code>/docs/</code></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What it is</h2>
+  <p>Labelers draw in <b>OncoStudio</b> (the labeling build). Everything they do reaches the <b>hub</b>, the system of
+  record for projects, assignments, reviews, label revisions, datasets and splits, runs, models, evaluations, releases,
+  training jobs and policies. Training runs on the <b>executor</b>, a headless service the hub drives; it runs the
+  research pipeline at a pinned, verified commit. <b>ai-pipeline</b> computes the regulatory metrics, packages releases
+  and owns the ROI registry file. Nothing here is a research tool: the platform records and automates what the data
+  team already does, in one place.</p>
+  <div class="status">
+    <div class="st"><span class="pill info">read first</span><b><a href="architecture.html">Architecture</a></b><span>hosts, components, ports, the eight integration flows, which repos are ours</span></div>
+    <div class="st"><span class="pill info">read first</span><b><a href="flows.html">Data flows</a></b><span>label → review → cohort → split → training → model → evaluation → release; label states; provenance</span></div>
+    <div class="st"><span class="pill info">who sees what</span><b><a href="roles.html">Roles</a></b><span>admin, lead / data team, labeler, public; the visibility matrix; accounts and OncoStudio logins</span></div>
+    <div class="st"><span class="pill ok">guides</span><b><a href="guides/labeling.html">Using it</a></b><span>labeling · rounds · review · datasets &amp; splits · training · deploy · <a href="guides/release-flow.html">release flow (배포 사용법)</a> · releases</span></div>
+    <div class="st"><span class="pill info">developers</span><b><a href="platform/HOW-TO-USE.md">Contributing</a></b><span>GitHub entry pages (rendered at github.com/oncosoft-io/onco-mlops, served here as text): REPOSITORIES · HOW-TO-USE · AGENTS-AND-ORCA</span></div>
+  </div>
+</section>
+
+<section id="who">
+  <h2>Who uses it for what</h2>
+  <div class="tbl"><table><thead><tr><th>You are…</th><th>You use…</th><th>Start with</th></tr></thead><tbody>
+  <tr><td>a labeler</td><td>OncoStudio: 내 작업 (my assignments), the ROI checklist, the save dialog's project section; the hub's 내 작업 page to see review comments</td><td><a href="guides/labeling.html">Labeling</a></td></tr>
+  <tr><td>a reviewer or project lead</td><td>hub: 프로젝트 (projects), 검수 (review queue), assignments, exports; policies for automatic training; 라운드 (labeling rounds: sample, pre-label, train, compare)</td><td><a href="guides/rounds.html">Rounds</a>, <a href="guides/review.html">Review</a>, <a href="guides/training.html">Training</a></td></tr>
+  <tr><td>the data / ML team</td><td>hub: 데이터셋 (datasets &amp; splits), 모델, 평가, 학습 (new job, jobs, pipeline), 인구통계 대조 (reconciliation); ai-pipeline for /spec metrics and packaging</td><td><a href="guides/datasets.html">Datasets &amp; splits</a>, <a href="guides/training.html">Training</a></td></tr>
+  <tr><td>an administrator</td><td>hub: 관리 (users, enums, ingest, system, account links to NAS); production windows and backups</td><td><a href="components/hub.html">Hub</a>, <a href="roles.html">Roles</a></td></tr>
+  <tr><td>a visitor without a login</td><td>the public overview on the hub's front page (project progress, releases, pipeline status) and this documentation</td><td><a href="roles.html#public">Public overview</a></td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="where">
+  <h2>Where things run</h2>
+  <div class="tbl"><table><thead><tr><th>Service</th><th>Where</th><th>Production</th><th>Dev</th></tr></thead><tbody>
+  <tr><td>Hub (labeling, registry, training UI)</td><td>10.101.1.183, docker</td><td><code>:8790</code></td><td><code>:8792</code></td></tr>
+  <tr><td>Training executor (<code>/exec/v1</code>)</td><td>10.101.1.183, systemd user units</td><td><code>:8900</code></td><td><code>:8901</code></td></tr>
+  <tr><td>ai-pipeline (metrics, packaging, ROI registry)</td><td>10.101.1.183, Flask</td><td><code>:5000</code></td><td><code>:5001</code></td></tr>
+  <tr><td>ai-platform-dataops (data management DB, dataset intake, catalogue)</td><td>10.101.1.183, web + job worker; MariaDB 11.4 in docker</td><td><code>:8096</code> (LAN, no login)</td><td>—</td></tr>
+  <tr><td>OncoStudio labeling build</td><td>labelers' Windows PCs (installer)</td><td>talks to <code>:8790</code></td><td>dev installer → <code>:8792</code></td></tr>
+  </tbody></table></div>
+  <p class="meta">Dev pair first (hub :8792 ↔ executor :8901); production changes only inside a window (20:00–07:00 KST,
+  or 30 min without a workstation session and no executor stage running).</p>
+</section>
+
+<section id="principles">
+  <h2>Principles the platform keeps</h2>
+  <ul>
+    <li><b>No patient names anywhere</b> in the hub; patient IDs are masked below the lead role.</li>
+    <li><b>Additive contracts</b>: an installed OncoStudio keeps working against the newest hub; migrations never drop or rename.</li>
+    <li><b>The pipeline is pinned</b>: the executor runs one verified commit + image of the research code and never edits it.</li>
+    <li><b>Any labeled sample may train</b> (v1.4): approved, unreviewed, changes-requested, AI pre-label or legacy — its label state is recorded with the split, and policies may prefer approved data but never refuse the rest.</li>
+    <li><b>Documentation is part of the change</b>: a behaviour, contract or UI change updates its page in the same commit (a gate refuses otherwise).</li>
+  </ul>
+</section>
+
+<section id="more">
+  <h2>Behind the pages</h2>
+  <p>The binding API text is <code>onco-mlops/CONTRACT.md</code>; every non-obvious choice and its reason is in
+  <code>DECISIONS.md</code> (U# user decisions, D# agent decisions); operations in <code>RUNBOOK.md</code>; the role
+  registry in <code>WORKSPACES.md</code>. Those files live in the shared repository on the platform host
+  (<code>/drive/project/onco-mlops</code>) and are snapshotted into every workspace's <code>handoff/</code>.</p>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/index.html</code> · owner: orchestrator · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="./assets/site.js"></script>
+</body>
+</html>

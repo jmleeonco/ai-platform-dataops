@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../">
+<div class="wrap">
+
+<header class="page">
+  <span class="eyebrow">Guide · ai-training-web</span>
+  <h1>Deploying a trained model or dataset</h1>
+  <p class="lede">After this page a lead can run a deploy from a job page safely: what the memo is for, why an existing version is refused, what a dry run shows, what lands under /mnt/deploy, and how to roll back.</p>
+  <p class="meta">Last verified 2026-10-20 · CONTRACT v1.38 · <span class="owner">owner: ai-training-web</span></p>
+  <div class="toc"></div>
+</header>
+
+<section id="what">
+  <h2>What deploy does</h2>
+  <p>Deploying copies a finished job's result into the shared production folder <code>/mnt/deploy</code>, where products and ai-pipeline pick it up. There are two kinds:</p>
+  <div class="tbl"><table><thead><tr><th>Kind</th><th>What is written</th><th>Script (unchanged research code)</th></tr></thead><tbody>
+  <tr><td><b>model</b></td><td>the exported weights (<code>3d_final_model.pt</code>) and its files into <code>/mnt/deploy/models/&lt;name&gt;/&lt;version&gt;</code></td><td><code>deploy/deploy_model.sh</code></td></tr>
+  <tr><td><b>data</b></td><td>the job's train/valid lists and their images into <code>/mnt/deploy/data/&lt;name&gt;/&lt;version&gt;</code></td><td><code>deploy/data_deploy.sh</code> (run as a copy with its settings filled in; it never deletes the target folder first)</td></tr>
+  </tbody></table></div>
+  <ul>
+    <li><b>Who may deploy:</b> hub roles <b>lead</b> and <b>admin</b>. Labelers and viewers are refused.</li>
+    <li><b>New versions only.</b> A version that already exists is refused (<code>deploy_version_exists</code>): the model script would copy over a live version in place.</li>
+    <li><b>A memo is required</b> (<code>missing_memo</code> otherwise). It is the only record of <i>why</i> something shipped.</li>
+    <li>The model name may contain only letters, digits and <code>_</code> (the script's own rule, checked before anything runs).</li>
+    <li>A deploy from the job page is a stage of its own, run by the service account; it never waits behind, or blocks, the job's other stages.</li>
+  </ul>
+  <p id="in-job"><b>A deploy inside the job</b> (v1.38 §54, U70): the default pipeline (<code>hub_loop</code>) ends in
+  a <i>Deploy &lt;name&gt; &lt;version&gt;</i> stage after the evaluation, when <code>deploy.enabled</code> is on. The hub
+  fills the model name, the next version (editable in the wizard) and the memo (<i>wizard: &lt;name&gt; · by
+  &lt;user&gt;</i>), so the same rules hold: a taken version or an empty name, version or memo is refused when the job is
+  <b>created</b>, not after a day of training; the stage runs only if the evaluation and every stage before it
+  succeeded; it records the same deploy as the button below. Off (the <code>once</code> template's default, or a loop
+  job that names no model), the job has no deploy stage.</p>
+</section>
+
+<section id="how">
+  <h2>How to deploy from the hub</h2>
+  <ol>
+    <li>Open the finished job (학습 › 작업 → the job) and choose 배포 (deploy).</li>
+    <li>Pick the kind (model or data), then the name, the version, the modality (<code>ct</code>/<code>mr</code>) and, for a model, the ROIs to mark as research (one comma-separated list; empty = all released).</li>
+    <li>Write the memo: what this is and why it ships.</li>
+    <li>Leave <b>dry run</b> ticked first. The dry run shows the exact command that would run and the target folder, and checks that nothing would be overwritten — it writes nothing.</li>
+    <li>Untick dry run to deploy for real. The deploy appears as a new stage on the job page with its own log.</li>
+  </ol>
+  <div class="note warn"><b>Tests and acceptance never deploy for real</b><span>Only dry runs or scratch deploys (D67): <code>/mnt/deploy</code> is shared production.</span></div>
+  <p id="scratch"><b>Scratch deploys</b> (dev): <code>deploy_model.sh</code> always writes
+  <code>/mnt/deploy/models</code> and commits into the research repository, whatever folder the executor is told, so an
+  executor started with <code>AITW_DEPLOY_SCRATCH=&lt;folder&gt;</code> does not run the scripts at all: a deploy stage
+  copies the exported <code>3d_final_model.pt</code> into <code>&lt;folder&gt;/models/&lt;name&gt;/&lt;version&gt;</code> with a
+  <code>deploy.json</code> (memo, the command that was <i>not</i> run), and the stage log starts with
+  <code>[scratch deploy …] not run: sh deploy/deploy_model.sh …</code>. Version checks look in that folder; the hub
+  still gets the deploy record. The dev executor (<code>:8901</code>) runs this way; production never sets it.</p>
+</section>
+
+<section id="record">
+  <h2>What is recorded</h2>
+  <div class="tbl"><table><thead><tr><th>Record</th><th>Where</th></tr></thead><tbody>
+  <tr><td>the files</td><td><code>/mnt/deploy/models|data/&lt;name&gt;/&lt;version&gt;</code></td></tr>
+  <tr><td>who, when, memo; for a model the md5 of the weights, for data the split hash</td><td>a deploy record at the hub (<code>POST /svc/v1/deploys</code>, CONTRACT §3)</td></tr>
+  <tr><td>a "Deploy model: &lt;name&gt; v&lt;version&gt;" commit</td><td>the research repository — <code>deploy_model.sh</code> makes it itself; the executor never edits that repository otherwise</td></tr>
+  <tr><td>the model folder ↔ md5, registered releases</td><td>the hub's model pages, filled by its <code>/mnt/deploy</code> sync; ai-pipeline's flags</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="rollback">
+  <h2>Rollback and mistakes</h2>
+  <ul>
+    <li><b>Nothing is overwritten</b>, so a bad deploy never replaces a good one: the previous version is still there and still what products use until someone points them at the new one.</li>
+    <li>To withdraw a version, retire it in ai-pipeline (model flags) or the release process — see the releases guide. Deleting from <code>/mnt/deploy</code> is a person's decision, never an automatic step.</li>
+    <li>A deploy that failed half-way leaves a partly written folder: its version counts as existing, so deploy again with the next version and ask whoever owns <code>/mnt/deploy</code> to remove the broken folder.</li>
+  </ul>
+</section>
+
+<section id="gotchas">
+  <h2>What can go wrong</h2>
+  <div class="note"><b>"a memo is required"</b><span>the memo was empty → write one; it is the only record of why.</span></div>
+  <div class="note"><b>"… already exists; deployed versions are never overwritten"</b><span>that name/version is taken → choose a new version.</span></div>
+  <div class="note"><b>"only a lead or an admin may deploy"</b><span>your hub role is labeler or viewer → ask a lead.</span></div>
+  <div class="note"><b>"job … has no exported model"</b><span>the job did not reach its export stage, or was a data-only job → deploy a job that exported, or deploy the data kind.</span></div>
+  <div class="note"><b>The deploy stage waits</b><span>the service lane or the target's lock is held by another stage → it starts when that finishes; the job page shows it queued.</span></div>
+  <div class="note"><b>Permission denied under /mnt/deploy</b><span>the NFS export or folder ownership changed → an administrator fixes the share; nothing was overwritten.</span></div>
+</section>
+
+<footer>
+  <span>Source: <code>onco-mlops/docs/guides/deploy.html</code> · owner: ai-training-web · edit the master and run <code>scripts/docs-sync.sh</code> (docs/README.md).</span>
+</footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>
