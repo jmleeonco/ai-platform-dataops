@@ -2,7 +2,7 @@
 
 공공 의료영상 데이터셋 폴더를 웹 브라우저에서 처리하는 프로젝트입니다. 운영 위치는 10.101.1.183입니다.
 흐름은 **폴더 지정 → 에이전트 분석·HTML 보고서 → 2케이스 Local SCP 시험 전송 → 최종 승인 → Central SCP 전송과 관리 DB 등록**입니다.
-Central 대상은 아직 정하지 않았습니다(2026-10-28). 승인까지는 진행되고, 전송은 대상을 설정할 때까지 대기합니다.
+Central(`ONCOPACS@10.101.1.4:4002`)은 2026-11-02부터 소유자가 승인한 run만 보냅니다(지금까지 AMOS 1건). 관리 DB에는 기존 LAB DB와 `/mnt/deploy/data` 배포 묶음 사본도 들어 있어 웹에서 데이터셋 목록·검색·표로 볼 수 있습니다. **현재 상태와 인계 사항은 [docs/HANDOVER.md](docs/HANDOVER.md)(영문)를 먼저 보세요.**
 
 ## 상태
 
@@ -12,19 +12,21 @@ Central 대상은 아직 정하지 않았습니다(2026-10-28). 승인까지는 
 | 버전 있는 plan(schema 1) + 결정적 검증기, 미해결 항목/추정 modality 구분 | 구현, 테스트 |
 | 고정 artifact(prepare): DICOM 바이트 그대로 복사, NIfTI→DICOM 결정적 변환, sha256 manifest | 구현, 테스트 |
 | Local SCP 전송: 인스턴스별 journal, 재시도, 변조 artifact 차단, 원격 host 차단 | 구현, 테스트 (loopback SCP) |
-| 관리 DB: MariaDB 11.4 (Docker, 183), migration 0001–0002, 멱등 등록·충돌 시 롤백 | 구현, 테스트 (일회용 schema) |
+| 관리 DB: MariaDB 11.4 (Docker, 183), migration 0001–0007, 멱등 등록·충돌 시 롤백, 가명 대응 DB 분리 | 구현, 테스트 (일회용 schema) |
 | 로컬 HTML 뷰어 (run·메타데이터·DB 예정/등록 비교·전송 결과·슬라이스 뷰어·DB 테이블·백업) | 구현, 테스트 (읽기 전용) |
 | Nightly backup → `/mnt/ai-pipeline/backups/ai-platform-dataops` (00:30, §65 규격) | 구현, 1회 실행, 복원 검증 |
 | 웹 흐름: 폴더 → 분석 에이전트(Claude, 읽기 전용) → 결정적 검증 → 보고서·수정 → 파일럿 → 승인 | 구현, 테스트, AMOS로 실제 실행 |
 | 라벨 맵 → RTSTRUCT (영상 격자 일치 확인, 왕복 Dice, 뷰어 윤곽 표시) | 구현, 테스트, AMOS 2케이스 OS_LJM 수신 |
-| Central 전송 어댑터 (승인 plan과 해시가 맞을 때만, journal·재시도) → DB 등록 | 구현, 테스트 (loopback). 실제 대상 미설정 |
-| oncolabdb export, Central 수신본 검증(scpdb 조회) | 미구현 |
+| Central 전송 어댑터 (승인 plan과 해시가 맞을 때만, journal·재시도) → DB 등록 | 구현, 테스트, AMOS 98,975개 Central 전송·등록 (11-02) |
+| 기존 DB(LAB) 값 복사 `import-legacy`, 배포 묶음 등록 `import-deploy` (Central은 읽기 전용 C-FIND/C-GET) | 구현, 테스트, 실행 (11-03) |
+| 웹 카탈로그: `/datasets`, `/series/<uid>`, `/search`, `/browse`(표·검색 패널·CSV) | 구현, 테스트 |
+| Central 수신본 검증(scpdb 조회) | 미구현 (oncolabdb export는 하지 않기로 함, 10-29) |
 
 ## 사용 (183, 저장소 루트)
 
 ```bash
 PY=~/.venvs/ai-platform-dataops/bin/python
-$PY -m pytest -q                                           # 61 tests (DB 테스트는 관리 DB가 있어야 실행)
+$PY -m pytest -q -p no:warnings                            # 125 tests (DB 테스트는 관리 DB가 있어야 실행)
 $PY -m dataops plan /path/to/dataset --dataset ds.json     # inventory + plan → runtime/runs/<run>/
 $PY -m dataops validate RUN                                # plan.json 수정 후 재검증
 $PY -m dataops prepare RUN                                 # artifact 고정 + manifest
@@ -42,6 +44,7 @@ $PY -m dataops analyze DIR | pilot RUN | approve RUN --by 이름 --confirm 데�
 
 ## 설계 문서
 
+- [인계·현재 상태 (영문)](docs/HANDOVER.md)
 - [운영(DB·웹·백업·복원)](docs/OPERATIONS.md)
 - [확정 요구사항·화면·실행 흐름](docs/WORKFLOW.md)
 - [구현 순서·검증 기준](docs/IMPLEMENTATION.md)

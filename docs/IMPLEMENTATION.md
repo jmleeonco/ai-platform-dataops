@@ -1,5 +1,8 @@
 # Implementation handoff / ordered backlog
 
+> Current state (2026-11-09): see `docs/HANDOVER.md`. M4 Central publication is done and was used for AMOS
+> (2026-11-02); the status sections below are kept as the dated record.
+
 Owner asks agents to implement, not merely redesign. Start by running the existing tests.
 Use the small existing sender as a reusable baseline, not a production-ready publisher.
 Update this checklist when actual acceptance criteria pass; retain limitations in README.

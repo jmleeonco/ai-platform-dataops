@@ -4,6 +4,8 @@ Owner decisions 2026-10-28: the management DB lives on this server (Docker Maria
 no sudo); nightly backups go to the NAS under `/mnt/ai-pipeline/backups` (CONTRACT §65 layout);
 data goes to the **local SCP only** — no Central publication for now; a locally hosted HTML viewer
 shows runs, extracted metadata, DB rows, delivery results and backups.
+Later decisions: Central publication is enabled for owner-approved runs since 2026-11-02 (Browser flow step 6
+below and docs/HANDOVER.md for the current state).
 
 ## Components
 
