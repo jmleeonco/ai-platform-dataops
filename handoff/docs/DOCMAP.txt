@@ -125,3 +125,7 @@ ai-platform-dataops dataops/web/*.py                 components/dataops.html
 ai-platform-dataops sql/migrations/*.sql             components/dataops.html
 ai-platform-dataops sql/deid_map_migrations/*.sql    components/dataops.html
 ai-platform-dataops ops/backup/*.sh                  components/dataops.html
+
+# v1.64 §79 DataOps in the hub web (2026-11-09)
+labeling-server app/ui/routes_dataops.py          components/hub.html
+labeling-web web/src/pages/DataOps.svelte         components/hub.html
