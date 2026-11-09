@@ -1087,6 +1087,15 @@
   (rows with a human revision and no send: C-FIND of the newest revision; found → recorded with <i>backfill: found on the
   central PACS</i> and the object's StructureSetDate+Time, else SeriesDate+Time, else the revision's time). Nothing is
   ever sent by any of this (D53).</p>
+  <p id="central-ack-app"><b>In OncoStudio (O33).</b> Saving an item's structure set to a DICOM node (the Save dialog's
+  PACS destination) works as before. Once the save's label is on the hub, the app tells the hub about that store once —
+  the node's host, port and AE and the time the store finished. The row then reads what the hub says after its next
+  refresh: <b>Sent · review pending</b> (not approved yet) or <b>Sent</b>, and a short note says <i>Sent to ONCOPACS — the
+  hub recorded it</i>. A save to your own OncoPACS (not the project's central PACS — the normal case) changes nothing on
+  the row: it stays <i>Labeled</i>. When the hub does not record a send to the central PACS the row keeps its stage and
+  adds the hub's words — <i>Labeled · not found on the central PACS: …</i> (also said in a note) — or <i>not acknowledged
+  by the hub</i> when the hub could not be asked (an older hub, no network). The app never stores a second time; a failed store, a save to a file
+  and the OncoPACS internal channel tell the hub nothing.</p>
   <p id="central-ack-web"><b>On the hub's pages (W45).</b> The stage reads <b>Sent · review pending</b> (a dashed green pill)
   while no verdict approved the row; its tooltip says <i>Sent from OncoStudio by SHK at &lt;time&gt;; not reviewed yet</i>.
   A Sent pill's tooltip names where the send came from: <i>Sent from the hub by &lt;lead&gt;</i>, <i>Sent from OncoStudio by
