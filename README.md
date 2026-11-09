@@ -26,7 +26,7 @@ Central(`ONCOPACS@10.101.1.4:4002`)은 2026-11-02부터 소유자가 승인한 r
 
 ```bash
 PY=~/.venvs/ai-platform-dataops/bin/python
-$PY -m pytest -q -p no:warnings                            # 134 tests (DB 테스트는 관리 DB가 있어야 실행)
+$PY -m pytest -q -p no:warnings                            # 139 tests (DB 테스트는 관리 DB가 있어야 실행)
 $PY -m dataops plan /path/to/dataset --dataset ds.json     # inventory + plan → runtime/runs/<run>/
 $PY -m dataops validate RUN                                # plan.json 수정 후 재검증
 $PY -m dataops prepare RUN                                 # artifact 고정 + manifest

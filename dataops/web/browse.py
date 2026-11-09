@@ -18,6 +18,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from .. import db as dbmod
+from .prefix import url
 from .catalog import ORIGIN_SQL, ORIGINS, SOURCE_KINDS, roi_list
 
 PAGE_SIZES = (50, 100, 200, 500)
@@ -222,13 +223,13 @@ def _cell(c: dict, r: dict) -> dict:
     text = c["labels"].get(str(v), str(v))
     out = {"text": text}
     if c["key"] == "dataset":
-        out["href"] = f"/datasets/{r['_dataset_uuid']}"
+        out["href"] = url(f"/datasets/{r['_dataset_uuid']}")
     elif c["key"] in ("series_uid", "series_desc") and r.get("_series_uid"):
-        out["href"] = f"/series/{r['_series_uid']}"
+        out["href"] = url(f"/series/{r['_series_uid']}")
     elif c["key"] == "ref_series":
-        out["href"] = f"/series/{v}"
+        out["href"] = url(f"/series/{v}")
     elif c["key"] == "patient_id":
-        out["href"] = "/search?q=" + quote(str(v))
+        out["href"] = url("/search?q=") + quote(str(v))
     return out
 
 
@@ -320,7 +321,7 @@ def register_browse_views(app, page, db_conn, to_csv) -> None:
         out = []
 
         def without(*pairs):
-            return "/browse?" + urlencode([kv for kv in state if kv not in pairs])
+            return url("/browse?") + urlencode([kv for kv in state if kv not in pairs])
         if q:
             out.append({"label": "검색", "value": q, "drop": without(("q", q))})
         for k, v in filters.items():
@@ -365,7 +366,7 @@ def register_browse_views(app, page, db_conn, to_csv) -> None:
 
         def link(**kw):
             kw = {"sort": sort, "dir": "desc" if desc else "asc", "n": n, **kw}
-            return "/browse?" + urlencode(state + list(kw.items()))
+            return url("/browse?") + urlencode(state + list(kw.items()))
         more_open = any(not c["main"] for c in view["columns"] if c["key"] in filters) or \
             bool(special.get("date_from") or special.get("date_to"))
         cells = [[_cell(c, r) for c in cols] for r in rows]
@@ -373,7 +374,7 @@ def register_browse_views(app, page, db_conn, to_csv) -> None:
                     pages=max(1, -(-total // n)), bad=bad, choices=opts, suggest=suggest,
                     chips=chips(view, state, filters, special, q), elapsed=time.monotonic() - t0, link=link,
                     more_open=more_open,
-                    csv_link="/browse.csv?" + urlencode(state + [("sort", sort), ("dir", "desc" if desc else "asc")]),
+                    csv_link=url("/browse.csv?") + urlencode(state + [("sort", sort), ("dir", "desc" if desc else "asc")]),
                     **ctx)
 
     @app.get("/browse.csv")

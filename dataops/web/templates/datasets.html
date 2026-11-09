@@ -16,20 +16,20 @@
 </section>
 {% endif %}
 <section>
-<form class="inline" method="get" action="/datasets">
-  <a class="badge{% if not origin %} on{% endif %}" href="/datasets?q={{ q|urlencode }}">전체 {{ n_all }}</a>
-  {% for k, label in origins.items() %}<a class="badge{% if origin == k %} on{% endif %}" href="/datasets?origin={{ k }}&amp;q={{ q|urlencode }}">{{ label }} {{ counts[k] }}</a> {% endfor %}
-  <input name="q" value="{{ q }}" placeholder="이름 일부">
+<form class="inline" method="get" action="{{ root }}/datasets">
+  <a class="badge{% if not origin %} on{% endif %}" href="{{ root }}/datasets?q={{ q|urlencode }}">전체 {{ n_all }}</a>
+  {% for k, label in origins.items() %}<a class="badge{% if origin == k %} on{% endif %}" href="{{ root }}/datasets?origin={{ k }}&amp;q={{ q|urlencode }}">{{ label }} {{ counts[k] }}</a> {% endfor %}
+  <input name="q" value="{{ q }}" placeholder="이름 또는 접두어 일부">
   {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
   <button>찾기</button>
-  <a href="/search">환자·시리즈·ROI 검색 →</a> <a href="/browse">표로 보기 →</a>
+  <a href="{{ root }}/search">환자·시리즈·ROI 검색 →</a> <a href="{{ root }}/browse">표로 보기 →</a>
 </form>
 <div class="table-wrap"><table>
-<tr><th>이름</th><th>출처</th><th>라이선스</th><th>상업적 이용</th><th>PatientID 접두어</th><th class="num" title="이 데이터셋이 등록한 환자와, 연결된 시리즈의 환자 (PatientID 기준)">환자</th><th class="num">시리즈</th><th class="num">RTSTRUCT</th><th class="num">train / valid</th><th class="num">DICOM 파일</th><th>등록일</th></tr>
+<tr><th>이름</th><th>출처</th><th>라이선스</th><th>상업적 이용</th><th title="PatientID 접두어: 등록된 값, 없으면 이 시스템 run의 plan 값">접두어</th><th class="num" title="이 데이터셋이 등록한 환자와, 연결된 시리즈의 환자 (PatientID 기준)">환자</th><th class="num">시리즈</th><th class="num">RTSTRUCT</th><th class="num">train / valid</th><th class="num">DICOM 파일</th><th>등록일</th></tr>
 {% for d in rows %}
-<tr><td><a href="/datasets/{{ d.dataset_uuid }}" title="{{ d.dataset_uuid }}">{{ d.name }}</a></td>
+<tr><td><a href="{{ root }}/datasets/{{ d.dataset_uuid }}" title="{{ d.dataset_uuid }}">{{ d.name }}</a></td>
 <td>{% if d.origin == 'legacy' %}기존 DB #{{ d.legacy_id }}{% else %}{{ origins[d.origin] }}{% endif %}</td>
-<td>{{ d.license or '-' }}</td><td>{{ d.commercial_use }}</td><td>{{ d.patient_id_prefix or '-' }}</td>
+<td>{{ d.license or '-' }}</td><td>{{ d.commercial_use }}</td><td class="mono">{{ d.patient_id_prefix or '-' }}</td>
 <td class="num">{{ "{:,}".format(d.n_subjects) }}</td><td class="num">{{ "{:,}".format(d.n_series) }}</td>
 <td class="num">{{ "{:,}".format(d.n_rt|int) }}</td>
 <td class="num">{% if d.n_train or d.n_valid %}{{ "{:,}".format(d.n_train|int) }} / {{ "{:,}".format(d.n_valid|int) }}{% else %}-{% endif %}</td>

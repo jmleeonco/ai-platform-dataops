@@ -16,7 +16,7 @@
 </section>
 {%- endmacro %}
 {% macro json_table(id, src, csv, table=None, refresh=None, run=None) -%}
-<div class="jt" id="{{ id }}" data-src="{{ src }}"{% if table %} data-table="{{ table }}"{% endif %}{% if refresh %} data-refresh="{{ refresh }}"{% endif %}{% if run %} data-run="{{ run.id }}"{% endif %} data-csv="{{ csv }}">
+<div class="jt" id="{{ id }}" data-src="{{ root }}{{ src }}"{% if table %} data-table="{{ table }}"{% endif %}{% if refresh %} data-refresh="{{ refresh }}"{% endif %}{% if run %} data-run="{{ run.id }}"{% endif %} data-csv="{{ root }}{{ csv }}">
   <p class="muted small jt-info">불러오는 중…</p>
 </div>
 {%- endmacro %}
@@ -38,7 +38,7 @@
 {% for st in ['신규', '같음', '변경', '충돌'] %}<td class="num" id="c7-{{ r[0] }}-{{ st }}">-</td>{% endfor %}<td class="small">{{ r[7] or '' }}</td></tr>{% endfor %}
 </table></div>
 {% for r in sec.rows %}
-<h3 id="t7-{{ r[0] }}" class="mono">{{ r[0] }} <span class="muted small">{{ r[1] }} · {{ '{:,}'.format(r[2]) }}행{% if r[7] %} · {{ r[7] }}{% endif %} · <a href="/db/{{ r[0] }}">DB에서 보기</a></span></h3>
+<h3 id="t7-{{ r[0] }}" class="mono">{{ r[0] }} <span class="muted small">{{ r[1] }} · {{ '{:,}'.format(r[2]) }}행{% if r[7] %} · {{ r[7] }}{% endif %} · <a href="{{ root }}/db/{{ r[0] }}">DB에서 보기</a></span></h3>
 {{ json_table("jt7-" ~ r[0], "/runs/" ~ run.id ~ "/records.json", "/runs/" ~ run.id ~ "/records/" ~ r[0] ~ ".csv", table=r[0], refresh=15) }}
 {% endfor %}
 </section>

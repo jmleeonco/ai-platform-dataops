@@ -14,7 +14,7 @@
 
 <section>
 {% if configured %}
-<form method="post" action="/legacy/refresh" class="inline">{{ csrf_field(csrf) }}<button type="submit" class="primary">구조 다시 읽기</button>
+<form method="post" action="{{ root }}/legacy/refresh" class="inline">{{ csrf_field(csrf) }}<button type="submit" class="primary">구조 다시 읽기</button>
 <span class="muted small">information_schema(테이블·열·인덱스·FK)와 VERSION()만 읽기 전용 세션에서 조회합니다. 운영 테이블의 행은 읽지도 쓰지도 않습니다.</span></form>
 {% else %}
 <p class="notice">기존 DB 연결 정보가 없습니다. 운영 DB의 <b>SELECT 전용</b> 계정을 <code>~/.config/ai-platform-dataops/env</code>에 넣고 웹앱을 재시작하면 여기서 구조를 읽을 수 있습니다.</p>

@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from .. import db as dbmod
 from .. import legacy_db
 from .actions import checked_form
+from .prefix import url
 from ..util import now_iso
 
 PAGE_SIZES = (25, 50, 100, 200)
@@ -92,8 +93,8 @@ def fk_href(sch: dict, fk, value) -> str | None:
         return None
     rt, rc = fk
     if sch.get(rt, {}).get("pk") == [rc]:
-        return f"/db/{rt}/row?" + urlencode({rc: str(value)})
-    return f"/db/{rt}?" + urlencode({rc: str(value)})
+        return url(f"/db/{rt}/row?") + urlencode({rc: str(value)})
+    return url(f"/db/{rt}?") + urlencode({rc: str(value)})
 
 
 def live_sig(marks: dict, tables: list[str]) -> str:
@@ -177,9 +178,9 @@ def register_db_views(app, settings, page, db_conn, to_csv, map_conn=None):
         try:
             snap = legacy_db.refresh(settings.legacy_db, settings.runtime_dir)
         except legacy_db.LegacyError as e:
-            return RedirectResponse(f"/legacy?err={quote(str(e))}", status_code=303)
+            return RedirectResponse(url(f"/legacy?err={quote(str(e))}"), status_code=303)
         msg = f"{len(snap['tables'])}개 테이블 구조를 읽었습니다 ({snap['host']}, {snap['version']})"
-        return RedirectResponse(f"/legacy?msg={quote(msg)}", status_code=303)
+        return RedirectResponse(url(f"/legacy?msg={quote(msg)}"), status_code=303)
 
     @app.get("/db/state.json")
     def db_state(t: str = "", exact: int = 0):
@@ -269,7 +270,7 @@ def register_db_views(app, settings, page, db_conn, to_csv, map_conn=None):
         return page(request, "table.html", table=table, meta=meta, desc=TABLE_DESC.get(table, ""), cells=cells,
                     pk_links=pk_links, total=total, p=p, n=n, pages=max(1, -(-total // n)), q=q, filters=filters,
                     sort=order_col, dir=dir, link=link, page_sizes=PAGE_SIZES, live=lv,
-                    csv_link=f"/db/{table}.csv?" + urlencode({**base, "sort": order_col, "dir": dir}))
+                    csv_link=url(f"/db/{table}.csv?") + urlencode({**base, "sort": order_col, "dir": dir}))
 
     @app.get("/db/{table}/row", response_class=HTMLResponse)
     def db_row(request: Request, table: str):
@@ -290,7 +291,7 @@ def register_db_views(app, settings, page, db_conn, to_csv, map_conn=None):
             for child, ccol, pcol in meta["children"]:
                 cnt = dbmod.query(conn, f"SELECT COUNT(*) AS n FROM `{child}` WHERE `{ccol}`=%s", (row[pcol],))[0]["n"]
                 children.append({"table": child, "col": ccol, "n": cnt,
-                                 "href": f"/db/{child}?" + urlencode({ccol: str(row[pcol])})})
+                                 "href": url(f"/db/{child}?") + urlencode({ccol: str(row[pcol])})})
             lv = live(conn, [table] + sorted({c[0] for c in meta["children"]} - {table}))
         finally:
             conn.close()

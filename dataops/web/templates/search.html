@@ -4,10 +4,10 @@
 <h1>관리 DB 검색</h1>
 {% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
 <section>
-<form class="inline" method="get" action="/search">
+<form class="inline" method="get" action="{{ root }}/search">
   <input name="q" value="{{ q }}" placeholder="PatientID · 환자 이름 · Series/Study UID 앞부분 · 시리즈 설명 · ROI 이름" size="60" autofocus>
   <button>검색</button>
-  <a href="/browse{% if q %}?q={{ q|urlencode }}{% endif %}">표로 보기 →</a>
+  <a href="{{ root }}/browse{% if q %}?q={{ q|urlencode }}{% endif %}">표로 보기 →</a>
 </form>
 <p class="muted">두 글자 이상. 종류마다 처음 {{ limit }}개까지 보여 줍니다. UID는 앞부분으로 찾습니다.</p>
 </section>
@@ -15,24 +15,24 @@
 {% set any = res.datasets or res.subjects or res.series or res.rois %}
 {% if not any %}<p class="muted">찾은 것이 없습니다.</p>{% endif %}
 {% if res.datasets %}<section><h2>데이터셋 {{ res.datasets|length }}</h2>
-<p>{% for d in res.datasets %}<a class="badge" href="/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a> {% endfor %}</p></section>{% endif %}
+<p>{% for d in res.datasets %}<a class="badge" href="{{ root }}/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a> {% endfor %}</p></section>{% endif %}
 {% if res.roi_names %}<section><h2>ROI 이름 {{ res.roi_names|length }}</h2>
 <div class="table-wrap"><table><tr><th>ROI 이름</th><th class="num">RTSTRUCT</th><th>들어 있는 데이터셋</th></tr>
-{% for e in res.roi_names[:limit] %}<tr><td><a href="/browse?f_roi={{ e.name|urlencode }}&amp;f_roi_exact=1" title="이 ROI가 있는 RTSTRUCT와 영상을 표로">{{ e.name }}</a></td><td class="num">{{ "{:,}".format(e.series|length) }}</td>
-<td>{% set ds = e.datasets.items()|list %}{% for du, name in ds[:6] %}<a class="badge" href="/datasets/{{ du }}?q={{ e.name|urlencode }}&amp;modality=RTSTRUCT">{{ name }}</a> {% endfor %}{% if ds|length > 6 %}<details style="display:inline"><summary>외 {{ ds|length - 6 }}개</summary>{% for du, name in ds[6:] %}<a class="badge" href="/datasets/{{ du }}?q={{ e.name|urlencode }}&amp;modality=RTSTRUCT">{{ name }}</a> {% endfor %}</details>{% endif %}</td></tr>{% endfor %}
+{% for e in res.roi_names[:limit] %}<tr><td><a href="{{ root }}/browse?f_roi={{ e.name|urlencode }}&amp;f_roi_exact=1" title="이 ROI가 있는 RTSTRUCT와 영상을 표로">{{ e.name }}</a></td><td class="num">{{ "{:,}".format(e.series|length) }}</td>
+<td>{% set ds = e.datasets.items()|list %}{% for du, name in ds[:6] %}<a class="badge" href="{{ root }}/datasets/{{ du }}?q={{ e.name|urlencode }}&amp;modality=RTSTRUCT">{{ name }}</a> {% endfor %}{% if ds|length > 6 %}<details style="display:inline"><summary>외 {{ ds|length - 6 }}개</summary>{% for du, name in ds[6:] %}<a class="badge" href="{{ root }}/datasets/{{ du }}?q={{ e.name|urlencode }}&amp;modality=RTSTRUCT">{{ name }}</a> {% endfor %}</details>{% endif %}</td></tr>{% endfor %}
 </table></div></section>{% endif %}
 {% if res.rois %}<section><h2>ROI 이름이 맞는 RTSTRUCT {{ res.rois|length }}{% if res.rois|length >= limit %}+{% endif %}</h2>
 <div class="table-wrap"><table><tr><th>Series UID</th><th>PatientID</th><th>맞는 ROI</th><th class="num">데이터셋 수</th></tr>
-{% for r in res.rois %}<tr><td class="mono"><a href="/series/{{ r.series_uid }}">{{ r.series_uid|short }}</a></td><td>{{ r.patient_id }}</td><td class="rois">{{ r.hits|join(', ') }}</td><td class="num">{{ r.n_datasets }}</td></tr>{% endfor %}
+{% for r in res.rois %}<tr><td class="mono"><a href="{{ root }}/series/{{ r.series_uid }}">{{ r.series_uid|short }}</a></td><td>{{ r.patient_id }}</td><td class="rois">{{ r.hits|join(', ') }}</td><td class="num">{{ r.n_datasets }}</td></tr>{% endfor %}
 </table></div></section>{% endif %}
 {% if res.subjects %}<section><h2>환자 {{ res.subjects|length }}{% if res.subjects|length >= limit %}+{% endif %}</h2>
 <div class="table-wrap"><table><tr><th>PatientID</th><th>환자 이름</th><th>들어 있는 데이터셋</th></tr>
 {% for r in res.subjects %}<tr><td>{{ r.patient_id }}</td><td>{{ r.names|sort|join(', ') }}</td>
-<td>{% for du, name in r.datasets.items() %}<a class="badge" href="/datasets/{{ du }}?q={{ r.patient_id|urlencode }}">{{ name }}</a> {% endfor %}</td></tr>{% endfor %}
+<td>{% for du, name in r.datasets.items() %}<a class="badge" href="{{ root }}/datasets/{{ du }}?q={{ r.patient_id|urlencode }}">{{ name }}</a> {% endfor %}</td></tr>{% endfor %}
 </table></div></section>{% endif %}
 {% if res.series %}<section><h2>시리즈 {{ res.series|length }}{% if res.series|length >= limit %}+{% endif %}</h2>
 <div class="table-wrap"><table><tr><th>Series UID</th><th>Modality</th><th>설명</th><th>PatientID</th><th class="num">데이터셋 수</th></tr>
-{% for r in res.series %}<tr><td class="mono"><a href="/series/{{ r.series_uid }}">{{ r.series_uid }}</a></td><td>{{ r.modality }}</td><td>{{ r.description or '' }}</td><td>{{ r.patient_id }}</td><td class="num">{{ r.n_datasets }}</td></tr>{% endfor %}
+{% for r in res.series %}<tr><td class="mono"><a href="{{ root }}/series/{{ r.series_uid }}">{{ r.series_uid }}</a></td><td>{{ r.modality }}</td><td>{{ r.description or '' }}</td><td>{{ r.patient_id }}</td><td class="num">{{ r.n_datasets }}</td></tr>{% endfor %}
 </table></div></section>{% endif %}
 {% endif %}
 {% endblock %}

@@ -106,7 +106,7 @@
           if ((c.key === "series_uid" || c.key === "SeriesInstanceUID") && box.dataset.run && r.local_status &&
               r._kind !== "rtstruct") {
             var a = el("a", "mono", s);
-            a.href = "/runs/" + encodeURIComponent(box.dataset.run) + "/series/" + encodeURIComponent(v);
+            a.href = (document.body.dataset.root || "") + "/runs/" + encodeURIComponent(box.dataset.run) + "/series/" + encodeURIComponent(v);
             td.appendChild(a);
           } else if (badge) {
             td.appendChild(el("span", "badge " + badge, s));

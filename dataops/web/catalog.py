@@ -14,6 +14,7 @@ from fastapi import HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .. import db as dbmod
+from ..runs import list_runs
 
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 UID_RE = re.compile(r"[0-9.]{1,64}")
@@ -36,7 +37,7 @@ def roi_list(v) -> list[str]:
     return [str(x) for x in got] if isinstance(got, list) else [str(got)]
 
 
-def register_catalog_views(app, page, db_conn) -> None:
+def register_catalog_views(app, page, db_conn, runs_dir=None) -> None:
     def with_conn(request, fn, template_on_error="datasets.html"):
         conn, err = db_conn()
         if conn is None:
@@ -85,9 +86,12 @@ def register_catalog_views(app, page, db_conn) -> None:
     def datasets(request: Request, origin: str = "", q: str = ""):
         def run(conn):
             rows, totals = dataset_list(conn)
+            planned = {m["dataset_uuid"]: m["patient_id_prefix"] for m in (reversed(list_runs(runs_dir)) if runs_dir else [])
+                       if m.get("patient_id_prefix")}                     # newest run's plan wins
+            rows = [{**r, "patient_id_prefix": r["patient_id_prefix"] or planned.get(r["dataset_uuid"])} for r in rows]
             counts = {k: sum(1 for r in rows if r["origin"] == k) for k in ORIGINS}
             shown = [r for r in rows if (not origin or r["origin"] == origin)
-                     and (not q or q.lower() in r["name"].lower())]
+                     and (not q or q.lower() in r["name"].lower() or q.lower() in (r["patient_id_prefix"] or "").lower())]
             return page(request, "datasets.html", rows=shown, counts=counts, totals=totals, n_all=len(rows),
                         origin=origin if origin in ORIGINS else "", q=q, origins=ORIGINS, db_error=None)
         return with_conn(request, run)

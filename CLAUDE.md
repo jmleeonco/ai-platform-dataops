@@ -62,15 +62,18 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 ```
 
 - **Tests**: check `MemAvailable` ≥ 12 GB first (D51), then
-  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **134 passed** (2026-11-09,
+  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **139 passed** (2026-11-09,
   ~100 s; needs the DB container; DB tests create and drop `dataops_test_*` schemas) and
   `bash /drive/project/onco-mlops/scripts/docs-gate.sh HEAD~1..HEAD` (silent = OK; also the pre-commit hook).
 - **Deploy**: the workspace is the production tree. Once a change is proven, `deploy/web.sh restart-web` (a running
   job in the worker keeps going); `deploy/web.sh restart` also restarts the worker — check `/` for a running job
   first. Not auto-started after a reboot: `deploy/db.sh up` then `deploy/web.sh start`. Roll back with
   `git revert` + `restart-web`.
-- **Health**: `curl -s -o /dev/null -w '%{http_code}' http://10.101.1.183:8096/` → 200 (bound to the LAN address
-  only; `127.0.0.1` does not answer).
+- **Health**: `curl -s http://10.101.1.183:8096/health` → 200 `{"ok":true,…}` (no token, no DB; the hub proxy probes
+  it); `/` → 200 too. Bound to the LAN address only; `127.0.0.1` does not answer.
+- **The hub door (§79)**: the hub frames this web at `/dataops-ui/` (labeling-server's proxy). Hub requests carry a
+  bearer signed with `DATAOPS_HUB_SECRET_FILE` (env line; the file is labeling-server's, read only): admin writes,
+  research reads, general 403. No token = the direct site, unchanged.
 - **Logs**: `deploy/web.sh logs`; job logs and events under `runtime/runs/<run>/` and `runtime/jobs/`.
 - **Images are transient (§78.6, U155)**: at most one run holds image files (`runtime/runs/<run>/artifacts/`);
   `PYTHONPATH=. $PY -m dataops runs` shows the footprint, `… purge <run> [--yes]` deletes a run's images and keeps
@@ -99,8 +102,9 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 
 | Section | Module | Test that proves it | Mock the other side can use |
 |---|---|---|---|
-| §78 data management DB + intake flow (boundary, Central, identifiers) | `dataops/*`, `dataops/web/*`, `sql/**` | `tests/` (134); `tests/test_retention.py` for §78.6 | — (no consumer yet) |
+| §78 data management DB + intake flow (boundary, Central, identifiers) | `dataops/*`, `dataops/web/*`, `sql/**` | `tests/` (139); `tests/test_retention.py` for §78.6 | — (no consumer yet) |
 | §78.2 local sender guard / Central only through `publish.py` | `local_send.py`, `publish.py` | `test_pipeline.py::test_non_local_target_refused`, `::test_central_ae_refused_even_on_loopback`, `test_agent_flow.py::test_central_publication_needs_config_and_approval` | — |
+| §79 the hub door: prefix-aware URLs, `frame-ancestors 'self'`, hub bearer + role gate, `/health`, 접두어 column | `web/prefix.py`, `web/hubauth.py`, `web/app.py` middleware, `web/actions.checked_form` | `tests/test_web.py` (`test_forwarded_prefix_reaches_every_url`, `test_hub_bearer_role_gate`, `test_prefix_column_*`, `test_csp_allows_framing_by_self_and_health`) | the hub's own stub upstream (labeling-server S53) |
 | §65 nightly backup shape | `ops/backup/nightly_backup.sh`, `backup_tool.py` | `tests/test_backup_tool.py`; on the host `ops/backup/restore_check.sh` | — |
 | §10 documentation | `handoff/docs/` snapshot, `onco-mlops/docs/components/dataops.html` | `docs-gate.sh` (pre-commit hook + test command) | — |
 
@@ -112,7 +116,8 @@ Master: `onco-mlops/CONTRACT.md`; local snapshot: `handoff/CONTRACT.md` (read-on
   BLOCKED: … / USER: …`). Resolve roles via `onco-mlops/WORKSPACES.md`; never hard-code names.
 - **Without any other workspace** you can do everything in this repo: the intake flow, the DB, the web, the imports,
   the backup.
-- **Needs another role**: nothing today. A consumer of the catalogue (e.g. the hub listing datasets, the executor
+- **Needs another role**: the hub door (§79) is labeling-server's proxy + secret file and labeling-web's 데이터 운영
+  page; a change on this side (pages, columns) needs neither. A data consumer of the catalogue (e.g. the hub listing datasets, the executor
   resolving a `public_dataops` id) is an amendment of §78 with a route, a shape and a mock — ask with
   `FOR orchestrator: <consumer> needs <route/shape> — acceptance: <…>`.
 - How you are reached: the orchestrator finds your terminal by this workspace path (`onco-mlops/scripts/orca.sh`) and

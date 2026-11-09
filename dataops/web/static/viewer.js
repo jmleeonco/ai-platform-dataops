@@ -15,7 +15,7 @@
   var rs = root.dataset.rs;
 
   function url(i) {
-    var u = "/runs/" + encodeURIComponent(run) + "/instances/" + encodeURIComponent(sops[i]) + ".png";
+    var u = (document.body.dataset.root || "") + "/runs/" + encodeURIComponent(run) + "/instances/" + encodeURIComponent(sops[i]) + ".png";
     var q = [];
     if (wc.value !== "" && ww.value !== "" && Number(ww.value) > 0) {
       q.push("wc=" + encodeURIComponent(wc.value), "ww=" + encodeURIComponent(ww.value));

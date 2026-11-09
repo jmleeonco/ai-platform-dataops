@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}DataOps{% endblock %} · AI Platform DataOps</title>
-<link rel="stylesheet" href="/static/app.css?v={{ static_v }}">
+<link rel="stylesheet" href="{{ root }}/static/app.css?v={{ static_v }}">
 </head>
-<body>
+<body data-root="{{ root }}">
 <header><div class="wrap">
   <span class="brand">AI Platform DataOps</span>
   <nav>
-    <a href="/">대시보드</a>
-    <a href="/new">새 분석</a>
-    <a href="/datasets">데이터셋</a>
-    <a href="/search">검색</a>
-    <a href="/browse">표</a>
-    <a href="/central">Central</a>
-    <a href="/db">DB</a>
-    <a href="/legacy">기존 DB</a>
+    <a href="{{ root }}/">대시보드</a>
+    <a href="{{ root }}/new">새 분석</a>
+    <a href="{{ root }}/datasets">데이터셋</a>
+    <a href="{{ root }}/search">검색</a>
+    <a href="{{ root }}/browse">표</a>
+    <a href="{{ root }}/central">Central</a>
+    <a href="{{ root }}/db">DB</a>
+    <a href="{{ root }}/legacy">기존 DB</a>
   </nav>
   <span class="muted push">로컬 전용 · v{{ version }}</span>
 </div></header>

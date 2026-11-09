@@ -374,3 +374,127 @@ def test_catalogue_pages_follow_datasets_series_and_search(settings, prepared, t
     r = client.get("/browse?view=patients&f_roi=spleen")              # the patient of the RTSTRUCT's study
     assert '<span class="muted small">1행' in r.text and "deploy/Organ/1.0.0" in r.text
     assert "맞는 행이 없습니다" in client.get("/browse?view=patients&f_roi=kidney").text
+
+
+# --------------------------------------------------------------------------- the hub door (CONTRACT §79, DO3)
+def _hub_token(secret, role="lead", user="lead1", ttl=300, iat=None, aud="dataops"):
+    import base64
+    import hashlib
+    import hmac
+    import time
+
+    def b64(raw):
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+    now = int(time.time()) if iat is None else iat
+    head = b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    body = b64(json.dumps({"iss": "hub", "aud": aud, "sub": f"user:{user}", "role": role, "scopes": ["dataops"],
+                           "iat": now, "exp": now + ttl, "jti": "j"}).encode())
+    sig = b64(hmac.new(secret.encode(), f"{head}.{body}".encode(), hashlib.sha256).digest())
+    return f"{head}.{body}.{sig}"
+
+
+def _hub_headers(token, role, user):
+    return {"authorization": f"Bearer {token}", "x-hub-user": user, "x-hub-role": role,
+            "x-forwarded-prefix": "/dataops-ui", "x-forwarded-host": "hub.example", "x-forwarded-proto": "https"}
+
+
+def _root_urls(html):
+    return re.findall(r'(?:href|action|src|data-src|data-csv|data-root)="(/[^"]*)"', html)
+
+
+def test_prefix_column_on_dashboard(settings, mixed):
+    run = make_run(settings, mixed)
+    r = TestClient(create_app(settings)).get("/")
+    assert "<th title=\"PatientID 접두어 (plan)\">접두어</th>" in r.text
+    row = r.text[r.text.index(run.id):]
+    assert row.index("SYN_FULL_MULTI_IO") < row.index("</tr>")
+
+
+def test_prefix_column_on_datasets_with_plan_fallback(settings, prepared, test_db):
+    from dataops.records import build_records
+    settings = dataclasses.replace(settings, db=test_db)
+    with dbmod.connection(test_db) as conn:
+        dbmod.migrate(conn)
+        dbmod.register(conn, build_records(prepared))
+    client = TestClient(create_app(settings))
+    page = client.get("/datasets").text
+    assert ">접두어</th>" in page and "SYN_FULL_MULTI_IO" in page
+    assert XSS not in client.get("/datasets?q=syn_full").text and "&lt;script&gt;" in \
+        client.get("/datasets?q=syn_full").text                     # the name search matches the prefix too
+    assert "맞는 데이터셋이 없습니다" in client.get("/datasets?q=NO_SUCH_PREFIX").text
+    with dbmod.connection(test_db) as conn:
+        conn.cursor().execute("UPDATE datasets SET patient_id_prefix=NULL")
+    assert "SYN_FULL_MULTI_IO" in TestClient(create_app(settings)).get("/datasets").text   # the plan's
+
+
+def test_forwarded_prefix_reaches_every_url(settings, prepared):
+    client = TestClient(create_app(settings))
+    h = {"x-forwarded-prefix": "/dataops-ui"}
+    for path in ("/", f"/runs/{prepared.id}", "/datasets", "/search?q=x", "/jobs", "/new", "/db"):
+        r = client.get(path, headers=h)
+        assert r.status_code == 200, path
+        urls = _root_urls(r.text)
+        assert urls and all(u.startswith("/dataops-ui") for u in urls), (path, [u for u in urls
+                                                                            if not u.startswith("/dataops-ui")])
+    page = client.get(f"/runs/{prepared.id}", headers=h).text
+    assert f'action="/dataops-ui/runs/{prepared.id}/pilot"' in page and 'src="/dataops-ui/static/live.js' in page
+    assert 'data-root="/dataops-ui"' in page and f'data-src="/dataops-ui/runs/{prepared.id}/series.json"' in page
+    fresh = TestClient(create_app(settings))
+    assert "Path=/dataops-ui" in fresh.get("/", headers=h).headers["set-cookie"]
+    direct = TestClient(create_app(settings))
+    assert "Path=/;" in direct.get("/").headers["set-cookie"] + ";"
+    assert all(not u.startswith("/dataops-ui") for u in _root_urls(direct.get("/").text))   # the direct site
+    token = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+    # the cookie lives under /dataops-ui in the browser; the proxy forwards it (the test client calls / directly)
+    r = client.post(f"/runs/{prepared.id}/pilot-subjects", data={"csrf": token},
+                    headers={**h, "cookie": f"dataops_csrf={token}"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith(f"/dataops-ui/runs/{prepared.id}")
+    bad = client.get("/", headers={"x-forwarded-prefix": '/x"><script>'}).text     # not a path: ignored
+    assert "<script>\"" not in bad and all(not u.startswith("/x") for u in _root_urls(bad))
+
+
+def test_csp_allows_framing_by_self_and_health(settings):
+    client = TestClient(create_app(settings))
+    csp = client.get("/").headers["content-security-policy"]
+    assert "frame-ancestors 'self'" in csp and "'none'; base-uri" not in csp.split("frame-ancestors")[1][:20]
+    r = client.get("/health")
+    assert r.status_code == 200 and r.json()["ok"] is True and r.json()["version"]
+
+
+def test_hub_bearer_role_gate(settings, mixed, tmp_path):
+    from dataops.jobs import list_jobs
+    secret = "s" * 64
+    (tmp_path / "hub.secret").write_text(secret + "\n")
+    settings = dataclasses.replace(settings, hub_secret_file=tmp_path / "hub.secret")
+    run = make_run(settings, mixed)                                           # PLANNED: may be re-analysed
+    client = TestClient(create_app(settings))
+    lead = _hub_headers(_hub_token(secret, "lead", "lead1"), "research", "lead1")
+    page = client.get(f"/runs/{run.id}", headers=lead)
+    assert page.status_code == 200 and 'href="/dataops-ui/' in page.text      # research reads everything
+    csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
+    origin = {"origin": "https://hub.example", "cookie": f"dataops_csrf={csrf}"}       # as the proxy forwards it
+    r = client.post(f"/runs/{run.id}/reanalyze", data={"csrf": csrf}, headers={**lead, **origin},
+                    follow_redirects=False)
+    assert r.status_code == 403 and "관리자" in r.text                         # research may not write
+    lifted = _hub_headers(_hub_token(secret, "lead", "lead1"), "admin", "lead1")
+    assert client.post(f"/runs/{run.id}/reanalyze", data={"csrf": csrf}, headers={**lifted, **origin},
+                       follow_redirects=False).status_code == 403            # a header cannot raise the role
+    admin = _hub_headers(_hub_token(secret, "admin", "admin1"), "admin", "admin1")
+    r = client.post(f"/runs/{run.id}/reanalyze", data={"csrf": csrf, "by": "someone else"},
+                    headers={**admin, **origin}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith(f"/dataops-ui/runs/{run.id}?msg=")
+    assert list_jobs(settings, run.id)[0]["requested_by"] == "hub:admin1"   # attributed to the hub user
+    viewer = _hub_headers(_hub_token(secret, "viewer", "v1"), "general", "v1")
+    r = client.get("/", headers=viewer)
+    assert r.status_code == 403 and "리드와 관리자" in r.text
+    assert client.get("/health", headers=viewer).status_code == 200
+    for bad in (_hub_token("x" * 64, "admin", "admin1"),                     # another secret
+                _hub_token(secret, "admin", "admin1", iat=1_000_000),        # long expired
+                _hub_token(secret, "admin", "admin1", ttl=3600),             # longer than 5 min
+                _hub_token(secret, "admin", "admin1", aud="aitw")):          # not for us
+        h = _hub_headers(bad, "admin", "admin1")
+        assert client.get("/", headers=h).status_code == 200                 # ignored: the direct site's rules
+        assert client.post(f"/runs/{run.id}/reanalyze", data={"csrf": csrf}, headers={**h, **origin},
+                           follow_redirects=False).status_code == 403       # hub origin not accepted
+    no_secret = TestClient(create_app(dataclasses.replace(settings, hub_secret_file=tmp_path / "missing")))
+    assert no_secret.get("/", headers=viewer).status_code == 200             # no secret file: no hub trust

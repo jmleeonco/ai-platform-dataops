@@ -8,7 +8,7 @@
 {% if plan and plan.series and not internal %}
 <p class="inline deid-bar"><span>가명화 <b class="muted">안 함</b></span> <span class="muted small">공공 데이터는 공개될 때 이미 비식별되어 있어 공개 케이스 ID를 그대로 씁니다.</span></p>
 {% elif plan and plan.series %}{% set deid_on = (plan.deid or {}).enabled %}
-<form method="post" action="/runs/{{ run.id }}/deid" class="inline deid-bar">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/deid" class="inline deid-bar">
   {{ csrf_field(csrf) }}<input type="hidden" name="on" value="{{ '0' if deid_on else '1' }}">
   <span>비식별 <b class="{{ 'b-ok' if deid_on else 'muted' }}">{{ '켜짐' if deid_on else '꺼짐' }}</b></span>
   <button type="submit" {{ 'disabled' if not editable }}>{{ '비식별 끄기' if deid_on else '비식별 켜기' }}</button>
@@ -28,11 +28,11 @@
 {% endif %}
 {% if meta.status == 'ANALYSIS_FAILED' %}
 <section><p class="err">분석에 실패했습니다.</p>
-<form method="post" action="/runs/{{ run.id }}/reanalyze">{{ csrf_field(csrf) }}<button>다시 분석</button></form></section>
+<form method="post" action="{{ root }}/runs/{{ run.id }}/reanalyze">{{ csrf_field(csrf) }}<button>다시 분석</button></form></section>
 {% endif %}
 
 {% macro purge_form(rid, size, next='') -%}
-<form method="post" action="/runs/{{ rid }}/purge" class="inline" data-confirm="{{ rid }}의 영상 파일({{ size }})을 이 서버에서 지웁니다. plan·manifest·전송 기록·보고서는 남습니다. 계속할까요?">
+<form method="post" action="{{ root }}/runs/{{ rid }}/purge" class="inline" data-confirm="{{ rid }}의 영상 파일({{ size }})을 이 서버에서 지웁니다. plan·manifest·전송 기록·보고서는 남습니다. 계속할까요?">
   {{ csrf_field(csrf) }}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
   <input name="by" maxlength="64" required placeholder="삭제하는 사람">
   <button type="submit">이 서버의 영상 삭제</button>
@@ -54,7 +54,7 @@
 {% if slot and meta.status not in ['CENTRAL_SENT', 'ANALYSIS_FAILED', 'LOCAL_SENT'] %}
 {% for o in slot %}
 <div class="notice">다른 run이 영상을 갖고 있어 이 run의 샘플 추출·파일럿·Central 전송을 시작할 수 없습니다:
-<a class="mono" href="/runs/{{ o.run_id }}">{{ o.run_id }}</a> {{ o.dataset_name or '' }} {{ status(o.status) }} · {{ mb(o.bytes) }}
+<a class="mono" href="{{ root }}/runs/{{ o.run_id }}">{{ o.run_id }}</a> {{ o.dataset_name or '' }} {{ status(o.status) }} · {{ mb(o.bytes) }}
 {% if o.refusal %}<p class="muted small">그 run은 지금 지울 수 없습니다: {{ o.refusal }}</p>
 {% elif o.busy %}<p class="muted small">그 run의 작업이 진행 중입니다.</p>
 {% else %}{{ purge_form(o.run_id, mb(o.bytes), run.id) }}{% endif %}
@@ -72,7 +72,7 @@
 {% for u in plan.unresolved %}
 <div class="notice"><code>{{ u.code }}</code> {{ u.message }}
 {% if u.code == 'modality_ambiguous' and editable %}{% for k in u.series_keys %}
-<form method="post" action="/runs/{{ run.id }}/modality" class="inline">{{ csrf_field(csrf) }}<input type="hidden" name="series_key" value="{{ k }}">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/modality" class="inline">{{ csrf_field(csrf) }}<input type="hidden" name="series_key" value="{{ k }}">
 <span class="mono small">{{ k }}</span> <select name="modality"><option>CT</option><option>MR</option></select><button>지정</button></form>
 {% endfor %}{% endif %}</div>
 {% endfor %}
@@ -85,7 +85,7 @@
 <h2>1. 샘플 → Local SCP <span class="mono small muted">{{ settings.local_scp.key }}</span></h2>
 {% set can_pilot = meta.status in ['PLANNED', 'PILOT_READY', 'PILOT_SENT', 'PILOT_PARTIAL', 'PILOT_FAILED'] and not active %}
 {% set chosen = (plan.pilot or {}).subjects or [] %}
-<form method="post" action="/runs/{{ run.id }}/pilot" class="inline">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/pilot" class="inline">
   {{ csrf_field(csrf) }}
   <select name="subject" id="sample-pick">
   {% for case in sample.cases or [] %}<option value="{{ case.subject_key }}" data-case="case-{{ loop.index }}">샘플 {{ loop.index }} · {{ case.subject_key }}{{ ' · ' ~ case.sent if case.sent }}</option>{% endfor %}
@@ -106,11 +106,11 @@
 {% if meta.approval %}
 <p class="small">승인 <b>{{ meta.approval.approved_by }}</b> · {{ meta.approval.approved_at }}</p>
 {% if central[0] and meta.status in ['APPROVED', 'PREPARED', 'CENTRAL_PARTIAL', 'CENTRAL_FAILED', 'LOCAL_SENT', 'LOCAL_PARTIAL', 'LOCAL_FAILED'] %}
-<form method="post" action="/runs/{{ run.id }}/publish" class="inline">{{ csrf_field(csrf) }}
+<form method="post" action="{{ root }}/runs/{{ run.id }}/publish" class="inline">{{ csrf_field(csrf) }}
 <button type="submit" class="primary" {{ 'disabled' if active }}>{{ 'Central 전송 이어서' if meta.status.startswith('CENTRAL_') else 'Central 전송' }}</button></form>
 {% endif %}
 {% elif meta.status == 'PILOT_SENT' and not pilot_stale %}
-<form method="post" action="/runs/{{ run.id }}/approve" class="inline">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/approve" class="inline">
   {{ csrf_field(csrf) }}
   <input name="approver" maxlength="64" required placeholder="승인자">
   <input name="confirm" required autocomplete="off" placeholder="확인: {{ plan.dataset.name }}" title="데이터셋 이름을 그대로 입력">
@@ -214,7 +214,7 @@
 </table></div>
 {% for r in db_sec.rows %}
 <div class="sub" id="sub-{{ r[0] }}">
-<h3 class="mono">{{ r[0] }} <a class="small" href="/db/{{ r[0] }}">DB에서 보기</a></h3>
+<h3 class="mono">{{ r[0] }} <a class="small" href="{{ root }}/db/{{ r[0] }}">DB에서 보기</a></h3>
 {{ json_table("jt7-" ~ r[0], "/runs/" ~ run.id ~ "/records.json", "/runs/" ~ run.id ~ "/records/" ~ r[0] ~ ".csv", table=r[0], refresh=15) }}
 </div>
 {% endfor %}
@@ -234,7 +234,7 @@
 <details class="more"><summary>설정 · 기록</summary>
 <section id="sample-subjects">
 <h2>샘플 대상자</h2>
-<form method="post" action="/runs/{{ run.id }}/sample" class="inline">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/sample" class="inline">
   {{ csrf_field(csrf) }}
   <datalist id="subjects">{% for sj in subjects %}<option value="{{ sj }}">{% endfor %}</datalist>
   {% for i in range(3) %}<input name="pilot{{ i + 1 }}" list="subjects" placeholder="대상자 {{ i + 1 }}" value="{{ chosen[i] if chosen|length > i }}" {{ 'disabled' if not editable }}>{% endfor %}
@@ -244,7 +244,7 @@
 </section>
 <section id="dataset">
 <h2>데이터셋 정보</h2>
-<form method="post" action="/runs/{{ run.id }}/dataset" class="grid-form">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/dataset" class="grid-form">
   {{ csrf_field(csrf) }}
   <label>이름<input name="name" value="{{ plan.dataset.name or '' }}" maxlength="256" required {{ 'disabled' if not editable }}></label>
   <label>라이선스<input name="license" value="{{ plan.dataset.license or '' }}" maxlength="128" {{ 'disabled' if not editable }}></label>
@@ -255,21 +255,21 @@
   {% if editable %}<div><button type="submit">저장</button></div>{% endif %}
 </form>
 {% if plan.adapter == 'agent-spec' %}
-<form method="post" action="/runs/{{ run.id }}/splits" class="inline">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/splits" class="inline">
   {{ csrf_field(csrf) }} 포함할 분할:
   {% for sp_name, sp in summary.items() %}<label><input type="checkbox" name="split_{{ sp_name }}" {{ 'checked' if sp.subjects_in }} {{ 'disabled' if not editable }}> {{ split_names.get(sp_name, sp_name) }}</label>{% endfor %}
   {% if editable %}<button type="submit">저장</button>{% endif %}
 </form>
 {% set n_rt = plan.series|selectattr('kind', 'equalto', 'rtstruct')|list %}
 {% if n_rt %}
-<form method="post" action="/runs/{{ run.id }}/labels" class="inline">
+<form method="post" action="{{ root }}/runs/{{ run.id }}/labels" class="inline">
   {{ csrf_field(csrf) }}
   <label><input type="checkbox" name="labels" {{ 'checked' if n_rt|rejectattr('excluded')|list }} {{ 'disabled' if not editable }}> 라벨을 RTSTRUCT로 함께 보냄 ({{ n_rt|length }}개)</label>
   {% if editable %}<button type="submit">저장</button>{% endif %}
 </form>
 {% endif %}
 {% endif %}
-<p class="small"><a href="/runs/{{ run.id }}/report">전체 보고서 (표 1–10)</a></p>
+<p class="small"><a href="{{ root }}/runs/{{ run.id }}/report">전체 보고서 (표 1–10)</a></p>
 </section>
 <section>
 <h2>이력</h2>
@@ -279,8 +279,8 @@
 </section>
 </details>
 {% endif %}
-<script src="/static/live.js?v={{ static_v }}"></script>
-<script src="/static/confirm.js?v={{ static_v }}"></script>
-<script src="/static/tabs.js?v={{ static_v }}"></script>
-<script src="/static/jtable.js?v={{ static_v }}"></script>
+<script src="{{ root }}/static/live.js?v={{ static_v }}"></script>
+<script src="{{ root }}/static/confirm.js?v={{ static_v }}"></script>
+<script src="{{ root }}/static/tabs.js?v={{ static_v }}"></script>
+<script src="{{ root }}/static/jtable.js?v={{ static_v }}"></script>
 {% endblock %}

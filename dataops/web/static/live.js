@@ -4,7 +4,7 @@
   if (!live || !live.dataset.active) return;
   var run = live.dataset.run, status = live.dataset.status, log = document.getElementById("joblog");
   function tick() {
-    fetch("/runs/" + encodeURIComponent(run) + "/state.json", { cache: "no-store" })
+    fetch((document.body.dataset.root || "") + "/runs/" + encodeURIComponent(run) + "/state.json", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (s) {
         if (s.status !== status || !s.job) { location.reload(); return; }

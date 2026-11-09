@@ -7,7 +7,7 @@
   var status = document.getElementById("dblive-status"), pause = document.getElementById("dblive-pause");
   if (!box || !status || !box.dataset.tables) return;
   var tables = box.dataset.tables.split(","), sig = box.dataset.sig, every = (+box.dataset.every || 5) * 1000;
-  var url = "/db/state.json?t=" + encodeURIComponent(box.dataset.tables) + "&exact=" + (box.dataset.exact || "0");
+  var url = (document.body.dataset.root || "") + "/db/state.json?t=" + encodeURIComponent(box.dataset.tables) + "&exact=" + (box.dataset.exact || "0");
   var paused = false, busy = false;
 
   function now() { return new Date().toLocaleTimeString("ko-KR", { hour12: false }); }

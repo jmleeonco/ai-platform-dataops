@@ -85,6 +85,11 @@ class Settings:
     agent_budget_usd: float = 5.0
     agent_timeout_s: int = 1800
     agent_workdir: Path = Path.home() / ".cache" / "ai-platform-dataops" / "agent"
+    # The hub door (CONTRACT §79.2): the file holding the secret the hub signs its bearer tokens with (written by
+    # labeling-server; unset or missing = no hub trust, the direct site as before), and a fixed URL prefix for a
+    # proxy that cannot send X-Forwarded-Prefix.
+    hub_secret_file: Path | None = None
+    root_path: str = ""
 
     @property
     def jobs_dir(self) -> Path:
@@ -147,4 +152,6 @@ def load_settings(env: dict | None = None) -> Settings:
         agent_budget_usd=float(get("DATAOPS_AGENT_BUDGET_USD") or 5),
         agent_timeout_s=int(get("DATAOPS_AGENT_TIMEOUT_S") or 1800),
         agent_workdir=Path(get("DATAOPS_AGENT_WORKDIR") or Path.home() / ".cache" / "ai-platform-dataops" / "agent"),
+        hub_secret_file=Path(get("DATAOPS_HUB_SECRET_FILE")).expanduser() if get("DATAOPS_HUB_SECRET_FILE") else None,
+        root_path=get("DATAOPS_ROOT_PATH") or "",
     )

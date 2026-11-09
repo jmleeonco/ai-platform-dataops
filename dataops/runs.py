@@ -135,5 +135,6 @@ def list_runs(runs_dir: Path) -> list[dict]:
             meta = read_json(d / "run.json")
             plan = read_json(d / "plan.json", {}) or {}
             meta["dataset_name"] = (plan.get("dataset") or {}).get("name")
+            meta["patient_id_prefix"] = (plan.get("dataset") or {}).get("patient_id_prefix")
             out.append(meta)
     return out

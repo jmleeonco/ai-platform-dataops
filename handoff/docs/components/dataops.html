@@ -16,7 +16,7 @@
   <span class="eyebrow">Component · ai-platform-dataops</span>
   <h1>The data management DB and the dataset intake flow</h1>
   <p class="lede">After this page you can say what the data management DB holds and where each row came from, take a dataset folder from analysis to Central with the owner's approval, find any dataset, series or ROI in the catalogue, and run, test, back up and restore the system.</p>
-  <p class="meta">Last verified 2026-11-09 · CONTRACT v1.63 §78 · <span class="owner">owner: ai-platform-dataops</span></p>
+  <p class="meta">Last verified 2026-11-09 · CONTRACT v1.64 §78, §79 · <span class="owner">owner: ai-platform-dataops</span></p>
   <div class="toc"></div>
 </header>
 
@@ -32,7 +32,7 @@
   <tr><td>CLI</td><td><code>python -m dataops …</code> on the host</td><td>The role agent, scripted runs</td></tr>
   <tr><td>MariaDB 11.4</td><td>docker <code>ai-platform-dataops-db</code>, <code>127.0.0.1:13306</code></td><td>Only this system (§78.2). Nobody else reads or writes it directly.</td></tr>
   </tbody></table></div>
-  <p>Contract: CONTRACT §78 (what it is, the boundary, operations). There is no API to the hub, the executor or ai-pipeline yet. The first consumer will be an amendment of §78.</p>
+  <p>Contract: CONTRACT §78 (what it is, the boundary, operations) and §79 (the hub door). There is no API to the executor or ai-pipeline; the hub frames the web (see <a href="#hub">the hub door</a>).</p>
 </section>
 
 <section id="db">
@@ -90,7 +90,8 @@
 <section id="catalogue">
   <h2>The catalogue pages</h2>
   <div class="tbl"><table><thead><tr><th>Page</th><th>What it shows</th></tr></thead><tbody>
-  <tr><td><code>/datasets</code> 데이터셋 (datasets)</td><td>Every dataset by origin, with totals. <code>/datasets/&lt;uuid&gt;</code> filters its series by split, modality and ROI.</td></tr>
+  <tr><td><code>/</code> 대시보드 (dashboard)</td><td>Every intake run with its status, image footprint, transfers and registration. The 접두어 (prefix) column next to 데이터셋 is the PatientID prefix from the run's plan.</td></tr>
+  <tr><td><code>/datasets</code> 데이터셋 (datasets)</td><td>Every dataset by origin, with totals. The 접두어 (prefix) column shows the prefix the dataset was registered under, or else the plan's; the search box matches names and prefixes. <code>/datasets/&lt;uuid&gt;</code> filters its series by split, modality and ROI.</td></tr>
   <tr><td><code>/series/&lt;uid&gt;</code></td><td>One series: the datasets that hold it, its ROI names, the image an RTSTRUCT points at, sibling series and transfers.</td></tr>
   <tr><td><code>/search</code> 검색 (search)</td><td>Datasets, ROI names, patients and series matching a word.</td></tr>
   <tr><td><code>/browse</code> 표 (table)</td><td>The DB as one flat table, either per series or per patient. Search by dataset or ROI name, with suggestions. A ROI search matches the RTSTRUCT and the image it points at. Tick boxes for modality, split and origin; a study date range; a field per column; removable condition chips; a column picker; CSV of the current conditions.</td></tr>
@@ -100,6 +101,19 @@
   <pre><code>python -m dataops import-legacy [--dry-run]
 python -m dataops import-deploy [--dry-run] [--rescan]</code></pre>
   <p>Both read only: <code>oncolabdb</code> through a READ ONLY session, <code>/mnt/deploy/data</code> as files, and Central by C-FIND and C-GET of RTSTRUCT (approved 2026-11-03).</p>
+</section>
+
+<section id="hub">
+  <h2>The hub door</h2>
+  <p>One application, two doors (§79.2). The direct site is <code>http://10.101.1.183:8096/</code>, as before. The hub's 데이터 운영 (DataOps) page frames the same live application through the hub proxy at <code>/dataops-ui/</code>, so a change deployed here shows up in the hub tab with no hub release.</p>
+  <div class="tbl"><table><thead><tr><th>What</th><th>How</th></tr></thead><tbody>
+  <tr><td>Who gets in</td><td>The hub decides: leads and admins only. A labeler, a viewer or an anonymous visitor gets 401 from the proxy before anything reaches this system.</td></tr>
+  <tr><td>Role gate</td><td>The proxy signs each request as the person (<code>Authorization: Bearer</code>, HS256, 5 minutes, with the shared secret file that both roles read). Admin (<code>X-Hub-Role: admin</code>) can do everything. A lead (<code>research</code>) can read every page, but every write gets 403 with a Korean message: 새 분석, plan edits, 비식별, pilot, approve, publish, purge, imports, any POST. <code>general</code> gets 403 on every page. The role comes from the signed token; the header can only lower it.</td></tr>
+  <tr><td>Who did it</td><td>A write through the hub is recorded under <code>hub:&lt;username&gt;</code> in the fields that name a person (the job's requester, the approver, who purged).</td></tr>
+  <tr><td>URLs under the prefix</td><td>Each link, form, script, image, redirect and the CSRF cookie path follows <code>X-Forwarded-Prefix</code> (or <code>DATAOPS_ROOT_PATH</code>). Without the header, the direct site is unchanged at <code>/</code>.</td></tr>
+  <tr><td>Framing</td><td><code>Content-Security-Policy: frame-ancestors 'self'</code>. Through the proxy the page comes from the hub's origin, so the hub may frame it; the direct site can be framed only by itself.</td></tr>
+  <tr><td>No token, or an invalid one</td><td>The direct site's rules: the Origin must be this host, CSRF applies, and there is no role gate. Without the secret file (<code>DATAOPS_HUB_SECRET_FILE</code>), no request is treated as a hub request.</td></tr>
+  </tbody></table></div>
 </section>
 
 <section id="cli">
@@ -137,8 +151,8 @@ python -m dataops import-deploy [--dry-run] [--rescan]</code></pre>
   <div class="tbl"><table><thead><tr><th>What</th><th>How</th></tr></thead><tbody>
   <tr><td>DB</td><td><code>deploy/db.sh up</code>, then <code>python -m dataops db-status</code> / <code>db-migrate</code></td></tr>
   <tr><td>Web + worker</td><td><code>deploy/web.sh start|stop|restart|restart-web|status|logs</code>. After a code change use <code>restart-web</code>; a running job keeps going. <b>Neither the DB container nor the web starts by itself after a reboot.</b></td></tr>
-  <tr><td>Health</td><td><code>curl -s -o /dev/null -w '%{http_code}' http://10.101.1.183:8096/</code> → 200. It listens on the LAN address only, so <code>127.0.0.1</code> does not answer.</td></tr>
-  <tr><td>Tests</td><td><code>PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings</code> → 134 passed, about 125 s (2026-11-09). Needs the DB container; DB tests use throw-away <code>dataops_test_*</code> schemas. Then <code>scripts/docs-gate.sh</code>.</td></tr>
+  <tr><td>Health</td><td><code>curl -s http://10.101.1.183:8096/health</code> → 200 <code>{"ok": true, "version": …}</code> with no token and no DB; the hub proxy's status check calls it. The dashboard <code>/</code> answers 200 too. It listens on the LAN address only, so <code>127.0.0.1</code> does not answer.</td></tr>
+  <tr><td>Tests</td><td><code>PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings</code> → 139 passed, about 110 s (2026-11-09). Needs the DB container; DB tests use throw-away <code>dataops_test_*</code> schemas. Then <code>scripts/docs-gate.sh</code>.</td></tr>
   <tr><td>Logs</td><td><code>deploy/web.sh logs</code>; per run and job under <code>runtime/runs/</code> and <code>runtime/jobs/</code></td></tr>
   <tr><td>Images on this host</td><td>The dashboard shows the local image footprint (이 서버의 영상, images on this server) and which run holds it. Each run row has its size, or 삭제됨 (deleted). The run page's 이 서버의 영상 section shows the files and size, or when they were purged and where the images are. <code>python -m dataops runs</code> prints the same.</td></tr>
   <tr><td>Purge</td><td>Run page → 이 서버의 영상 삭제 (delete images on this server): type your name and confirm the dialog. Or <code>python -m dataops purge &lt;run&gt;</code>, which asks first; <code>--yes</code> skips the question. It deletes the run's <code>artifacts/</code> folder and any <code>*.dcm</code> / <code>*.nii</code> / <code>*.nii.gz</code>, keeps the record, and does nothing on a second call. Purge is refused for an approved run whose Central send is not finished, because its frozen bytes are what was approved. Automatic purges: after a complete publish + registration, after a failed analysis, and when a new analysis of the same folder replaces an older pilot-stage run.</td></tr>
@@ -151,14 +165,14 @@ python -m dataops import-deploy [--dry-run] [--rescan]</code></pre>
 <section id="open">
   <h2>Open threads</h2>
   <ul>
-    <li><b>No login on the web.</b> It is bound to the LAN; a login, or a hub login in front of it, is not decided (§78.4).</li>
+    <li><b>No login on the direct site.</b> It is bound to the LAN with no login. Through the hub (§79) only leads and admins get in, and only admins can write.</li>
     <li><b>The LAB DB account is a shared admin account.</b> A SELECT-only account and a password rotation were recommended to the owner; neither is done yet.</li>
     <li><b>No read-back check on Central.</b> Sends are journalled per instance, but what Central stored is not read back.</li>
     <li><b>The licence tier of the one published public set</b> (PUB vs NC) is still open with the owner.</li>
     <li><b>Internal sets with identifiers</b> in folder names and tags are not ingested until a de-identification profile and an owner decision exist. Duplicate pilot runs of one internal set are waiting for a clean-up decision.</li>
     <li><b>Naming-rule questions</b> are open with the owner.</li>
     <li><b>Speed.</b> The dashboard takes about 1.3 s; the per-patient view of <code>/browse</code> takes about 1–2 s.</li>
-    <li><b>No consumer yet.</b> The hub's 데이터셋 (datasets) pages and the executor do not read this catalogue. The first one is a §78 amendment.</li>
+    <li><b>No data API yet.</b> The hub frames the pages (§79) but does not read the catalogue as data; the executor does not either. The first such consumer is an amendment.</li>
   </ul>
 </section>
 

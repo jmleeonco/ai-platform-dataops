@@ -22,9 +22,14 @@ from ..retention import check_slot, mb, purge_images, slot_holders
 from ..runs import EDITABLE, Run, RunError
 from ..spec import SAMPLES
 from ..util import RUN_ID_RE, sha256_json
+from .prefix import url
 
 CSRF_COOKIE = "dataops_csrf"
 SPLIT_NAMES = {"train": "학습", "validation": "검증", "test": "테스트", "other": "기타", "none": "구분 없음"}
+
+
+# Form fields that name the person acting: a hub request is attributed to the hub user instead (§79.2 d-c).
+PERSON_FIELDS = ("by", "approver")
 
 
 async def checked_form(request: Request) -> dict:
@@ -32,15 +37,22 @@ async def checked_form(request: Request) -> dict:
     token = request.cookies.get(CSRF_COOKIE, "")
     if not token or not hmac.compare_digest(token, str(form.get("csrf", ""))):
         raise HTTPException(403, "CSRF 토큰이 맞지 않습니다 — 페이지를 새로고침한 뒤 다시 시도하세요")
+    hub = getattr(request.state, "hub", None)
+    hosts = {request.headers.get("host")}
+    if hub:                                    # through the hub proxy the browser's origin is the hub's host
+        hosts.add(request.headers.get("x-forwarded-host"))
     origin = request.headers.get("origin")
-    if origin and origin != "null" and urlsplit(origin).netloc != request.headers.get("host"):
+    if origin and origin != "null" and urlsplit(origin).netloc not in hosts - {None}:
         raise HTTPException(403, "다른 출처에서 온 요청입니다")
-    return {k: (v.strip() if isinstance(v, str) else v) for k, v in form.items()}
+    out = {k: (v.strip() if isinstance(v, str) else v) for k, v in form.items()}
+    if hub:
+        out.update({f: f"hub:{hub['user']}" for f in PERSON_FIELDS})
+    return out
 
 
 def back(run_id: str, msg: str = "", err: str = "", anchor: str = "") -> RedirectResponse:
     q = f"?msg={quote(msg)}" if msg else (f"?err={quote(err)}" if err else "")
-    return RedirectResponse(f"/runs/{run_id}{q}{('#' + anchor) if anchor else ''}", status_code=303)
+    return RedirectResponse(url(f"/runs/{run_id}{q}{('#' + anchor) if anchor else ''}"), status_code=303)
 
 
 def browse(settings: Settings, rel: str | None) -> dict:
@@ -98,7 +110,7 @@ def register_actions(app: FastAPI, settings: Settings, page, get_run) -> None:
             run, _ = start_analysis(settings, form.get("input_root", ""), form.get("by", ""),
                                     None if choice not in ("1", "0") else choice == "1")
         except RunError as e:
-            return RedirectResponse(f"/new?err={quote(str(e))}", status_code=303)
+            return RedirectResponse(url(f"/new?err={quote(str(e))}"), status_code=303)
         return back(run.id, msg="분석을 시작했습니다. 폴더 크기에 따라 몇 분 걸립니다.")
 
     @app.post("/runs/{run_id}/dataset")

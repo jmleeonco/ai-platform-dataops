@@ -4,7 +4,7 @@
 {% block body %}
 {{ live_bar(live) }}
 {{ live_open(live) }}
-<p class="small"><a href="/db">← DB</a> · <a href="/db/{{ table }}">{{ table }}</a></p>
+<p class="small"><a href="{{ root }}/db">← DB</a> · <a href="{{ root }}/db/{{ table }}">{{ table }}</a></p>
 <h1>{{ table }} <span class="mono small muted">{% for k, v in key.items() %}{{ k }}={{ v }} {% endfor %}</span></h1>
 <p class="muted small">{{ desc }}</p>
 <section>
@@ -22,5 +22,5 @@
 </section>
 {% endif %}
 </div>
-<script src="/static/dblive.js?v={{ static_v }}"></script>
+<script src="{{ root }}/static/dblive.js?v={{ static_v }}"></script>
 {% endblock %}

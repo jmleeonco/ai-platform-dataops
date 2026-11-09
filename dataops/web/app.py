@@ -45,14 +45,18 @@ from ..util import RUN_ID_RE, valid_uid
 from .actions import CSRF_COOKIE, SPLIT_NAMES, register_actions
 from .browse import register_browse_views
 from .catalog import register_catalog_views
+from . import hubauth, prefix
 from .dbview import register_db_views
 
 HERE = Path(__file__).resolve().parent
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 PAGE = 100
+# frame-ancestors 'self' (§79.2 d-b): through the hub proxy the page is served from the hub's origin, so the hub's
+# 데이터 운영 page may frame it; the direct site can only be framed by itself.
 CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
-       "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+       "frame-ancestors 'self'; base-uri 'none'; form-action 'self'")
+WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
 
 def _short(v, n=14):
@@ -100,21 +104,42 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
     tpl.env.filters.update(short=_short, jsonfmt=_jsonfmt)
     # static files carry a content stamp in their URL, so a browser never keeps an old script or stylesheet
     static_v = hashlib.sha256(b"".join(p.read_bytes() for p in sorted((HERE / "static").iterdir()) if p.is_file())).hexdigest()[:10]
-    tpl.env.globals.update(version=__version__, static_v=static_v)
+    tpl.env.globals.update(version=__version__, static_v=static_v, root=prefix.Root())
 
     @app.middleware("http")
     async def headers(request: Request, call_next):
-        token = request.cookies.get(CSRF_COOKIE)
-        request.state.csrf = token or secrets.token_urlsafe(24)
-        resp = await call_next(request)
+        root = prefix.resolve(request.headers.get("x-forwarded-prefix"), settings.root_path)
+        ctx = prefix.set_root(root)
+        try:
+            hub = hubauth.identity(request.headers, hubauth.secret(settings.hub_secret_file))
+            request.state.hub = hub
+            token = request.cookies.get(CSRF_COOKIE)
+            request.state.csrf = token or secrets.token_urlsafe(24)
+            if hub and hub["role"] == "general" and request.url.path != "/health":
+                resp = _refused("데이터 운영은 허브의 리드와 관리자만 볼 수 있습니다.")
+            elif hub and request.method in WRITE_METHODS and hub["role"] != "admin":
+                resp = _refused(f"이 작업은 허브 관리자만 할 수 있습니다 (지금 역할: {hub['role']}). "
+                                "보기는 그대로 할 수 있습니다.")
+            else:
+                resp = await call_next(request)
+        finally:
+            prefix.reset(ctx)
         if not token:
-            resp.set_cookie(CSRF_COOKIE, request.state.csrf, httponly=True, samesite="strict", path="/")
+            resp.set_cookie(CSRF_COOKIE, request.state.csrf, httponly=True, samesite="strict", path=root or "/")
         resp.headers["Content-Security-Policy"] = CSP
         resp.headers["X-Content-Type-Options"] = "nosniff"
         if request.url.path.startswith("/static/"):
             resp.headers["Cache-Control"] = "no-cache"
         resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
+
+    def _refused(why: str) -> HTMLResponse:
+        return HTMLResponse(f"<!doctype html><meta charset=utf-8><title>권한 없음</title><p>{why}</p>", status_code=403)
+
+    @app.get("/health")
+    def health():
+        """For the hub proxy's status check: no token, no DB (§79.2 e)."""
+        return {"ok": True, "version": __version__}
 
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"settings": settings, "csrf": request.state.csrf,
@@ -286,7 +311,7 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
 
     @app.get("/runs/{run_id}/metadata")
     def metadata_redirect(run_id: str):
-        return RedirectResponse(f"/runs/{get_run(run_id).id}/report#s6", status_code=301)
+        return RedirectResponse(prefix.url(f"/runs/{get_run(run_id).id}/report#s6"), status_code=301)
 
     def series_tables(run: Run, which: str) -> dict:
         md = build_metadata(run)
@@ -516,7 +541,7 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
 
     register_actions(app, settings, page, get_run)
     register_db_views(app, settings, page, db_conn, _csv, map_conn)
-    register_catalog_views(app, page, db_conn)
+    register_catalog_views(app, page, db_conn, settings.runs_dir)
     register_browse_views(app, page, db_conn, _csv)
 
     @app.get("/healthz")

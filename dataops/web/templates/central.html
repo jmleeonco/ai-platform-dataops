@@ -16,7 +16,7 @@
   <th>시리즈</th><th class="num">파일</th><th class="num">용량</th><th>수신 결과</th><th>전송</th><th>승인</th><th>관리 DB</th><th>실행</th></tr>
 {% for s in sends %}{% set d = held.get((s.run_id, s.target_key)) %}
 <tr>
-  <td>{% if d %}<a href="/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a>{% else %}{{ s.name or '-' }}{% endif %}</td>
+  <td>{% if d %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a>{% else %}{{ s.name or '-' }}{% endif %}</td>
   <td class="mono">{{ d.patient_id_prefix if d else '-' }}</td>
   <td>{% if d %}{{ d.license or '-' }} / {{ d.commercial_use }}{% else %}-{% endif %}</td>
   <td class="num">{{ '{:,}'.format(d.n_subjects) if d else '-' }}</td>
@@ -29,7 +29,7 @@
     {% if s.sessions > 1 %}<span class="muted small">({{ s.sessions }}회)</span>{% endif %}<br>{{ status(s.status) }}</td>
   <td>{{ s.approved_by or '-' }}<br><span class="muted small">{{ when(s.approved_at) }}</span></td>
   <td>{% if s.registered_at %}<span class="badge b-ok">등록</span><br><span class="muted small">{{ when(s.registered_at) }}</span>{% else %}<span class="badge b-warn">미등록</span>{% endif %}</td>
-  <td><a class="mono" href="/runs/{{ s.run_id }}">{{ s.run_id }}</a></td>
+  <td><a class="mono" href="{{ root }}/runs/{{ s.run_id }}">{{ s.run_id }}</a></td>
 </tr>
 {% else %}<tr><td colspan="13" class="muted">아직 Central로 보낸 실행이 없습니다.</td></tr>{% endfor %}
 </table></div>

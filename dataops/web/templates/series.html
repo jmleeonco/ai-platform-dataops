@@ -2,7 +2,7 @@
 {% from "_macros.html" import status %}
 {% block title %}series {{ s.series_uid|short }}{% endblock %}
 {% block body %}
-<p><a href="/runs/{{ run.id }}">← run {{ run.id }}</a></p>
+<p><a href="{{ root }}/runs/{{ run.id }}">← run {{ run.id }}</a></p>
 <h1>{{ s.description or 'series' }} <span class="badge">{{ s.modality }}</span></h1>
 
 <section>
@@ -13,7 +13,7 @@
 <div class="viewer" id="viewer" data-run="{{ run.id }}" data-sops="{{ instances|map(attribute='sop_uid')|join(',') }}" data-rs="{{ overlays[0].sop_uid if overlays else '' }}">
   <div>
     <div class="canvas">
-      <img id="slice" alt="slice" src="/runs/{{ run.id }}/instances/{{ instances[0].sop_uid }}.png{{ ('?rs=' ~ overlays[0].sop_uid) if overlays }}">
+      <img id="slice" alt="slice" src="{{ root }}/runs/{{ run.id }}/instances/{{ instances[0].sop_uid }}.png{{ ('?rs=' ~ overlays[0].sop_uid) if overlays }}">
       {% if geometry.edges %}{% for pos, label in geometry.edges.items() %}<span class="ori {{ pos }}">{{ label }}</span>{% endfor %}{% endif %}
     </div>
     <div class="controls">
@@ -41,7 +41,7 @@
     <p class="muted">슬라이스는 ImagePositionPatient를 법선 방향으로 정렬했습니다(없으면 InstanceNumber).</p>
   </div>
 </div>
-<script src="/static/viewer.js?v={{ static_v }}"></script>
+<script src="{{ root }}/static/viewer.js?v={{ static_v }}"></script>
 {% elif rs_instances %}<p>RTSTRUCT 시리즈입니다. 참조 영상 페이지에서 윤곽을 겹쳐 볼 수 있습니다.</p>
 {% else %}<p class="muted">prepare 전이거나 인스턴스가 없습니다.</p>{% endif %}
 </section>

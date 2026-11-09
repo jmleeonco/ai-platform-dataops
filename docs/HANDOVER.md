@@ -47,7 +47,7 @@ copies of the existing LAB DB and of the model-training bundles in `/mnt/deploy/
 cd /drive/project/ai-platform-dataops
 PY=~/.venvs/ai-platform-dataops/bin/python
 set -a; . ~/.config/ai-platform-dataops/env; set +a          # for ad-hoc scripts
-PYTHONPATH=. $PY -m pytest -q -p no:warnings                  # 134 tests, ~125 s (DB tests use dataops_test_* schemas)
+PYTHONPATH=. $PY -m pytest -q -p no:warnings                  # 139 tests, ~110 s (DB tests use dataops_test_* schemas)
 deploy/web.sh start|stop|restart|restart-web|status|logs      # web (:8096) + one job worker; not auto-started after reboot
 deploy/db.sh up                                                # Docker MariaDB 11.4, container ai-platform-dataops-db, 127.0.0.1:13306
 $PY -m dataops db-status | db-migrate
@@ -131,7 +131,13 @@ views (source vs outgoing values), slice viewer with RTSTRUCT contours · `/repo
 transfers) · `/search` (datasets, ROI names, patients, series) · **`/browse`** ("표": one flat table per
 series or per patient; search panel with dataset and ROI suggestions, ROI matching the RTSTRUCT and the image
 it points at, ticks for modality/split/origin, date range, a field per column, chips, column picker, CSV) ·
-`/db` raw tables (live) · `/legacy` existing DB's schema and compatibility · `/backups`.
+`/db` raw tables (live) · `/legacy` existing DB's schema and compatibility · `/backups` · `/health` (no token).
+The dashboard and `/datasets` have a 접두어 (PatientID prefix) column.
+
+**The hub door (2026-11-09, CONTRACT §79):** the hub's 데이터 운영 page frames this same web through its proxy at
+`/dataops-ui/`. Pages honour `X-Forwarded-Prefix` (`web/prefix.py`); CSP `frame-ancestors 'self'`; a request with a
+hub bearer signed with the secret in `DATAOPS_HUB_SECRET_FILE` (`web/hubauth.py`) is gated by role — admin writes,
+research (hub lead) reads, general 403 — and writes are attributed to `hub:<user>`. Without a token nothing changes.
 
 ## 8. Open threads (not done / waiting on the owner)
 

@@ -3,7 +3,7 @@
 {% block title %}{{ ds.name }}{% endblock %}
 {% block body %}
 {% set qs = 'q=' ~ (q|urlencode) ~ '&modality=' ~ (modality|urlencode) ~ '&split=' ~ (split|urlencode) %}
-<p><a href="/datasets">← 데이터셋</a></p>
+<p><a href="{{ root }}/datasets">← 데이터셋</a></p>
 <h1>{{ ds.name }}</h1>
 <section>
 <dl class="kv">
@@ -17,7 +17,7 @@
   <dt>시리즈 출처</dt><dd>{% for k in kinds %}<span class="badge">{{ source_kinds.get(k.source_kind, 'NIfTI→DICOM') }} {{ "{:,}".format(k.n) }}</span> {% endfor %}</dd>
   <dt>전송 결과</dt><dd>{% for d in delivery %}<div><span class="mono">{{ d.target_key }}</span> {{ status(d.status) }} {{ d.n }}</div>{% else %}<span class="muted">없음</span>{% endfor %}</dd>
 </dl>
-<p>{% if modality or split or q %}<a href="?">필터 해제</a> · {% endif %}<a href="/browse?f_dataset=%3D{{ ds.name|urlencode }}">이 데이터셋을 표로 보기 →</a></p>
+<p>{% if modality or split or q %}<a href="?">필터 해제</a> · {% endif %}<a href="{{ root }}/browse?f_dataset=%3D{{ ds.name|urlencode }}">이 데이터셋을 표로 보기 →</a></p>
 </section>
 <section>
 <form class="inline" method="get">
@@ -30,14 +30,14 @@
 <tr><th>PatientID</th><th>StudyDate</th><th>Series UID</th><th>Modality</th><th>설명 / ROI</th><th>구분</th><th class="num">인스턴스</th><th>제조사/모델</th><th>두께/간격</th><th>원천</th><th>run</th></tr>
 {% for r in rows %}
 <tr><td>{{ r.patient_id }}</td><td>{{ r.study_date or '-' }}</td>
-<td class="mono" title="{{ r.series_uid }}"><a href="/series/{{ r.series_uid }}">{{ r.series_uid|short }}</a></td>
+<td class="mono" title="{{ r.series_uid }}"><a href="{{ root }}/series/{{ r.series_uid }}">{{ r.series_uid|short }}</a></td>
 <td>{{ r.modality }}{% if r.needs_review %} <span class="badge b-warn" title="{{ r.modality_basis }}">추정</span>{% endif %}</td>
 <td>{{ r.description or '' }}{% if r.rois %}<div class="rois muted" title="{{ r.rois|join(', ') }}">ROI {{ r.rois|length }}: {{ r.rois[:8]|join(', ') }}{% if r.rois|length > 8 %} …{% endif %}</div>{% endif %}</td>
 <td>{{ r.split or '' }}</td><td class="num">{{ r.instance_count }}</td>
 <td>{{ r.meta.Manufacturer or '' }} {{ r.meta.ManufacturerModelName or '' }}</td>
 <td>{{ r.meta.SliceThickness or '' }}{% if r.meta.PixelSpacing %} / {{ r.meta.PixelSpacing|join('×') }}{% endif %}</td>
 <td>{{ source_kinds.get(r.source_kind, 'NIfTI→DICOM') }}</td>
-<td>{% if r.run_label %}<a class="mono" href="/runs/{{ r.run_label }}/series/{{ r.series_uid }}">{{ r.run_label }}</a>{% endif %}</td></tr>
+<td>{% if r.run_label %}<a class="mono" href="{{ root }}/runs/{{ r.run_label }}/series/{{ r.series_uid }}">{{ r.run_label }}</a>{% endif %}</td></tr>
 {% endfor %}
 </table></div>
 {% if pages > 1 %}<p class="pager">{% for i in range(1, pages + 1) %}{% if i == p %}<span>{{ i }}</span>{% elif i <= 3 or i > pages - 3 or (i - p)|abs <= 3 %}<a href="?p={{ i }}&amp;{{ qs }}">{{ i }}</a>{% elif i == 4 or i == pages - 3 %}<span class="muted">…</span>{% endif %}{% endfor %}</p>{% endif %}
