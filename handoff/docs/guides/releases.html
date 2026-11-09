@@ -145,8 +145,8 @@
     set). The running job's ROIs carry a dot, and past six the card shows <i>+n</i> (hover for the names). A chip shows
     that ROI's row in the board below: it is scrolled to and marked for a moment. If the filters hid the row, they are
     cleared to a search for that ROI first (U81).</li>
-    <li><b>Release calendar</b>: the ROIs by the month of their target date — <i>Overdue</i> first (red), then the months;
-    <i>179 ROIs have no target date yet</i> (not released, no date) filters the table to them.</li>
+    <li><b>Release calendar</b> — retired by v1.68 §82 (U162, 2026-11-09): the card that listed the ROIs by the month of
+    their target date is gone; the timeline's diamonds and <i>Sort › release date</i> carry the dates.</li>
     <li><b>Timeline</b> (the default view; <i>Table</i> next to it): one bar per ROI across the months —
     <i>Labeling</i> (blue), <i>Training</i> (orange), <i>Validating</i> (purple); solid for what happened (from the first
     label, the first training job, the first model), hatched with a dashed outline for the plan (each stage's planned end),
@@ -235,10 +235,28 @@
   label adds <i>(k with a next version)</i>) unless it is shown anyway — the fold opened, Show › Released, Group by stage ›
   Released, a plan, or work under way. A row with plan dates draws the plan (hatched) and
   the tooltip adds <i>estimate: &lt;date&gt;</i>; a row without a goal says <i>no goal set</i> and draws no estimate. The
-  table's Target column shows <i>≈ date</i> in italics, the release calendar places such ROIs by that date (≈). A lead's
+  table's Target column shows <i>≈ date</i> in italics. A lead's
   <b>Adopt estimate</b> is in the ROI's dialog and in the bulk bar for a selection (one plan change per ROI: labeling end,
   then training, validating and release at the expected release). The <b>?</b> beside the stage counts and <i>Stages</i> in
   the View bar open the seven stages with the live figures of <code>estimate-basis</code>.</p>
+  <h3 id="roadmap-next-version">A released ROI being labeled again is work under way (v1.68 §82, U162, D342)</h3>
+  <p><b>Why.</b> On 2026-11-09 the Kidney_Cortex project sat in <i>Projects in progress</i> (30 labels that week, 28 of
+  59 items left) while its four ROIs were nowhere in the default view: each had shipped in wsch_1.3.0 on 2026-09-28, and
+  the hub ranked that release above everything but a running job, so the rows read <i>Released</i> — counted there, left
+  out of <i>Show › in progress</i>, sorted last and folded behind <i>Show the n released ROIs without a plan</i>. The new
+  round was only the <i>next version</i> estimate of v1.66.</p>
+  <p><b>Hub (S58).</b> <code>stage_derived</code> reads <code>labeling</code> for a row that is not training, is
+  <code>released</code>, whose estimate says <code>next_version: true</code> (an open project still has items to label
+  toward its goal) and whose last human label holding the ROI (<code>activity.last_label_at</code>) is within 30 days —
+  the same window the <i>Active</i> section uses. The row keeps <code>released {release, version, at}</code> and its
+  dates; a released ROI whose last label is older (Heart's A_Coronary_R, January) stays <i>Released</i> with its
+  next-version estimate. A lead's plan status still overrides. Health <code>1.68</code>.</p>
+  <p><b>On the page (W46).</b> Such a row is a moving row: under <i>Labeling</i> in the counts (the <i>Released</i> count's
+  tooltip says how many are being relabeled), in <i>Show › in progress</i>, under <i>Group by stage › Labeling</i>, never
+  folded. Its pill reads <i>Labeling</i> with a <i>next version</i> tag whose tooltip names the release it keeps; the
+  timeline draws the past stages and the filled diamond of the shipped version, then the dotted estimate after today
+  and the outlined diamond at the expected release, as W44c did. The fold's <i>(k with a next version)</i> now counts only
+  the released rows whose next version is not under way. The release calendar card is removed (above).</p>
 </section>
 
 <section id="gotchas">
