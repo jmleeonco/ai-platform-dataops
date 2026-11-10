@@ -108,7 +108,11 @@
   <p id="loop-one-at-a-time"><b>v1.39 §43.4:</b> the loop's <i>Train</i> keeps its rule <i>a job of this project is
   running</i>; only the wizard may start a second job of the project, under another deploy version
   (<a href="training.html#jobs-per-project">Training</a>). Since v1.44 the wizard raises a taken or lower version to the
-  next free one instead of refusing it; the loop's own deploy is unchanged (<a href="training.html#deploy-version">Training</a>).</p>
+  next free one instead of refusing it; the loop's own deploy is unchanged (<a href="training.html#deploy-version">Training</a>).
+  <b>v1.70 §84.1:</b> every deploy the loop starts (the §41.5 auto-deploy, the pipeline's deploy stage) takes a
+  development version <code>0.y.z</code> — <code>0.0.0</code> for a family without one, else the highest
+  <code>0.y.z</code> plus one patch, compared with development versions only; a released <code>M.m.p</code> comes only
+  from <i>배포 › Model release</i> (<a href="release-flow.html#model-release">Release flow</a>).</p>
   <p>Since v1.28 the usual way to train is the project page's <b>Train</b> button (<a href="training.html#loop">the
   training loop</a>): add items, label, Train, correct the pre-labels, Train again — no pool and no sampler. Every Train
   is one <b>iteration</b>, and an iteration is a round record like the ones below, with these differences:</p>

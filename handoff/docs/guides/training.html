@@ -597,6 +597,13 @@
   1.2.3.</i>) and Submit stays off; a version you typed stays as typed, <i>use the next version</i> puts the hub's back;
   changing the model name lists that family's versions and its next one. The summary adds <i>deploys &lt;name&gt;
   &lt;version&gt;</i>. A pipeline whose template has no deploy step says so instead of the switch.</p>
+  <p id="deploy-dev-version"><b>v1.70 §84.1 / §84.3 (U164, D344, W48) — development versions.</b> Every deploy the hub starts is a
+  development version <code>0.y.z</code> (a new family starts at <code>0.0.0</code>): when the hub proposes one, the wizard's and the job
+  page's version field say <i>Development version 0.y.z — release it in Model release</i> (a link to 배포 › Model release), a typed
+  version outside <code>0.y.z</code> is refused under the field (<i>Development versions are 0.y.z; release a model in 배포 › Model
+  release</i>) and Submit / Deploy stay off; the hub's 400 <code>deploy_version_dev</code> reads as the same sentence. A released version
+  <code>M.m.p</code> is made only by a model release (<a href="releases.html">Releases</a>, <a href="release-flow.html#model-release">Release
+  flow</a>).</p>
   <p class="note"><code>deploy {enabled, available, model_name, next_version, versions, version, modality, memo}</code>
   (<code>available</code> false = the executor's template has no deploy step yet; then <code>enabled</code> is false and a
   body asking to deploy gets 422 <i>deploy: the executor's hub_loop has no deploy step yet</i>). Body <code>deploy

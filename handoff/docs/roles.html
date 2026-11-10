@@ -52,8 +52,9 @@
   <h2>The public view (v1.55 §72)</h2>
   <p>Opening the hub without a login shows <b>the same shell as after a login</b> — top bar with a 로그인 button, theme and language toggles,
   and a nav limited to what anyone may see: <b>개요</b> › 로드맵, ROI 카탈로그 and 릴리즈 노트 (in 개요 since 2026-11-02; its PDF reports
-  open for everyone), <b>배포</b> › 대시보드 · 스펙 문서 · 모델 다운로드 · ROI · ROI 뷰어 (the entries the ai-pipeline site itself shows to a
-  <code>general</code> login, D321). <code>/</code> opens the roadmap; any other address
+  open for everyone), <b>배포</b> › 대시보드 · 스펙 문서 · 모델 다운로드 · 릴리즈 · 사용법 (the entries the ai-pipeline site itself shows to a
+  <code>general</code> login, D321; since v1.70 §84.3 the former ROI · ROI 뷰어 are the ROI 카탈로그's Catalog and Viewer views —
+  <code>/deploy/roi…</code> and <code>/deploy/roi-viewer…</code> redirect there; its Registry view and 배포 › Model release need a lead). <code>/</code> opens the roadmap; any other address
   asks for a login and returns there afterwards. The view is read-only and nameless: every write and every model / release zip needs a login
   (the pages show a 로그인 후 다운로드 link), the server blanks usernames in anonymous replies, and <code>GET /ui/api/meta</code> answers
   <code>{me: null, now, version, contract_version, public: true}</code>. The hub forwards the public 배포 reads to ai-pipeline as
@@ -113,7 +114,7 @@
   <tr><td><span class="pill warn">data</span> (viewer)</td><td><b>학습</b> (새 학습 · 작업 · 데이터셋 · 모델 · 평가 · 릴리스 · 파이프라인 · 실행 기록 · ROI 레지스트리 · 인구통계 대조 · AI 파이프라인 ↗) · <b>Labeling</b> (My works · Projects · ↳ the opened project · Models — the app's Labeling tab, v1.23 §32) · <b>기록</b> · <b>도움말</b> (D96)</td><td>opens on 학습 › 작업; masked patient IDs; action buttons (review, assign, train, deploy) are hidden or refused; 기록 is one page whose tabs are the former 실시간 · 환자 현황 · 결과물 · 작업자 · 세션 · 분석 · 할당 pages (their old addresses still work as deep links); 계정 is in the user menu (top right)</td></tr>
   <tr><td><span class="pill warn">data</span> (lead)</td><td>the same, plus <b>Hub</b> › Review · Import (web-only pages, moved out of Labeling by §32)</td><td>full IDs and all actions</td></tr>
   <tr><td><span class="pill bad">admin</span></td><td>the same, plus 관리 (관리 · 계정 연결)</td><td>—</td></tr>
-  <tr><td><span class="pill ok">public</span></td><td><b>개요</b> (로드맵 · ROI 카탈로그 · 릴리즈 노트) · <b>배포</b> (대시보드 · 스펙 문서 · 모델 다운로드 · ROI · ROI 뷰어) · 문서, with a 로그인 button (v1.55 §72)</td><td>read-only, no names, no zips; any other hub address sends to the login page and back after login</td></tr>
+  <tr><td><span class="pill ok">public</span></td><td><b>개요</b> (로드맵 · ROI 카탈로그 · 릴리즈 노트) · <b>배포</b> (대시보드 · 스펙 문서 · 모델 다운로드 · 릴리즈 · 사용법) · 문서, with a 로그인 button (v1.55 §72; the ROI 카탈로그's Viewer view is the former ROI 뷰어, v1.70)</td><td>read-only, no names, no zips; any other hub address sends to the login page and back after login</td></tr>
   </tbody></table></div>
   <p>A route outside one's scope answers <b>403</b> with a short message ("not available to your role", "not your work");
   the page shows it as an error box, never an empty page. The server is the enforcement: hiding a menu entry is only a
