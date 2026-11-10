@@ -32,6 +32,27 @@
   <p><b>States.</b> Every package has a state in its <code>RELEASE.json</code>: <b>candidate</b> (made, QA pending — 검증 중), <b>released</b> (QA passed — 배포됨), <b>superseded</b> (a newer one was released — 이전), <b>withdrawn</b> (철회). <b>"Latest" means the latest <i>released</i> package everywhere</b> — the dashboard, 모델 다운로드, the executor's default pipeline, the hub's model list (D333). Candidates are listed apart and are never defaulted; QA runs them on purpose. Packages made before 2026-11-05 (no <code>RELEASE.json</code>) count as released.</p>
 </section>
 
+<section id="model-release">
+  <h2>Model versions and the model release (v1.70 §84, U164, D344)</h2>
+  <p><b>Two lines.</b> A <b>model</b> (a trained network deployed to <code>/mnt/deploy/models/&lt;family&gt;/&lt;version&gt;</code>)
+  is first a <b>development version</b> <code>0.y.z</code>: the hub gives every deploy — the training wizard, a job's deploy
+  stage, the loop's auto-deploy — <code>0.0.0</code> for a new family, else the family's highest <code>0.y.z</code> plus one
+  patch. Labelers train these models for the labeling loop; they are unstable and never production. A typed version at
+  deploy time must be <code>0.y.z</code> too (the hub answers <i>development versions are 0.y.z</i>).</p>
+  <p><b>Releasing a model.</b> In 배포 › <b>Model release</b> a lead picks a deployed version (a <code>0.y.z</code> folder, or a
+  legacy folder deployed before this policy) and gives it a <b>release version</b> <code>M.m.p</code> with M ≥ 1 — proposed
+  <code>(M+1).0.0</code> over the family's highest released major, <code>1.0.0</code> for a family never released; editable
+  to any greater <code>M.m.p</code> that is not a folder yet. ai-pipeline then makes the folder
+  <code>&lt;family&gt;/&lt;M.m.p&gt;</code> as hard links of the source files and writes <code>RELEASED.json</code> (from
+  which version, who, when, note); the hub records it (<code>model_release</code>) and from then on <b>that model is the
+  family's released model</b> — in OncoStudio's picker, on the roadmap (<i>Released</i>, <code>v1.0.0</code>), in the ROI
+  카탈로그. An admin may withdraw a release (the folder stays; the model stops counting). Legacy folders without the file
+  count as released only when a released package ships them, as before.</p>
+  <p><b>Packaging is optional.</b> The workflow is <b>deployed (0.0.5) → released (1.0.0) → packaged</b>: a package (the
+  release flow below) may ship the released folder; when it does, the roadmap names the package beside the version.
+  Details: <a href="../components/hub.html#s60-model-release">hub S60</a>, <a href="../components/ai-pipeline.html#a16-model-release">ai-pipeline A16</a>.</p>
+</section>
+
 <section id="qa-loop">
   <h2>The QA loop, step by step</h2>
   <ol>
