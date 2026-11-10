@@ -194,10 +194,13 @@
   <h3 id="roadmap-stages">The stages (v1.66 §81.3, U160)</h3>
   <p><b>Not started</b> — on the board only because a project targets the ROI or a model holds it; nothing drawn, no plan.
   <b>Planned</b> — a lead set a plan (dates, owner, goal) and no label exists yet. <b>Labeling</b> — at least one human label
-  holds the ROI; the bar is labels / goal. <b>Training</b> — a hub training job whose target ROIs include it is queued or
-  running. <b>Validating</b> — a model holding the ROI exists in the model tree and is being evaluated or reviewed; not yet in
-  a release. <b>Released</b> — the newest live release package ships the ROI. <b>On hold</b> — a lead paused it (plan status).
-  The <b>?</b> beside the stage counts on the roadmap shows this text.</p>
+  holds the ROI; the bar is labels / goal. <b>Training</b> — the labeling goal is reached (the plan's target, else the
+  project's, else its items) and no model trained since exists (v1.69 §83.2: a training job queued or running while labels
+  are still collected is a loop run — shown as a pulse and a marker, not a stage). <b>Validating</b> — a model trained
+  after the goal was reached holds the ROI and is being evaluated or reviewed; not yet in a release (a model with no
+  labels and no goal — an imported model — counts too). <b>Released</b> — the newest live release package ships the ROI.
+  <b>On hold</b> — a lead paused it (plan status). The <b>?</b> beside the stage counts on the roadmap shows this text.
+  Details and the one-line bar: <a href="#roadmap-goal-stages">below</a>.</p>
   <h3 id="roadmap-estimates">How the expected date is computed (v1.66 §81.1, U160, D340)</h3>
   <p>From the hub's own records, recomputed hourly: the median <i>active drawing seconds</i> per ROI (per-ROI median when
   20 or more samples in 90 days, else the platform median) summed over the project's target ROIs — more ROIs, more time — times
@@ -257,6 +260,30 @@
   timeline draws the past stages and the filled diamond of the shipped version, then the dotted estimate after today
   and the outlined diamond at the expected release, as W44c did. The fold's <i>(k with a next version)</i> now counts only
   the released rows whose next version is not under way. The release calendar card is removed (above).</p>
+  <h3 id="roadmap-goal-stages">Activity is human work; training starts at the goal; one continuous bar (v1.69 §83, U163, D343)</h3>
+  <p><b>Why.</b> On 2026-11-10 <i>Projects in progress</i> listed 기존 BagBowel, SpinalCanal and three more projects with
+  "1–3 labels this week" that no labeler had made: the nightly chain had found new CBD / Gallbladder structure sets on
+  abdomen series those projects share, rebuilt the series' merged labels and dated each merged record with the newest
+  source's time; the board took that as a label of the week — for every project holding the series — and §82.1's
+  30-day test turned the same rows into <i>Labeling · next version</i>. On the timeline the Kidney_Cortex rows read
+  <i>Training</i> because their project ran a loop job at 48 / 76 labels, and every next-version bar stopped at the
+  release diamond and resumed only at today.</p>
+  <p><b>Hub (S59).</b> <b>Activity</b> is a save the hub recorded (a deliverable or an OncoStudio save) or a review
+  decision; imported, legacy and hub-merged records are history — they count toward the labels and the first label,
+  never toward <i>labels this week</i>, the last label or the 30-day window. <b>Stages</b>: a row is <i>Training</i>
+  when its goal is reached (<code>goal_reached_at</code>, the label that completed it) and no model trained since
+  exists; <i>Validating</i> when such a model exists; <i>Labeling</i> while labels are collected — a queued or running
+  job never makes the stage by itself, a model trained before the goal is a loop model. A released ROI's next version
+  is judged the same way on the new round; the hub now also says when that round began
+  (<code>dates.next_version_started</code>, the first human save after the release) and dates
+  <code>training_started</code> at the goal and <code>validating_started</code> at the first model after it.
+  Health <code>1.69</code>. Details: <a href="../components/hub.html#s59-goal-stages">hub S59</a>.</p>
+  <p><b>On the page (W47).</b> One continuous bar per row: Labeling to the goal, Training to the first model after it,
+  Validating to the release, the diamond — touching segments, the stage under way running to today; after a release a
+  solid segment from the start of the next round to today, then the dotted estimate. A running job on a labeling row is
+  the pulse before the name and a small orange marker at today on the bar (tooltip: the job and its stage). A bar that
+  starts before the 26-week window keeps an open left end and names its real start in the tooltip. The counts and
+  <i>Show › in progress</i> follow the hub stage.</p>
 </section>
 
 <section id="gotchas">
