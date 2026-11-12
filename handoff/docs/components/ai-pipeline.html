@@ -333,6 +333,23 @@
   </tbody></table></div>
   <p>The writer's root is <code>MODEL_RELEASE_ROOT</code> (default <code>MODELS_ROOT</code>). The dev instance (:5001) sets it to its scratch root <code>instance/dev/models</code> (seeded once with a copy of the never-released <code>ThoracicLN/0.0.1</code>, same md5 as prod's) and so never writes prod's <code>/mnt/deploy/models</code>; the deploy API lists the scratch root's folders next to the real ones, and a version taken in the real root is refused there too (409). No folder is ever deleted. Published in <code>openapi.json</code> (<code>x-contract</code> 1.72). A release folder is a copy of its source by design: the daily <code>duplicate_weights</code> model flag (D38) leaves folders with <code>RELEASED.json</code> out (the source still counts), auto-enqueue skips its already-evaluated weights, and <code>/spec</code> reads it as its source's fingerprint version. The model listings skip dot folders (a build in progress).</p>
 
+  <h2 id="a20-register-1704">The 1.7.0.x fix line registered: 1.7.0.1, 1.7.0.2, 1.7.0.4 (§77 as is, U170, D349, D351 — A20)</h2>
+  <p>1.7.0.4 shipped in OncoStudio v2.2.6 (2026-11-05) and 2.2.6.1 (2026-11-10) while the platform still called 1.7.0
+  the latest. The three QA folders (<code>…_QA_NEEDED</code> from the NAS share, staged on 183 by the orchestrator)
+  went through the normal flow (upload → analyze → create, author <code>jmlee</code>): <b>1.7.0.1</b> on base 1.7.0,
+  <b>1.7.0.2</b> on 1.7.0.1, <b>1.7.0.4</b> on <b>1.7.0.2</b>. 1.7.0.4 was built from the original 1.7.0.3 drop, before
+  the platform's TG-263 rename of 1.7.0.3 (2026-11-03), so a diff against the platform's 1.7.0.3 would read 35 ROIs
+  removed and 35 added; against 1.7.0.2 it is the real step (presets + <code>od_ct.torchscript</code>), and the stack
+  still reads 1.7.0.4 = 1.7.0 + .1 + .2 + .3 (§87.2). Config tags <code>v1.7.0.1</code> (a 2026-09-21 Config 관리
+  sub-revision with other files) and <code>v1.7.0.2</code> (the same six files) already existed: 1.7.0.2 reuses its
+  tag, 1.7.0.1 has none (<code>config_tag: "none"</code>, D351; <a href="../guides/release-flow.html#existing-tag">how</a>).
+  1.7.0.4 was marked released (QA pass, <code>comment_jira: false</code>; Jira was only read), which supersedes 1.7.0;
+  1.7.0.1–1.7.0.3, QA builds that never shipped, stay candidates. <b>The notes exception</b> (D349): 1.7.0.3's notes
+  text was amended (<a href="../guides/release-flow.html#amended-notes"><code>scripts/release_amend_notes.py</code></a>),
+  its models and configs untouched. The 1.7.0 folder's configs had been overwritten on 2026-10-30 by the retired
+  <code>_deploy_to_release</code> (D317), so 1.7.0.1's generated diff is against that overwritten 1.7.0; its notes say
+  so.</p>
+
   <h2 id="a17-renumber">The data fix: hub-deployed <code>1.0.z</code> folders move to <code>0.0.z</code> (§86.2, v1.72, U166, D347 — A17)</h2>
   <p>The folders the hub's training jobs deployed before §84 carry <code>1.0.z</code> and read as releases. The hub prints the mapping (<code>python -m jobs.renumber_dev --dry-run</code>: one JSON line per folder with <code>family, old, new, md5, old_dir, new_dir</code>; <code>old_path</code> / <code>new_path</code> name the weights file), the orchestrator checks it, and ai-pipeline moves the folders with <code>scripts/renumber_models.py</code>; then the hub applies the same mapping to its tables.</p>
   <div class="tbl"><table><thead><tr><th>Command (in <code>/drive/project/ai-pipeline</code>)</th><th>What it does</th></tr></thead><tbody>

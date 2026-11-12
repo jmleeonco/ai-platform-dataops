@@ -77,7 +77,7 @@
   prefixed custom tags (<code>vwsch_…</code>, <code>vsmu_…</code>) are never latest (D318). Registering a tag changes no
   release folder: the copy into the deployed bundle (<code>_deploy_to_release</code>, which rewrote 1.7.0 in place and
   made D317 necessary) is gone since 2026-11-05 (D331).</p>
-  <p id="immutable"><b>Since 2026-11-05 a package never changes</b> (CONTRACT v1.61 §77, D331–D333). A config, model or
+  <p id="immutable"><b>Since 2026-11-05 a package never changes</b> (one exception: the text of 1.7.0.3's notes, D349 — <a href="release-flow.html#amended-notes">amended notes</a>) (CONTRACT v1.61 §77, D331–D333). A config, model or
   OD change becomes a <b>new folder</b> made with the hub's 배포 › 새 릴리즈 wizard. It is written by ai-pipeline's
   release writer, with <code>RELEASE.json</code> (state candidate → released → superseded, or withdrawn),
   <code>RELEASE_NOTES.md</code> and its own config tag. <i>Latest</i> on the dashboard and the hub is the highest

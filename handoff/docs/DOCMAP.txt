@@ -111,6 +111,7 @@ ai-pipeline app/api/deploy_releases.py       components/ai-pipeline.html
 ai-pipeline app/packaging/releases.py        guides/release-flow.html
 ai-pipeline app/jira/*.py                    guides/release-flow.html
 ai-training-web backend/app/release.py       components/executor.html
+ai-training-web backend/app/datasets.py      components/executor.html
 labeling-server app/api_releases.py          guides/release-flow.html
 labeling-server app/ui/routes_tokens.py      guides/release-flow.html
 

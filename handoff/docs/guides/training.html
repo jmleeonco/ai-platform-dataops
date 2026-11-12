@@ -370,6 +370,27 @@
     The job page shows <i>Items chosen anywhere: n train · v valid from p projects + c central-only</i> and the item list
     with each item's side, project and source; the Dashboard lists such a job with project <i>—</i> and a chip per
     project.</li>
+    <li id="train-from-model-web"><b>From an existing model — on the web</b> (v1.74 §88.1, U171, D350, W54). <i>Start
+    from</i> has a third card, <b>From an existing model</b> (기존 모델에서): <i>Take a model's own train / valid data, add
+    more, train again.</i> Its steps are <b>Model → Data → Parameters &amp; submit</b>. <b>Model</b>: type the model's name
+    (or a class, a package, <code>#job</code>) and press Enter — the first usable match is picked and Data opens. The list
+    shows one row per family (its newest version; older ones behind <i>Other versions</i>) with <i>released</i> /
+    <i>development</i>, the packages that ship it, its classes, <i>n train · v valid</i>, where the data is (<i>data
+    bundle</i> or <i>hub job #id</i>) and when it was trained; models without a dataset are last and greyed with the reason.
+    <b>Data</b>: the count line <i>model's data n + v · added a train + b valid · total N train · V valid (− k left
+    out)</i>; <b>The model's data</b> (two collapsed lists; <b>Leave out</b> strikes a row through, <b>Undo</b> takes it
+    back; a bundle sample with no image series cannot be left out); <b>Add data</b>, optional — the same search and table as <a href="#items-anywhere-web">From items anywhere</a>
+    with the model's classes as the target ROIs; a result already in the model's data is greyed <i>already in the
+    model's data</i>, and a patient of the model's Train (Valid) can only be added to Train (Valid), as the row says;
+    <i>Pick 20 % of the added automatically</i>. <b>Parameters &amp; submit</b>: the target ROIs are the model's classes
+    (read-only); the family name is the model's, so the new model is that family's next version (type another name to
+    start a new family); the version line is the assigned one (§86.1). The summary previews every change; the hub's
+    refusals are shown word for word, with <i>Remove the added items of these n patients</i> for the two leak-guard
+    refusals; a job the executor refuses after the hub recorded it opens on its own page, which says why. The job page reads <i>From model &lt;name&gt; &lt;version&gt;: n + v of its data, a + b added</i> and lists the added
+    items; the Dashboard row has the chip <i>from &lt;name&gt; &lt;version&gt;</i>. <b>Train again with more data</b> — on each
+    family in 배포 › 릴리즈 › 개별 모델 릴리즈 and on the page of a finished job that deployed a model — opens the wizard
+    at <code>?mode=model&amp;family=…&amp;version=…</code> with the model picked (on its Data step). Someone who knows only the
+    model's name: Training › <i>From an existing model</i> → type the name, Enter → Next → Submit.</li>
     <li id="executor-slow">A slow or unreachable executor (S49b, 2026-11-02) no longer makes the whole hub answer
     <i>database unavailable</i>: no training page or action keeps a database connection while it waits for the
     executor; its info, templates and account links are fetched once for all pages at a time (only the first 2 s of a fetch are waited for — later pages do not wait — then the page says <i>the training executor has not answered yet</i>), a failure is remembered
@@ -389,6 +410,34 @@
     reads at most 20 unread structure sets per call (C-GET, kept as the hub's copy) and expands at most 100 PACS studies
     per call (<code>truncated</code>); a PACS failure is reported in <code>pacs.error</code> and the hub rows are still
     answered.</li>
+    <li id="train-from-model-hub"><b>From an existing model — the hub</b> (v1.74 §88.2, U171, D350, S66).
+    <code>GET /ui/api/training/models</code> lists every family of the latest released package, every hub-deployed model
+    (a model <code>deploy_record</code> whose md5 a non-legacy training job made) and every model release, hidden ones
+    left out (§50) — each with <code>state</code> <i>released</i> / <i>development</i>, the <code>packages</code> that ship
+    it, its <code>classes</code> (official names; <code>classes_unknown</code> = names the registry lacks), where its data
+    is, <code>train_n</code> / <code>valid_n</code>, <code>usable</code> and a <code>reason</code>. <b>Job</b>: the model's
+    own hub job — its pinned lists (an item job's entries, else the job's Train / Valid series, else the split its run
+    registered); the counts are the job's record. <b>Bundle</b>: a data bundle the executor names for the family
+    (§88.3, cached 5 min); usable once the executor lists <code>dataset_base</code> (until then <i>the executor does not
+    take a model's dataset yet</i>). Neither: <i>no dataset on the server</i>. <code>GET …/models/{family}/{version}/
+    dataset</code> answers the rows (patient, series, sample; never a patient name). Preview and Submit take
+    <code>cohort.base {family, version, drop[]}</code> with the added items in <code>train</code> / <code>valid</code>
+    (either may be empty): the target ROIs are the model's classes (<i>the target ROIs of a model's data are the
+    model's classes</i>), an added series already in the model's data is refused (<i>already in the model's data:
+    &lt;patient&gt;</i>), and so is an added patient who is on the other side of it (<i>patient on the other side of the
+    model's data: &lt;patient&gt;</i>); a dropped series must be in the model's data (<i>not in the model's data:
+    &lt;uid&gt;</i>); the minimum (2 train, 1 valid) counts the model's data and the additions together. For a job's data
+    the hub re-checks each row: the label the job used while it is still usable, else the series' newest usable label;
+    a row with neither is left out and named in the preview's <code>left_out</code>; the executor then gets one plain
+    item cohort (the model's rows first). A bundle goes to the executor as <code>cohort.base</code> and the job refuses
+    without <code>dataset_base</code> (<i>executor does not take a model's dataset yet</i>). The preview's
+    <code>counts</code> gain <code>base_train_n</code>, <code>base_valid_n</code>, <code>dropped_n</code>,
+    <code>left_out_n</code>, <code>added_train_n</code>, <code>added_valid_n</code> (<code>train_n</code> /
+    <code>valid_n</code> are the totals). The family name defaults to the model's, so the new model is that line's next
+    version (§86.1); every items preview answers it in <code>deploy {model_name, version, next_version, enabled}</code>
+    for the version line. The job record keeps <code>cohort.base</code> {family, version, source, job_id | dataset, train_n,
+    valid_n, dropped_n, left_out_n, drop} and marks the model's rows <code>from_base</code>; Dashboard rows carry
+    <code>base</code> {family, version}.</li>
     <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
     a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
     <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread
@@ -881,6 +930,14 @@
       series — from whichever project, from none, or from the central PACS; a label found nowhere is left out and named in
       the select log. There is no project: no pre-label hand-off, no in-flight project guard, and the family name
       (<code>deploy.model_name</code>) is required (<a href="../components/executor.html#hub-items">executor</a>).</li>
+    <li id="executor-dataset-base"><b>From an existing model — the executor</b> (v1.74 §88.3, U171, D350, E25): a
+      <code>hub_items</code> job may carry <code>cohort.base</code>, a model's data bundle
+      (<code>/mnt/deploy/data/&lt;name&gt;/&lt;version&gt;</code>). Its train entries train and its valid entries validate,
+      minus the rows left out (<code>drop</code>), as the image / mask NIfTI pairs the model was trained on — they are not
+      re-converted; only the added items are downloaded and converted. The classes are the bundle's
+      <code>classes.json</code> (in the team table's official names), the bundle is only read, and the split log says
+      <code>model's data: &lt;name&gt; &lt;version&gt; … n train + v valid as their NIfTI pairs</code>
+      (<a href="../components/executor.html#e25-dataset-base">executor</a>).</li>
     <li><b>Cancel</b> stops the running stage; the stages after it are marked cancelled. <b>Resume from a stage</b> re-runs that stage and everything after it on the same job — same folders, same split, same pipeline version; it is refused while an earlier stage has not succeeded, and while the job is still running.</li>
     <li><b>Logs</b>: every stage has its own log on the job page, followed live while it runs; a resumed stage appends to its old log.</li>
     <li><b>Templates since v1.5</b>: <code>prelabel_only</code> pre-labels a list of series with an existing model and
