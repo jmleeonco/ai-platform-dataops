@@ -373,13 +373,15 @@
     <li id="train-from-model-web"><b>From an existing model — on the web</b> (v1.74 §88.1, U171, D350, W54). <i>Start
     from</i> has a third card, <b>From an existing model</b> (기존 모델에서): <i>Take a model's own train / valid data, add
     more, train again.</i> Its steps are <b>Model → Data → Parameters &amp; submit</b>. <b>Model</b>: type the model's name
-    (or a class, a package, <code>#job</code>) and press Enter — the first usable match is picked and Data opens. The list
+    (or a class, a package, <code>#job</code>) and press Enter — a text equal to a family name picks that family (so
+    <i>kidney</i> picks Kidney, not Abdomen whose classes name Kidney_L), else the first usable match; Data opens. The list
     shows one row per family (its newest version; older ones behind <i>Other versions</i>) with <i>released</i> /
     <i>development</i>, the packages that ship it, its classes, <i>n train · v valid</i>, where the data is (<i>data
-    bundle</i> or <i>hub job #id</i>) and when it was trained; models without a dataset are last and greyed with the reason.
+    bundle</i> or <i>hub job #id</i>) and when it was trained; models without a dataset are last and greyed with the reason
+    (a model unusable for classes the ROI registry lacks names them).
     <b>Data</b>: the count line <i>model's data n + v · added a train + b valid · total N train · V valid (− k left
     out)</i>; <b>The model's data</b> (two collapsed lists; <b>Leave out</b> strikes a row through, <b>Undo</b> takes it
-    back; a bundle sample with no image series cannot be left out); <b>Add data</b>, optional — the same search and table as <a href="#items-anywhere-web">From items anywhere</a>
+    back; every row can be left out — a bundle sample with no image series by its sample id, §88.5); <b>Add data</b>, optional — the same search and table as <a href="#items-anywhere-web">From items anywhere</a>
     with the model's classes as the target ROIs; a result already in the model's data is greyed <i>already in the
     model's data</i>, and a patient of the model's Train (Valid) can only be added to Train (Valid), as the row says;
     <i>Pick 20 % of the added automatically</i>. <b>Parameters &amp; submit</b>: the target ROIs are the model's classes
@@ -425,8 +427,9 @@
     (either may be empty): the target ROIs are the model's classes (<i>the target ROIs of a model's data are the
     model's classes</i>), an added series already in the model's data is refused (<i>already in the model's data:
     &lt;patient&gt;</i>), and so is an added patient who is on the other side of it (<i>patient on the other side of the
-    model's data: &lt;patient&gt;</i>); a dropped series must be in the model's data (<i>not in the model's data:
-    &lt;uid&gt;</i>); the minimum (2 train, 1 valid) counts the model's data and the additions together. For a job's data
+    model's data: &lt;patient&gt;</i>); a left-out row is named by its series, or by its bundle sample when it has no series (v1.74
+    §88.5, S67: every row's <code>ref</code> in the dataset route), and must be in the model's data (<i>not in the
+    model's data: &lt;value&gt;</i>); the minimum (2 train, 1 valid) counts the model's data and the additions together. For a job's data
     the hub re-checks each row: the label the job used while it is still usable, else the series' newest usable label;
     a row with neither is left out and named in the preview's <code>left_out</code>; the executor then gets one plain
     item cohort (the model's rows first). A bundle goes to the executor as <code>cohort.base</code> and the job refuses
