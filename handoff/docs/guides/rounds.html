@@ -112,7 +112,11 @@
   <b>v1.70 §84.1:</b> every deploy the loop starts (the §41.5 auto-deploy, the pipeline's deploy stage) takes a
   development version <code>0.y.z</code> — <code>0.0.0</code> for a family without one, else the highest
   <code>0.y.z</code> plus one patch, compared with development versions only; a released <code>M.m.p</code> comes only
-  from <i>배포 › Model release</i> (<a href="release-flow.html#model-release">Release flow</a>).</p>
+  from <i>배포 › Model release</i> (<a href="release-flow.html#model-release">Release flow</a>).
+  <b>v1.72 §86.1:</b> nobody types a version — the loop's deploy, the wizard, a rerun and the job page's Deploy all take
+  the version the hub assigns at that moment (the line's highest development version and the live jobs' reserved ones,
+  plus one patch); a typed version other than that one is refused (400 <code>deploy_version_auto</code>), nothing is
+  raised any more; only an admin releases (<code>(M+1).0.0</code>, assigned too).</p>
   <p>Since v1.28 the usual way to train is the project page's <b>Train</b> button (<a href="training.html#loop">the
   training loop</a>): add items, label, Train, correct the pre-labels, Train again — no pool and no sampler. Every Train
   is one <b>iteration</b>, and an iteration is a round record like the ones below, with these differences:</p>

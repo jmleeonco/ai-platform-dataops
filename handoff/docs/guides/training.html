@@ -604,6 +604,15 @@
   release</i>) and Submit / Deploy stay off; the hub's 400 <code>deploy_version_dev</code> reads as the same sentence. A released version
   <code>M.m.p</code> is made only by a model release (<a href="releases.html">Releases</a>, <a href="release-flow.html#model-release">Release
   flow</a>).</p>
+  <p id="deploy-version-auto"><b>v1.72 §86.1 (U166, D347, W52) — versions are assigned, never typed.</b> The version field of the wizard's
+  Deploy section and of the job page's <i>Deploy to the server…</i> dialog is now a read-only line: <i>version 0.0.4 — assigned
+  automatically</i> (the hub's next development version of the family — the highest <code>0.0.z</code> plus one, <code>0.0.0</code> for a
+  new one; for a model name you typed, or a data deploy, the dialog names it after the dry run). Nothing is typed and the request carries
+  no version; the hub picks it at deploy time, whoever presses (admin included), so the text above about typing, reserved or taken
+  versions and <i>use the next version</i> no longer applies. A <i>Re-run</i> deploys the next version the same way. Should the hub ever
+  answer 400 <code>deploy_version_auto</code> (a request that carried another version) it reads <i>The hub assigns the version itself; this
+  deploy carried another one. Reload and try again.</i> Only an admin releases a model (배포 › 모델 › Model release); a release takes the
+  next major version <code>(M+1).0.0</code>, also assigned.</p>
   <p class="note"><code>deploy {enabled, available, model_name, next_version, versions, version, modality, memo}</code>
   (<code>available</code> false = the executor's template has no deploy step yet; then <code>enabled</code> is false and a
   body asking to deploy gets 422 <i>deploy: the executor's hub_loop has no deploy step yet</i>). Body <code>deploy

@@ -588,6 +588,12 @@
   RTSTRUCT — the confirmation says so (<i>GTV_Liver 1.2.0 — makes none of this project's target ROIs; its 3 ROIs (…) are
   added as they are</i>). A target no ticked model makes reads <i>not made: …</i>; the run only refuses when nothing ticked
   makes anything.</p>
+  <p id="o36-prelabel-names-volume"><b>From 2026-11-12 (O36): the registry&#8217;s names count, and the whole scan is contoured</b>.
+  A model whose class is one of a target ROI&#8217;s alternative names &#8212; the ROI registry&#8217;s or the project&#8217;s (<i>A_Brachiocephls</i> &#8592;
+  <i>Brachiocephalic_Trunk</i>) &#8212; now makes that target in the picker, the confirmation and the saved RTSTRUCT; before, only the
+  project&#8217;s own names counted and the target read <i>not made: &#8230; (no model makes it)</i>. And every model of an <i>Auto-contour&#8230;</i>
+  run now sees the whole image: before, an installed model ran only inside the boxes the organ detector placed for it, so a
+  vessel pre-label could stop above the pelvis (no iliacs, no inferior vena cava) or not appear at all.</p>
   <p id="v123-hub"><b>From v1.23 (hub)</b>. <i>Auto-contour not edited</i> (§30): when you save a label on top of an
   auto-contour without changing any of its ROIs, the item gets one warning in its label checks — not an error, since the
   auto-contour may simply be right; change one ROI and it goes away (the check lists which ROIs were left identical).
