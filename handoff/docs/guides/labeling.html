@@ -594,6 +594,23 @@
   project&#8217;s own names counted and the target read <i>not made: &#8230; (no model makes it)</i>. And every model of an <i>Auto-contour&#8230;</i>
   run now sees the whole image: before, an installed model ran only inside the boxes the organ detector placed for it, so a
   vessel pre-label could stop above the pelvis (no iliacs, no inferior vena cava) or not appear at all.</p>
+  <p id="feedback-1114"><b>From 2026-11-14 (labeler feedback): fewer steps per item, re-send after a change, a cleaner viewer</b>.
+  <i>Project page</i>: a <i>Labeler</i> filter (<i>All labelers</i> or one person, with their item count) shows only the
+  items that person labeled or holds; <i>Approve</i> works on several selected rows at once (one confirmation, one summary
+  &#8212; <i>Approved 3 item(s). 1 not approved &#8212; P4 &#183; CT: &#8230;</i>), and a lead has <i>Approve &amp; send</i>, which approves the
+  selected rows and sends the approved ones to the central PACS in one go. <i>Add items</i> has <i>Run auto-contour after
+  adding</i> (remembered on this PC): the added items are pre-labeled with the same model choice as <i>Auto-contour&#8230;</i>.
+  Opening an item whose auto-contour is still queued or running on this PC asks first (<i>Open image now</i> / <i>Cancel</i>)
+  instead of silently opening the image without pre-labels. <i>Send to central after a change</i> (contract v1.75 &#167;27.10):
+  a sent item opens editable for its labeler and for leads with the line <i>Sent to central. Saving makes a new revision that
+  must be reviewed and sent again.</i>; after the save the row reads <i>Labeled &#183; Modified since sent</i> and, once approved,
+  <i>Send to central</i> is enabled again (no automatic C-STORE). Against a hub older than 1.75 a lead gets <i>Edit
+  (reopens)</i>, which reopens the item and opens it editable. <i>Viewer</i>: the pin (float / dock) button left of the tool
+  options is gone &#8212; the bar stays docked. <i>Clean Volume</i>: Up / Down (and Page Up / Down) move through the ROI list, also
+  while typing in Search; the arrow next to a component moves the crosshair to it, so you see which part of the ROI it is;
+  the 3D view shows the result at once (also after Boolean, Invert and Offset). <i>Interactive Seg</i> (nnInteractive and GTV
+  Interactive): the model&#8217;s answer is added only where it connects to your click or edited slice &#8212; a blob it guesses far
+  away (seen in 3D on whole-body CTs) is no longer added to the ROI.</p>
   <p id="v123-hub"><b>From v1.23 (hub)</b>. <i>Auto-contour not edited</i> (§30): when you save a label on top of an
   auto-contour without changing any of its ROIs, the item gets one warning in its label checks — not an error, since the
   auto-contour may simply be right; change one ROI and it goes away (the check lists which ROIs were left identical).
@@ -1111,6 +1128,21 @@
   pill. Approving one says <i>The send is kept — nothing is sent again</i> (requesting changes: the send is set aside and
   the corrected label is sent after its review). The case's History lists the entry <i>Sent · acknowledged by OncoStudio ·
   verified on the central PACS</i> (or <i>found on the central PACS</i> for a backfilled row).</p>
+
+  <h3 id="revise-after-send">Editing a structure set after it was sent (v1.75 §27.10, U172, D352)</h3>
+  <p>A sent item is not locked for its labeler or a lead. When the item's labeler, its reviewer or a lead saves a
+  <b>new</b> structure set on an item that is <b>Sent</b> or <b>Sent · review pending</b>, the hub sets the earlier send
+  aside in the same moment: the item leaves Sent and reads <b>Labeled</b> (an approved item goes back to labeled — the
+  approval was given to the earlier file; its review stays in the history). The central PACS keeps the earlier file
+  until the new one is sent; nothing is sent automatically. The new structure set then goes the normal way: review, then
+  a send — a lead's <i>Send to central</i> from the hub, or the send from OncoStudio, which the hub records as a second
+  send of the item. The earlier send stays in the item's record as <i>superseded</i>, with who revised it and when.
+  Someone who does not hold the item still saves only on their own PC (<i>saved locally</i>); that changes nothing.
+  A lead who wants to send an item back with a comment without editing it still uses <i>Reopen</i>.</p>
+  <p id="revise-after-send-hub"><b>Hub (S68).</b> Rows, <code>…/cases</code>, <code>/api/v1/my/work</code>, the web's
+  twins and the case history carry <code>central.superseded</code>, <code>central.revised_at</code> and
+  <code>central.revised_by</code>; the case history lists the entry <code>central_revised</code> (the sent SOP, the new
+  SOP, who). Health <code>contract_version "1.75"</code>.</p>
 </section>
 
 <footer>
