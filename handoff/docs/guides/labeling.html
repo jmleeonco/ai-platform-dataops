@@ -619,6 +619,14 @@
   artifact</i>; what is written is unchanged (a section on keeping empty ROIs in the label follows). In the viewer, the
   ROI panel&#8217;s <i>Volume</i> follows an undo or redo at once (also of Clean Volume, Boolean and Clean Slice). Closing a viewer
   tab after a completed <i>Save to file</i> (or Save to SCP) no longer asks about unsaved changes; an edit after the save asks again.</p>
+  <p id="o41"><b>From 2026-11-15 (v1.76 &#167;89): an empty ROI is a label</b>. Under the Labeling tab a target ROI the
+  auto-contour finds nothing for is kept as an ROI without contours: the result line says <i>ready &#183; 1 ROI(s) drawn, 1
+  empty (not found in this image): Brain</i>, and a run where every ROI is empty is still written and opened (it no longer
+  fails). The ROI list marks such an ROI <i>empty</i>. A save of a labeling item keeps every empty ROI you did not delete
+  (<i>Save empty ROIs</i> is ticked and read-only there), so the file and the hub name it and the row counts it (<i>2/2</i>);
+  the hub&#8217;s label checks show <i>Empty ROI</i> as a warning, and the ROIs cell&#8217;s tooltip lists <i>k empty: &lt;names&gt;</i>
+  when the hub sends them. Delete the ROI if you did not label it; draw it if the structure is there. Outside the
+  Labeling tab the two Settings (<i>Export empty ROIs</i>, <i>Save empty ROIs</i>) work as before.</p>
   <p id="v123-hub"><b>From v1.23 (hub)</b>. <i>Auto-contour not edited</i> (§30): when you save a label on top of an
   auto-contour without changing any of its ROIs, the item gets one warning in its label checks — not an error, since the
   auto-contour may simply be right; change one ROI and it goes away (the check lists which ROIs were left identical).
