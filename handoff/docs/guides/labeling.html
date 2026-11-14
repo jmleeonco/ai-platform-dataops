@@ -611,6 +611,14 @@
   the 3D view shows the result at once (also after Boolean, Invert and Offset). <i>Interactive Seg</i> (nnInteractive and GTV
   Interactive): the model&#8217;s answer is added only where it connects to your click or edited slice &#8212; a blob it guesses far
   away (seen in 3D on whole-body CTs) is no longer added to the ROI.</p>
+  <p id="o40"><b>From 2026-11-15 (four small fixes)</b>. The <i>Project page</i>&#8217;s status line counts what the filters
+  show: <i>5 of 21 item(s)</i> while the <i>Labeler</i> filter (or <i>Not local only</i>, <i>With findings</i>, a split
+  tab) hides rows, <i>21 item(s)</i> when every row shows. An <i>auto-contour</i> whose model finds nothing in the image
+  (for example an abdomen model on a head-and-neck scan) fails with <i>The model produced no contour for this image &#8212;
+  empty: Liver. No RTSTRUCT was written.</i> (the target ROIs that came out empty) instead of <i>Failed to write RTSS
+  artifact</i>; what is written is unchanged (a section on keeping empty ROIs in the label follows). In the viewer, the
+  ROI panel&#8217;s <i>Volume</i> follows an undo or redo at once (also of Clean Volume, Boolean and Clean Slice). Closing a viewer
+  tab after a completed <i>Save to file</i> (or Save to SCP) no longer asks about unsaved changes; an edit after the save asks again.</p>
   <p id="v123-hub"><b>From v1.23 (hub)</b>. <i>Auto-contour not edited</i> (§30): when you save a label on top of an
   auto-contour without changing any of its ROIs, the item gets one warning in its label checks — not an error, since the
   auto-contour may simply be right; change one ROI and it goes away (the check lists which ROIs were left identical).
