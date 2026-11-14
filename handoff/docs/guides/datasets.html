@@ -175,8 +175,19 @@
   names, in every project and job. <code>DELETE /ui/api/registry/aliases/{official}/{alias}</code> removes a hub alias;
   the file's own alternative names cannot be removed there (<code>403 owned by the registry file</code>). 관리 › ROIs lists
   the hub's aliases with who added them (<code>GET /ui/api/registry/roi</code> <code>hub_aliases</code>; <code>GET
-  /ui/api/registry/aliases?official=</code> lists both kinds). When ai-pipeline's file later lists the same name, it is the
-  file's.</p>
+  /ui/api/registry/aliases?official=</code> lists both kinds). When ai-pipeline's file later lists the same name, spelled
+  exactly so, it is the file's.</p>
+  <p id="hub-alias-variants"><b>Spelling variants (§80.1 amendment, S71, U177 — 2026-11-15).</b> The research converter
+  (<code>dicom_to_nifti</code>) compares ROI names <i>exactly</i>, so a dataset that writes <code>gall bladder</code> trains
+  nothing as Gallbladder while the registry only says <code>gallbladder</code>. A spelling variant of a name the ROI
+  already has — other spacing or case of its official name or of one of its alternative names — is therefore a new hub
+  alias (<code>201</code>), served verbatim in <code>registry.csv</code> / <code>registry.json</code> next to the name it
+  varies; <code>200 created: false</code> only for the exact string already served (the official name, the file's
+  alternative name as the file spells it, or a hub alias). The hub's own matching is unchanged (it already ignores case and
+  spaces). A name of another ROI is still <code>422</code>. <code>DELETE</code> takes the spelling as stored; the file's own
+  spelling stays <code>403</code> and never removes a hub variant. Storage: <code>roi_alias_hub</code> is keyed by the
+  alias as written (<code>migrations/076_roi_alias_hub_variants.sql</code>). First use: AMOS_ABD_MRCT_PUB
+  (<code>right kidney</code>, <code>left kidney</code>, <code>gall bladder</code>) for the Abdomen job after hub job 91.</p>
   <p>Since v1.55 §72 (S47) <code>GET /ui/api/registry/roi</code> is part of the public set: every signed-in account
   (labelers too) and a visitor without a login read it — the roadmap's ROI picker uses it. An anonymous reply carries
   no names: <code>custom[].created_by</code> is <code>null</code> (<code>app/ui/routes_registry.py</code> <code>roi</code>,
