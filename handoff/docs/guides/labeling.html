@@ -627,6 +627,15 @@
   the hub&#8217;s label checks show <i>Empty ROI</i> as a warning, and the ROIs cell&#8217;s tooltip lists <i>k empty: &lt;names&gt;</i>
   when the hub sends them. Delete the ROI if you did not label it; draw it if the structure is there. Outside the
   Labeling tab the two Settings (<i>Export empty ROIs</i>, <i>Save empty ROIs</i>) work as before.</p>
+  <p id="empty-roi-hub"><b>Hub (S72, v1.76 &#167;89.3).</b> The upload (<code>POST /api/v1/labels</code>) takes
+  <code>roi_empty: [names]</code> beside <code>roi_names</code> and keeps it with the revision
+  (<code>label_revision.roi_empty</code>, names only; an unnamed ROI is dropped). Every row carries <code>roi_empty</code>
+  of the row&#8217;s human revision &#8212; <code>GET /api/v1/projects/{code}/cases</code>, <code>/api/v1/my/work</code>
+  (<code>to_label</code>, <code>to_review</code>), the web project rows and <code>/ui/api/my/work</code> &#8212; and
+  <code>[]</code> when the row has none or no human revision. A save from an older app (no <code>roi_empty</code>) and an
+  imported RTSTRUCT get it from the file when the hub&#8217;s label check parses it (the revision&#8217;s own ROIs only; what
+  the app sent is never overwritten); the revisions stored before were filled once by <code>jobs.roi_empty</code>.
+  Counting is unchanged: an empty ROI of the revision counts as done (&#167;20.1), and <i>Empty ROI</i> stays a warning.</p>
   <p id="v123-hub"><b>From v1.23 (hub)</b>. <i>Auto-contour not edited</i> (§30): when you save a label on top of an
   auto-contour without changing any of its ROIs, the item gets one warning in its label checks — not an error, since the
   auto-contour may simply be right; change one ROI and it goes away (the check lists which ROIs were left identical).
