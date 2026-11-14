@@ -999,6 +999,14 @@
       <code>all</code> trains every target ROI on every item, and an ROI an item lacks is taught as absent. The train
       stage's log says which mode ran and how many items lacked a ROI
       (<a href="../components/executor.html#class-mode">executor</a>).</li>
+    <li id="executor-empty-roi"><b>An empty ROI trains as absent</b> (v1.76 §89, U175, D353, E28): an ROI the label names
+      without drawing it — <i>not in this image</i> — is a label. In <code>relevant</code> mode an item trains on every class
+      its structure set <b>names</b>, drawn or not: a named class without contours is an all-zero channel, so the model learns
+      background for it; a class the set does not name is still ignored for that item. A label whose every target ROI is
+      empty stays in the job (an empty mask) instead of being dropped. The job page's <code>cohort_resolved.empty_rois</code>
+      counts the items per class. A model's miss that the labeler leaves empty becomes <i>absent</i> in training — delete the
+      ROI to say <i>not labelled</i>, draw it to say <i>it is there</i>
+      (<a href="../components/executor.html#e28-empty-roi">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
