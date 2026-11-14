@@ -598,7 +598,7 @@
   <i>Project page</i>: a <i>Labeler</i> filter (<i>All labelers</i> or one person, with their item count) shows only the
   items that person labeled or holds; <i>Approve</i> works on several selected rows at once (one confirmation, one summary
   &#8212; <i>Approved 3 item(s). 1 not approved &#8212; P4 &#183; CT: &#8230;</i>), and a lead has <i>Approve &amp; send</i>, which approves the
-  selected rows and sends the approved ones to the central PACS in one go. <i>Add items</i> has <i>Run auto-contour after
+  selected rows and sends the approved ones to the central PACS in one go. A row that reads <i>Sent &#183; review pending</i> (saved straight to the central PACS before a review) is approved the same way; the send is kept and the row reads <i>Sent</i>. <i>Add items</i> has <i>Run auto-contour after
   adding</i> (remembered on this PC): the added items are pre-labeled with the same model choice as <i>Auto-contour&#8230;</i>.
   Opening an item whose auto-contour is still queued or running on this PC asks first (<i>Open image now</i> / <i>Cancel</i>)
   instead of silently opening the image without pre-labels. <i>Send to central after a change</i> (contract v1.75 &#167;27.10):
@@ -1142,7 +1142,12 @@
   <p id="revise-after-send-hub"><b>Hub (S68).</b> Rows, <code>…/cases</code>, <code>/api/v1/my/work</code>, the web's
   twins and the case history carry <code>central.superseded</code>, <code>central.revised_at</code> and
   <code>central.revised_by</code>; the case history lists the entry <code>central_revised</code> (the sent SOP, the new
-  SOP, who). Health <code>contract_version "1.75"</code>.</p>
+  SOP, who). Health <code>contract_version "1.75"</code>. <b>S69:</b> the new structure set becomes the item's file the
+  moment it is stored, so <i>Approve</i> approves it and the lead's <i>Send to central</i> (or <i>Approve &amp; send</i>)
+  sends it as the item's second send; an approval given before S69 that still names the earlier file is refused with
+  <i>revised after its send — review the newer revision</i>. Saving on an <b>approved</b> item that has no live send
+  (never sent, or its send already set aside) does not reopen it: the file is stored, the item stays Approved on its
+  approved file (§5, §34, §27.10 applies only to a live send).</p>
 </section>
 
 <footer>
