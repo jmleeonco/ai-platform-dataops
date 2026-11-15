@@ -476,6 +476,27 @@
     not read yet</i> + <b>Read ROI names</b> reads them 20 at a time with progress and Cancel, then the panel counts again.
     A labeler (or any non-lead) sees the panel read-only: no drag, no menu, no ×. A search that read structure
     sets (or <i>Read ROI names</i> in the results) makes the panel count once more (W43b).</span></li>
+    <li id="leave-out-rois"><b>Leave a dataset's ROIs out of a job</b> (v1.77 §90, U178, D355 — hub S74, web W57,
+    executor E32): a dataset may name a target ROI and still not draw it by our rule (the AMOS kidneys). Instead of
+    deleting the alias for everyone, the job says <i>do not use Kidney_L / Kidney_R from AMOS</i>: for every item of that
+    dataset in the job the ROI is <b>not labelled</b> — not a relevant class, ignored in the loss and the Dice, never taught
+    as background — and the item's other ROIs train as usual. Aliases, labels, files, the registry and other jobs are
+    untouched; the choice lives in the job.
+    <span id="leave-out-rois-hub"><b>Hub (S74).</b> <code>POST /ui/api/training/jobs</code> and <code>…/jobs/preview</code>
+    take <code>cohort.roi_exclude: [{prefix, rois: [official name]}]</code> (at most 20 entries; <code>prefix</code> as above,
+    case-sensitive; a name is matched to a target ROI of the job, case and spaces aside). The hub writes
+    <code>exclude_rois</code> onto every <i>added</i> train and valid item whose PatientID has the prefix — a model's own
+    rows (<a href="#train-from-model-hub">From an existing model</a>, a job's rows or a bundle) are never touched — and the
+    executor takes the class out of those items (<a href="#executor-item-roi-exclude">below</a>). Refusals, verbatim as
+    the preview's <code>problem</code> and the submit's error: <i>not a target ROI: &lt;name&gt;</i> (422), <i>no item of
+    dataset &lt;prefix&gt; in this job</i> (422), <i>executor does not leave ROIs out per item yet</i> (409, an executor
+    without <code>item_roi_exclude</code>). The preview answers <code>roi_exclude</code> (as taken: one entry per prefix,
+    official names), <code>excluded: [{prefix, roi, n_items}]</code> and, for every job, <code>counts.roi_items</code> —
+    per target ROI the train / valid items holding it <b>after</b> the exclusion (a bundle's rows count as holding the
+    bundle's classes; an item whose names the hub does not know yet counts for none) — plus
+    <code>counts.excluded_all_n</code> (items left with no target, which the executor drops) and <code>warnings</code>
+    (<i>no train item holds &lt;ROI&gt;</i>). The job record keeps <code>roi_exclude</code> and <code>excluded</code>, and
+    each item's <code>exclude_rois</code>. Details: <a href="../components/hub.html#s74-roi-exclude">hub S74</a>.</span></li>
     </ul></li>
   </ol>
   <p><i>Advanced: any template, any cohort</i> opens the old wizard (<code>/training/advanced</code>). The old
@@ -1016,6 +1037,12 @@
       patient id (Abdomen 2.0.0 has none) no longer fails the split as one patient on both sides; each such entry counts
       as its own patient, and the job page's <code>cohort_resolved.entries_without_patient_id</code> says how many there
       were (<a href="../components/executor.html#e30-blank-patient-id">executor</a>).</li>
+    <li id="executor-item-roi-exclude"><b>Leaving a dataset's ROIs out of a job</b> (v1.77 §90, E32): when the wizard
+      leaves an ROI of a dataset out (e.g. the AMOS kidneys), each of that dataset's items trains without it — the ROI is
+      not labelled there (not taught as absent or as background), the item's other ROIs train as usual, and an item left
+      with no target ROI is dropped. Other jobs and the ROI names are not affected. The job page's
+      <code>cohort_resolved.excluded_rois</code> counts the items per ROI and <code>excluded_all</code> lists the dropped
+      ones (<a href="../components/executor.html#e32-item-roi-exclude">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
