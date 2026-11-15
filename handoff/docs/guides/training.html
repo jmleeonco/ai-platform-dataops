@@ -1012,6 +1012,10 @@
       repaired on the executor's copy (the empty element dropped; pixels and geometry untouched) instead of being left
       out; the job page's <code>cohort_resolved.headers_repaired</code> lists each such series
       (<a href="../components/executor.html#e29-header-repair">executor</a>).</li>
+    <li id="executor-blank-patient-id"><b>Entries without a patient id</b> (E30): a data bundle whose entries carry no
+      patient id (Abdomen 2.0.0 has none) no longer fails the split as one patient on both sides; each such entry counts
+      as its own patient, and the job page's <code>cohort_resolved.entries_without_patient_id</code> says how many there
+      were (<a href="../components/executor.html#e30-blank-patient-id">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
