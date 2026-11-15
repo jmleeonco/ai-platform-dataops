@@ -482,6 +482,21 @@
     dataset in the job the ROI is <b>not labelled</b> — not a relevant class, ignored in the loss and the Dice, never taught
     as background — and the item's other ROIs train as usual. Aliases, labels, files, the registry and other jobs are
     untouched; the choice lives in the job.
+    <span id="leave-out-rois-web"><b>In the wizard (W57).</b> In <i>From items anywhere</i> and in <i>From an existing
+    model › Add data</i>, choose the dataset: in the panel <i>ROI names in &lt;prefix&gt;</i> every target ROI's zone has
+    the switch <b>Do not use from &lt;prefix&gt;</b> (ko <b>&lt;prefix&gt;에서 사용 안 함</b>) — for anyone who can submit,
+    not only leads. On, the zone is struck through with <i>left out of this job</i>, the dataset's names that resolve to
+    it are dimmed, the results' <i>Target ROIs</i> column shows <i>Kidney_L left out</i> on that dataset's rows (and counts
+    only the ROIs still in play), and <i>Has all target ROIs</i> no longer hides a row that lacks only the left-out ROI. A
+    row whose only target is left out holds none, so it is not added. The line under the panel says it is this job only:
+    no alternative name is written. The count line and the <i>Parameters &amp; submit</i> step add <i>· AMOS: Kidney_L,
+    Kidney_R left out (300 items)</i> (the submit step takes the preview's <code>excluded</code>), and the confirm names it;
+    Preview / Submit send <code>cohort.roi_exclude</code> for the datasets with at least one added item (one switched on
+    with no item added says <i>not sent</i>). The choice stays while you change the dataset, and goes with the wizard. The
+    job page shows <b>Left out</b> <i>AMOS — Kidney_L, Kidney_R (300 items)</i>; its <i>Train again with more data</i>
+    opens the wizard with <code>&amp;from=&lt;job id&gt;</code>, says <i>Carried over from job #… : AMOS — … left out</i> on
+    the Data step and has the switches on (the base's own rows stay as they are: only added items of the dataset are left
+    out). <i>Re-run</i> on the job page is the hub's (the same cohort, with its <code>roi_exclude</code>).</span>
     <span id="leave-out-rois-hub"><b>Hub (S74).</b> <code>POST /ui/api/training/jobs</code> and <code>…/jobs/preview</code>
     take <code>cohort.roi_exclude: [{prefix, rois: [official name]}]</code> (at most 20 entries; <code>prefix</code> as above,
     case-sensitive; a name is matched to a target ROI of the job, case and spaces aside). The hub writes

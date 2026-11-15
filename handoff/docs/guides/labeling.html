@@ -627,6 +627,13 @@
   the hub&#8217;s label checks show <i>Empty ROI</i> as a warning, and the ROIs cell&#8217;s tooltip lists <i>k empty: &lt;names&gt;</i>
   when the hub sends them. Delete the ROI if you did not label it; draw it if the structure is there. Outside the
   Labeling tab the two Settings (<i>Export empty ROIs</i>, <i>Save empty ROIs</i>) work as before.</p>
+  <p id="o42"><b>From 2026-11-15 (v1.76 &#167;89.6, U179): nothing special is shown for an empty ROI</b>. Of the section
+  above only the keeping stays: every target ROI the models make stays in the list and in the file, through Save and the
+  upload, drawn or empty, and a result where every ROI is empty is still written and opened. Gone again: the result line
+  naming the empty ROIs (it reads <i>ready &#183; 2 ROI(s)</i> as before), the <i>empty</i> mark in the ROI list (an ROI
+  without contours is only greyed, as in every other list), the ROIs cell&#8217;s <i>k empty</i> tooltip, and the upload&#8217;s
+  <code>roi_empty</code> field (the hub works it out from the file it stores). <i>Save empty ROIs</i> stays ticked and
+  read-only for a labeling item.</p>
   <p id="empty-roi-hub"><b>Hub (S72, v1.76 &#167;89.3).</b> The upload (<code>POST /api/v1/labels</code>) takes
   <code>roi_empty: [names]</code> beside <code>roi_names</code> and keeps it with the revision
   (<code>label_revision.roi_empty</code>, names only; an unnamed ROI is dropped). Every row carries <code>roi_empty</code>

@@ -615,6 +615,36 @@ clause compares <code>manifest.assignment_id</code> as a uuid (primary key). Hea
   <code>node --test</code>; <code>SCRIPT=from_model.mjs MOCK=1</code> at 1600 and 390 px on dev (mocked until S66),
   then without MOCK on dev with S66 (MR_AbdChest 1.0.0: 1 left out, 1 + 1 added, preview 292 · 32, Submit → job #78
   naming the model, then cancelled).</td><td><a href="../guides/training.html#train-from-model-web">Training</a></td></tr>
+  <tr id="web-roi-exclude"><td>1.77 web — <i>Do not use from &lt;prefix&gt;</i>: leaving target ROIs of a dataset out of a
+  job (§90.4, W57, U178, D355; labeling-web: <code>web/src/lib/roiexclude.js</code> <code>prefixOf / toggleExclude / viewRow /
+  excludeSummary / roiExcludeBody / withRoiExclude / groupExcluded / jobLeftOut / excludeFromJob</code>,
+  <code>web/src/lib/itemsanywhere.js</code> <code>countsOf(sets, view)</code> / <code>previewOf().excluded</code>,
+  <code>web/src/lib/frommodel.js</code> <code>modelHref(family, version, from)</code>,
+  <code>web/src/components/TwDatasetRois.svelte</code>, <code>TwAnywhereItems.svelte</code>, <code>TwLeftOut.svelte</code>,
+  <code>web/src/pages/TrainingStart.svelte</code>, <code>TrainingJob.svelte</code>; locales <code>tw.ex_*</code>,
+  <code>train.left_out_*</code>; tests <code>web/tests/roiexclude.test.mjs</code>, e2e <code>web/e2e/roi_exclude.mjs</code>)</td>
+  <td>every training login that can submit (the switch is not lead-only)</td><td>In <i>From items anywhere</i> and
+  <i>From an existing model › Add data</i>, every target ROI's drop zone of the panel <i>ROI names in &lt;prefix&gt;</i> has
+  the switch <b>Do not use from &lt;prefix&gt; / &lt;prefix&gt;에서 사용 안 함</b>. The choice is wizard state
+  (<code>st.exclude {prefix: [ROI]}</code>, per job; kept across dataset changes; never an alias). On: the zone struck
+  through with the chip <i>left out of this job</i>, the dataset's names resolving to it dimmed, the results' ROIs column
+  <i>&lt;ROI&gt; left out</i> on that dataset's rows (PatientID prefix as §80.2) with <i>all n</i> counting the ROIs in
+  play, <i>Has all target ROIs</i> ignoring it for them, a row whose only target is left out not addable; the line under
+  the panel: <i>… applies to this job only: it writes no alternative name and changes nothing for other jobs.</i> The
+  count line (both modes) and the submit step add <i>· &lt;prefix&gt;: &lt;ROIs&gt; left out (&lt;n&gt; items)</i> (the
+  submit step from the preview's <code>excluded</code> when it has one; <i>no &lt;prefix&gt; item added — not sent</i>
+  for a prefix without an added item), the confirm too. Preview / submit add <code>cohort.roi_exclude: [{prefix, rois}]</code>
+  (target ROIs in the job's order; prefixes with ≥ 1 added item; ≤ 20). The job page: <b>Left out</b> <i>&lt;prefix&gt; —
+  &lt;ROIs&gt; (&lt;n&gt; items)</i> from the record's <code>excluded</code>, else <code>roi_exclude</code> and the entries'
+  <code>exclude_rois</code>; its <i>Train again with more data</i> carries <code>&amp;from=&lt;job id&gt;</code> when the job
+  left something out, and the wizard (model mode) reads that job's <code>roi_exclude</code> back into the switches and says
+  <i>Carried over from job #&lt;id&gt;: …</i>. Checked: 591 unit tests, <code>roi_exclude.mjs</code> MOCK 20/20 at 1600 and
+  390 px (panel, rows, filter, count line, preview body, submit line, job page, Train again carry-over); without MOCK on
+  dev (hub 1.75, prefix Abdomen: no AMOS there) the panel, rows and count line; read-only on prod (hub 1.77 with S74,
+  the new build swapped in, only the preview POST let through): AMOS, Kidney_L off → 304 rows <i>Kidney_L left out</i>, the
+  complete filter 299 → 300, the preview request <code>roi_exclude [{prefix: "AMOS", rois: ["Kidney_L"]}]</code>, the
+  submit step <i>AMOS: Kidney_L left out (3 items)</i> from the hub's <code>excluded</code>; <code>dataset_rois</code>,
+  <code>items_anywhere</code>, <code>from_model</code> MOCK still all ok.</td><td><a href="../guides/training.html#leave-out-rois-web">Training</a></td></tr>
   <tr id="web-revised-since-sent"><td>1.75 web — <i>Revised since sent</i>: a human revision after a send (§27.10, W56, U172,
   D352; labeling-web: <code>web/src/lib/stages.js</code> <code>isRevisedSinceSent / isSentNow</code>,
   <code>web/src/lib/apptext.js</code> <code>revisedTip / revisedEntries / centralText</code>, <code>web/src/lib/appworkflow.js</code>
