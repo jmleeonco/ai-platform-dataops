@@ -77,18 +77,19 @@
   prefixed custom tags (<code>vwsch_…</code>, <code>vsmu_…</code>) are never latest (D318). Registering a tag changes no
   release folder: the copy into the deployed bundle (<code>_deploy_to_release</code>, which rewrote 1.7.0 in place and
   made D317 necessary) is gone since 2026-11-05 (D331).</p>
-  <p id="immutable"><b>Since 2026-11-05 a package never changes</b> (one exception: the text of 1.7.0.3's notes, D349 — <a href="release-flow.html#amended-notes">amended notes</a>) (CONTRACT v1.61 §77, D331–D333). A config, model or
+  <p id="deployed-model"><b>Which model is deployed for an ROI</b> (§93.2, since 2026-11-16): the one the package's <code>default_roi_presets.json</code> routes it to (CT from the entry, MR from its MRI template). Package pages, the release report, the ROI catalogue and the spec documents show that model first with 배포; other models that emit the ROI stay listed as 미배포. Views that are not about one package use the latest released package. Details: <a href="../components/ai-pipeline.html#a25-deployed-model">ai-pipeline § A25</a>. <span id="deployed-model-hub"></span><b>On the hub</b> (W67): the ROI 카탈로그 has a <i>Deployed model</i> column (✓ 배포됨 / Deployed and the model(s), CT first; <i>Not deployed (n)</i> folds the others; <i>Made by the preset</i> or <i>Not in a preset</i> in words; the package scope uses that package's preset; the CSV carries the same four columns); a release page lists every ROI of the package with its deployed model(s), a search and one chip per status; a spec document's ROI page shows the deployed card(s) first per modality and the rest behind <i>Not deployed (n)</i>; a package's spec table hides not-deployed rows until <i>Show not-deployed models</i>; comparisons and release reports mark each model 배포됨 / 미배포 and count a model's deployed ROIs; the certification profile lists the deployed model by default (<i>Deployed models only</i>); 모델 다운로드 names each model's deployed ROIs <i>n / m</i>. Every package the hub picks by default — the catalogue's package scope, the comparison's target, 추론 관리's package — is the <b>latest released</b> one (W68), and the pickers list packages newest first with the latest marked.</p>
+  <p id="immutable"><b>Since 2026-11-05 a package never changes</b> (two exceptions, both 1.7.0.3: the text of its notes, D349 — <a href="release-flow.html#amended-notes">amended notes</a>; its ROI names repaired in place to the registry's official names on 2026-11-16, weights untouched, D361 — <a href="release-flow.html#repaired">repaired names</a>) (CONTRACT v1.61 §77, D331–D333). A config, model or
   OD change becomes a <b>new folder</b> made with the hub's 배포 › 새 릴리즈 wizard. It is written by ai-pipeline's
   release writer, with <code>RELEASE.json</code> (state candidate → released → superseded, or withdrawn),
   <code>RELEASE_NOTES.md</code> and its own config tag. <i>Latest</i> on the dashboard and the hub is the highest
-  <b>released</b> package; folders made before that date count as released, and 1.7.0.3 is a candidate until QA marks
-  it released. Marking an <b>older</b> version released (1.7.0.1 and 1.7.0.2 on 2026-11-16, U190) supersedes nothing and
+  <b>released</b> package; folders made before that date count as released. Marking an <b>older</b> version released (1.7.0.1 and 1.7.0.2 on
+  2026-11-16, U190; 1.7.0.3 after its repair, U192) supersedes nothing and
   leaves the latest where it is (§92.6). A country build never includes <code>RELEASE.json</code>, because the state changes after the build.
   <span id="server-models"></span>Since v1.79 (§91.2, U188, D358) a model version <b>already deployed on the server</b> is a
   second source of the same wizard (새 릴리즈 › 서버의 모델: pick a version per family, or leave a family out), so the
   older 새 패키지 form is retired: its routes answer <code>410 use_release_flow</code> (A21b, 2026-11-16). How to: <a href="release-flow.html#server-models">the release flow</a>.
   How to: <a href="release-flow.html">the release flow</a>; the API:
-  <a href="../components/ai-pipeline.html#releases-api">ai-pipeline component page</a>.</p>
+  <a href="../components/ai-pipeline.html#releases-api">ai-pipeline component page</a>. Hiding or unhiding a model and every state change are in the next read of the 배포 pages: the reads are kept as snapshots, marked by the write and rebuilt by the next read (§93.3, <a href="../components/ai-pipeline.html#a24-fast-reads">fast reads</a>).</p>
 </section>
 
 <section id="register">

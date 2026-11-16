@@ -16,7 +16,7 @@
   <span class="eyebrow">Component · ai-pipeline</span>
   <h1>ai-pipeline: regulatory metrics, packaging and the ROI registry</h1>
   <p class="lede">After this page you can say what ai-pipeline computes and packages, how its GPU queue and leak guard work, what it registers in the hub, and how it is run in dev and production.</p>
-  <p class="meta">Last verified 2026-11-05 · CONTRACT v1.61 (§77 releases API added; §70 at v1.51; the rest verified at v1.4) · <span class="owner">owner: ai-pipeline</span></p>
+  <p class="meta">Last verified 2026-11-16 · CONTRACT v1.61 (§77 releases API added; §93.1 1.7.0.3 repaired; §93.3 fast reads; §93.2 deployed model; §70 at v1.51; the rest verified at v1.4) · <span class="owner">owner: ai-pipeline</span></p>
   <div class="toc"></div>
 </header>
 
@@ -393,6 +393,70 @@
   (the highest released version) stay where they are. 1.7.0.1 and 1.7.0.2 were set so (U190, <code>comment_jira:
   false</code>); 1.7.0.4 stays the latest, 1.7.0.3 a candidate. Tests: <code>scripts/test_deploy_api.py</code>
   <code>test_registry_edit_api</code>, <code>scripts/test_releases.py</code> <code>test_releasing_an_older_version_supersedes_nothing</code>.</p>
+
+  <h2 id="a23-repair-1703">1.7.0.3 repaired to the registry names and released (§93.1, v1.81, U192, D361 — A23)</h2>
+  <p>The platform's 1.7.0.3 had been renamed to TG-263 on 2026-11-03; since §92.2 the registry is back on the model names, so
+  35 names the package emitted were alias-only (<code>LN_Ax_L1_L</code>, <code>Musc_GlutMax_L</code>, <code>A_Brachiocephls</code>,
+  <code>V_PortalSplenic</code>, …). On 2026-11-16 <code>releases.repair_names</code> (<a href="../guides/release-flow.html#repaired"><code>scripts/release_repair_names.py</code></a>)
+  turned each back into the registry's official name in the presets, the channel rules, both landmark files and 13
+  fingerprints, and gave the 35 renamed presets the original drop's <code>alternative_names</code>. Result: the five config
+  JSONs are byte-identical to the original drop (<code>.orca/drops/1.7.0.3_QA_NEEDED</code>); the fingerprints equal it except
+  their <code>version</code> field (1.7.0.3); 0 alias-only names left (7 generated preset ROIs the registry does not hold, such as
+  <code>Bowels</code> and <code>Ribs</code>, keep the drop's names). The md5s of all 24 weight and OD files were the same before and after.
+  <code>RELEASE.json</code>: <code>changes</code> recomputed against 1.7.0 (renamed: only the five model-channel renames that are true,
+  e.g. <code>Sigmoid_Colon → Colon_Sigmoid (model Bag_Bowel)</code>), the summary without the TG-263 clause, one line saying the
+  names are as in the original drop, <code>repaired[]</code>, <code>config_tag</code> none (<code>v1.7.0.3</code> keeps the pre-repair files,
+  not moved). Then <code>released</code> with no Jira comment; it supersedes nothing (§92.6), 1.7.0.4 stays the latest. 1.7.0.4's
+  note that "the 35 renames were not carried" now says 1.7.0.3 has the same names. Both re-registered with the hub.</p>
+
+  <h2 id="a24-fast-reads">Fast deploy reads: snapshots, kept replies, ETag (§93.3, v1.81, U193, D361 — A24)</h2>
+  <p>Measured through the hub on 2026-11-16 before the change: <code>dashboard</code> 5.0–8.6 s, <code>models</code> 1.7–2.3 s, and twelve other
+  reads over 1 s (<code>spec/package/{v}/metrics</code> 16 s, <code>spec/profile/all</code> and <code>spec/profile/{v}</code> 20 s → 202,
+  <code>notion/roi-data</code> 9.6 s, <code>spec/compare</code> 5.5 s, <code>spec/release/{v}</code> 2.6 s, <code>notion/release-notes</code> 2.5 s,
+  <code>roi/best-metrics</code> 2.1 s, <code>roi/aliases</code> 1.8 s, <code>roi</code> 1.2 s, <code>spec/release/{v}/model/{m}</code> 1.2 s,
+  <code>releases/model-choices</code> 1.1 s). The work per request was the share walk (release sizes, every model folder and its
+  <code>RELEASED.json</code>) and, for the others, cache revalidation competing with background rebuilds in the same process.</p>
+  <ul>
+    <li><b>Snapshots</b> (<code>app/api/read_cache.py</code>): <code>dashboard</code> and <code>models</code> are computed once and kept in memory
+    (the queue state of the dashboard stays live, a local read). They are rebuilt in the background when what they depend on
+    changes: a write of this process (release created / state / notes / repair, model release or withdraw, hide / unhide,
+    a registry write, and every successful POST/PUT/PATCH/DELETE to the app) mark them, and the next read rebuilds them
+    and waits for that (≤ 10 s; no thread runs behind a write), so a state change is in the next read; a write of another process (the hub's deploy sync, a CLI script) through a signature
+    of <code>stat()</code>s (release folders + <code>RELEASE.json</code>, family and version folders of both model roots, the hidden-models file,
+    the registry) checked behind a read at most every 10 s. Built at start-up first in the warm-up thread; a read before that
+    waits for the one build in flight.</li>
+    <li><b>Kept replies</b> (<code>endpoint(…, snapshot=True)</code>): the twelve other reads, and <code>releases</code> and
+    <code>packaging/spec-coverage</code> (≈ 1.1 s warm after the first deploy), keep their last 200 reply per path + query + role
+    and answer from it at once; a reply older than 30 s is recomputed behind (single flight), and our writes drop them as above.
+    <code>spec/manage</code> is a snapshot of its lists, re-taken behind a read every 30 s, with the queue state read live.</li>
+    <li><b>ETag</b> (weak, of the body) on every JSON GET of <code>/api/v1/deploy</code>; <code>If-None-Match</code> with it answers 304.
+    <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
+  </ul>
+
+  <h2 id="a25-deployed-model">The deployed model of an ROI (§93.2, v1.81, U194, D361 — A25)</h2>
+  <p>Several models emit the same ROI (Liver: Abdomen, Bag_Bowel, Kidney, TotalSoftTissue, MR_AbdChest, MR_WholeBody …). The
+  <b>deployed</b> one is the model the package's <code>default_roi_presets.json</code> routes the ROI to: the entry's top-level
+  <code>default_model</code> for its own modality, an "MRI" template's own <code>default_model</code> for MR. A route counts for the
+  modality of the model it names, so a CT-only entry has no MR model. One function, <code>app/spec/deployed.py</code>
+  (<code>routing(package)</code>, kept per package until its preset file or folder changes), answers it; a view about one package
+  uses that package, every other view the <b>latest released</b> one (1.7.0.4 today). An ROI no preset names is
+  <code>not_in_preset</code>; a preset entry without a model (Bowels, Ribs, …) is <code>generated</code>. An ROI name is matched through
+  the presets' alternative names too.</p>
+  <div class="tbl"><table><thead><tr><th>Read (hub path <code>/ui/api/deploy/…</code>)</th><th>Fields (published in <code>openapi.json</code> → <code>x-deployed-model</code>)</th><th>Routing of</th></tr></thead><tbody>
+  <tr><td><code>releases/{version}</code></td><td><code>rois[]</code>: roi, models (families that emit it), <code>deployed_models</code> [{family, version, modality}], <code>deployed_status</code> routed | generated | not_in_preset, <code>deployed_package</code>, <code>not_deployed_models</code></td><td>that package</td></tr>
+  <tr><td><code>models</code></td><td><code>models[].rois_deployed</code> / <code>rois_not_deployed</code> / <code>deployed_package</code></td><td>latest released</td></tr>
+  <tr><td><code>roi</code>, <code>roi/management</code></td><td><code>catalog.rows[]</code>: the ROI fields above</td><td>latest released</td></tr>
+  <tr><td><code>sheets/roi-viewer</code></td><td><code>deployed_by_roi{name: ROI fields}</code></td><td>latest released</td></tr>
+  <tr><td><code>spec/roi/{roi}</code></td><td>ROI fields on <code>data</code>; <code>data.models[].is_deployed_model</code></td><td>latest released</td></tr>
+  <tr><td><code>spec/package/{v}</code>, <code>…/metrics</code></td><td><code>rows[].is_deployed_model</code> + the row's ROI fields; <code>deployed_package</code></td><td>that package</td></tr>
+  <tr><td><code>spec/compare</code>, <code>spec/release/{v}</code>, <code>…/model/{m}</code></td><td>rows: <code>deployed_models</code>, <code>deployed_status</code>, <code>base_is_deployed_model</code>, <code>target_is_deployed_model</code>; models: <code>rois_deployed</code> / <code>rois_not_deployed</code></td><td>each side's own package</td></tr>
+  <tr><td><code>spec/profile/*</code> (and the Excel)</td><td><code>rois[].is_deployed_model</code> (= <code>owner</code>), <code>deployed_model_family</code>; a package profile keeps only the deployed model's row of an ROI where that model is evaluated</td><td>that package / latest released</td></tr>
+  </tbody></table></div>
+  <p>The :5000 pages show the same: the ROI catalogue names the deployed model(s) with a 배포 badge (other models stay, marked 미배포),
+  the package page, the ROI page, the comparison and the release report flag each model row 배포 / 미배포, and 모델 다운로드 shows
+  "배포 n/m" ROIs per model. Release notes name the deployed model of an added ROI: <code>+ ROI X (deployed model A; also in B — not
+  deployed)</code> (records written before §93.2 render as they were). Before, the profile's owner map let an MR row inherit a
+  CT entry's model; the profile caches moved to new local tokens (<code>p10</code>, <code>pd4</code>) and follow the preset file.</p>
 
   <h2 id="a17-renumber">The data fix: hub-deployed <code>1.0.z</code> folders move to <code>0.0.z</code> (§86.2, v1.72, U166, D347 — A17)</h2>
   <p>The folders the hub's training jobs deployed before §84 carry <code>1.0.z</code> and read as releases. The hub prints the mapping (<code>python -m jobs.renumber_dev --dry-run</code>: one JSON line per folder with <code>family, old, new, md5, old_dir, new_dir</code>; <code>old_path</code> / <code>new_path</code> name the weights file), the orchestrator checks it, and ai-pipeline moves the folders with <code>scripts/renumber_models.py</code>; then the hub applies the same mapping to its tables.</p>
