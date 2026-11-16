@@ -211,6 +211,15 @@
   object <code>422</code> from the hub; ai-pipeline not reached <code>503 aipipeline_unreachable</code> /
   <code>504 aipipeline_timeout</code>. <code>GET /ui/api/registry/roi</code> rows carry <code>n_projects</code> — the
   projects (any status but deleted) whose targets hold the official name exactly, i.e. what a rename touches.</p>
+  <p id="registry-edit-web"><b>In the web (v1.80 §92.5, W65).</b> An admin edits the registry in <b>ROI 카탈로그 ›
+  Registry › 별칭 관리</b> (<code>/roi-catalog?view=registry&amp;tab=aliases</code>): the pencil beside an official name
+  renames it (the dialog says how many projects hold the name — <code>n_projects</code> — and that the old name stays an
+  alternative name); the × on an alias chip removes that alias from <code>roi_names.csv</code> after a confirm;
+  <b>+ Alias</b> adds names (comma or new line); <b>Add ROI</b> above the list adds a row. Every write goes through the
+  routes above, so a rename reaches the projects in the same step, and the line under the tabs reports what was renamed
+  and the file's sha before → after. A row whose official name the latest released package does not emit while one of
+  its aliases is carries <i>model emits &lt;alias&gt;</i> and <b>Make official</b> (§92.1). A refused name is shown in the
+  dialog with the ROI that holds it. A lead sees the tab as before; a viewer has no Registry view.</p>
   <p id="registry-rename-rows"><b>What a rename renames</b> (<code>app/roi_rename.py</code>, the S65 procedure; exact
   spelling): <code>labeling_project.roi_set</code> in place (order kept; when the project already names the new one, the
   two become one at the first position), <code>roi_goals</code> / <code>roi_aliases</code> keys (a key already under the
