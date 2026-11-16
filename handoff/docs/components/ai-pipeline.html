@@ -214,6 +214,13 @@
   (<code>/svc/v1/roi/registry.json|csv</code>, with <code>X-Registry-SHA256</code> headers, §3 and §6.5); a consumer that falls
   back to the file while the hub is down records the source and hash in its run. There is no model column; which model delivers an ROI
   comes from the model fingerprints.</p>
+  <p><b>Which name is official</b> (§92.1, D359, 2026-11-16): the name the latest released package emits (its fingerprints'
+  <code>input_classes</code> and <code>default_roi_presets.json</code>, 1.7.0.4 today); a TG-263 name is an alternative name
+  until a released package emits it. Every write (the ROI 관리 page, the deploy API, the hub's edit of §92.3) keeps the file
+  it replaces in <code>roi_names_history/</code> next to it (<code>ROI_HISTORY_DIR</code>; on 183
+  <code>/mnt/deploy/config/roi_names_history/roi_names_&lt;UTC time&gt;_&lt;what&gt;_by_&lt;user&gt;.csv</code>) under one file
+  lock. The hub's admins edit the registry from the ROI catalogue through <a href="#a22-registry">§92.3</a>; names resolve
+  case-insensitively everywhere.</p>
 </section>
 
 <section id="hub">
@@ -344,7 +351,8 @@
   sub-revision with other files) and <code>v1.7.0.2</code> (the same six files) already existed: 1.7.0.2 reuses its
   tag, 1.7.0.1 has none (<code>config_tag: "none"</code>, D351; <a href="../guides/release-flow.html#existing-tag">how</a>).
   1.7.0.4 was marked released (QA pass, <code>comment_jira: false</code>; Jira was only read), which supersedes 1.7.0;
-  1.7.0.1–1.7.0.3, QA builds that never shipped, stay candidates. <b>The notes exception</b> (D349): 1.7.0.3's notes
+  1.7.0.1–1.7.0.3, QA builds that never shipped, stayed candidates (1.7.0.1 and 1.7.0.2 were marked released on
+  2026-11-16 without moving the latest, <a href="#a22-registry">§92.6</a>; 1.7.0.3 stays a candidate). <b>The notes exception</b> (D349): 1.7.0.3's notes
   text was amended (<a href="../guides/release-flow.html#amended-notes"><code>scripts/release_amend_notes.py</code></a>),
   its models and configs untouched. The 1.7.0 folder's configs had been overwritten on 2026-10-30 by the retired
   <code>_deploy_to_release</code> (D317), so 1.7.0.1's generated diff is against that overwritten 1.7.0; its notes say
@@ -360,6 +368,31 @@
   <tr><td><code>POST uploads/{id}/create</code></td><td>as §77.2</td><td>as §77.2. A selection's <code>3d_final_model.pt</code> is <b>hardlinked</b> from <code>&lt;models&gt;/&lt;family&gt;/&lt;version&gt;</code> (copy fallback across filesystems), its fingerprint written with <code>version</code> = the package version (the model folder is not touched); a removed family gets no folder. <code>RELEASE.json</code> <code>changes.models[]</code> carries <code>source</code>; notes lines <code>* model F a → b (md5 x → y)</code>, <code>* model F new v (md5 …)</code>, <code>- model F</code></td></tr>
   </tbody></table></div>
   <p>On the dev instance the versions come from the scratch <code>MODEL_RELEASE_ROOT</code> first, then the real models root (read-only), as for the model release. <b>A21b</b> (after labeling-web's W63 went to prod, hub 8a81ba0): <code>/packaging/new-package/options|diff|create</code> (API and site) answer 410 <code>{detail:"use_release_flow"}</code>, and the :5000 / :5001 site's 새 패키지 form is gone — in its place a link to the paired hub's <code>/deploy/releases/new</code> (<code>HUB_URL</code>; a plain hint when no hub is configured). <code>POST /packaging/build</code>, <code>packaging/builds/{id}</code>, <code>packaging/download</code>, the country zips and the per-model download are unchanged. Tests: <code>scripts/test_releases.py</code> <code>ServerModelTests</code>.</p>
+
+  <h2 id="a22-registry">ROI registry back to the model names; the registry edit API; releasing an older version (§92, v1.80, U189–U191, D359 — A22)</h2>
+  <p><b>The revert (§92.2).</b> On 2026-11-03 the official names of the ROIs in 1.7.0.3's notes ("ROI renamed") were swapped
+  to TG-263, but the released 1.7.0.4 was built from the original drop and emits the older names. On 2026-11-16 every row
+  of that list whose TG-263 name was still official got the 1.7.0.4 name back as <code>roi_name</code>, with the TG-263 name
+  among its alternatives: <b>33 of 323 rows</b>. 27 are the pre-rename rows restored as they were (the 2026-11-03 copy,
+  <code>ErectorSpinae_L/R</code> with <code>Autochthon_L/R</code> as aliases as before). The other 6 (<code>Anal_canal</code>,
+  <code>Bone_Marrow</code>, <code>CTVn_L2_L/R</code>, <code>CTVn_intpect_L/R</code>) had TG-263 officials in the registry before that
+  day; they get the 1.7.0.4 name, with the TG-263 name as the first alternative. The two vessels of U167
+  (<code>Brachiocephalic_Trunk</code>, <code>V_Portal_And_Splenic</code>) and every other row were left unchanged. Checks: all 574 names of the
+  old file resolve (exact and case-insensitive) to the row holding all of their old row's names, and every name 1.7.0.4's
+  fingerprints and presets emit that has a row is that row's official name (0 exceptions, 33 before). The labeling hub
+  renames the project targets afterwards (S78).</p>
+  <div class="tbl"><table><thead><tr><th>Endpoint (<code>/api/v1/deploy/roi/registry…</code>, named users as every <code>releases/*</code>; the hub lets admins only, §92.4)</th><th>Body</th><th>Reply · refusals</th></tr></thead><tbody>
+  <tr><td><code>PATCH roi/registry/{official}</code></td><td><code>{rename?, aliases_add?: [..], aliases_remove?: [..]}</code></td><td>200 <code>{official, aliases[], previous_official, changed, history, registry_sha256}</code>. On <code>rename</code> the old official becomes the row's first alternative; an alias of this same row is promoted (not a clash). <code>aliases_remove</code> takes the exact spelling, else every case variant. 404 <code>unknown_roi</code> {roi}; <b>409 <code>name_taken</code></b> {name, roi} when the new official or an added alias already resolves (any case) to another ROI; 422 <code>invalid_name</code> {name} (empty, <code>,</code> <code>|</code> or a control character); 422 <code>add_and_remove</code>; 400 <code>bad_request</code> when nothing is asked</td></tr>
+  <tr><td><code>POST roi/registry</code></td><td><code>{official, aliases?: [..]}</code></td><td>201 the new row (same shape). Same refusals; 422 <code>duplicate_name</code> when two of its names are equal ignoring case. No delete of an ROI in this version</td></tr>
+  </tbody></table></div>
+  <p>Each write takes the registry lock, keeps a history copy and writes an audit row <code>roi_registry</code> (what changed,
+  <code>by=&lt;acting user&gt;</code>, the history file) besides the usual <code>deploy_api</code> row; a refusal writes nothing. The ROI 관리
+  page writes through the same writer and lock. <b>Releasing an older version (§92.6).</b> <code>POST releases/{version}/state
+  {state:"released"}</code> on a version older than the latest released one marks it released (with <code>released_at</code>)
+  and supersedes nothing: <code>latest_released</code>, <code>/releases/latest</code>, the executor default and the hub's latest
+  (the highest released version) stay where they are. 1.7.0.1 and 1.7.0.2 were set so (U190, <code>comment_jira:
+  false</code>); 1.7.0.4 stays the latest, 1.7.0.3 a candidate. Tests: <code>scripts/test_deploy_api.py</code>
+  <code>test_registry_edit_api</code>, <code>scripts/test_releases.py</code> <code>test_releasing_an_older_version_supersedes_nothing</code>.</p>
 
   <h2 id="a17-renumber">The data fix: hub-deployed <code>1.0.z</code> folders move to <code>0.0.z</code> (§86.2, v1.72, U166, D347 — A17)</h2>
   <p>The folders the hub's training jobs deployed before §84 carry <code>1.0.z</code> and read as releases. The hub prints the mapping (<code>python -m jobs.renumber_dev --dry-run</code>: one JSON line per folder with <code>family, old, new, md5, old_dir, new_dir</code>; <code>old_path</code> / <code>new_path</code> name the weights file), the orchestrator checks it, and ai-pipeline moves the folders with <code>scripts/renumber_models.py</code>; then the hub applies the same mapping to its tables.</p>
