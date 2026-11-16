@@ -16,7 +16,7 @@
   <span class="eyebrow">Component · ai-pipeline</span>
   <h1>ai-pipeline: regulatory metrics, packaging and the ROI registry</h1>
   <p class="lede">After this page you can say what ai-pipeline computes and packages, how its GPU queue and leak guard work, what it registers in the hub, and how it is run in dev and production.</p>
-  <p class="meta">Last verified 2026-11-16 · CONTRACT v1.61 (§77 releases API added; §93.1 1.7.0.3 repaired; §93.3 fast reads; §93.2 deployed model; §70 at v1.51; the rest verified at v1.4) · <span class="owner">owner: ai-pipeline</span></p>
+  <p class="meta">Last verified 2026-11-16 · CONTRACT v1.61 (§77 releases API added; §93.1 1.7.0.3 repaired; §93.3 fast reads; §93.2 deployed model; A26 persisted reads; §70 at v1.51; the rest verified at v1.4) · <span class="owner">owner: ai-pipeline</span></p>
   <div class="toc"></div>
 </header>
 
@@ -432,6 +432,17 @@
     <li><b>ETag</b> (weak, of the body) on every JSON GET of <code>/api/v1/deploy</code>; <code>If-None-Match</code> with it answers 304.
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
+
+  <h2 id="a26-persisted-reads">Reads too slow for a cold request: persisted and warmed (§93.3, U193 — A26)</h2>
+  <p>The hub's 버전 비교 opens with <code>spec/compare?target=&lt;latest released&gt;</code>; on a cold :5000 that comparison (and
+  <code>spec/profile/all</code>, 63 s on first fill) could not be computed within the proxy's timeout. Both are now kept replies that are
+  also <b>persisted</b> (<code>endpoint(…, persist=True)</code>): one reply for every role (it does not depend on the role), keyed by the
+  path and its query args in a fixed order, written to <code>FILE_CACHE_DIR/deploy_reply__&lt;hash&gt;_cache.json</code> after each compute.
+  Right after a restart the first read is answered from that file and the reply is recomputed behind it; the start-up warm-up
+  (<code>deploy.warm_replies</code>, after the A24 snapshots) recomputes <code>spec/compare?target=&lt;latest released&gt;</code> and
+  <code>spec/profile/all</code> in the background. After a write of ours the next read starts the recompute behind and waits for it at
+  most 1.5 s, then serves the older answer; a reply older than 30 s is recomputed behind its read. Only a pair never computed
+  before (another base/target) is computed in the request, as a job after 20 s (§70.3).</p>
 
   <h2 id="a25-deployed-model">The deployed model of an ROI (§93.2, v1.81, U194, D361 — A25)</h2>
   <p>Several models emit the same ROI (Liver: Abdomen, Bag_Bowel, Kidney, TotalSoftTissue, MR_AbdChest, MR_WholeBody …). The
