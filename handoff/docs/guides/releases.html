@@ -286,6 +286,28 @@
   <i>Show › in progress</i> follow the hub stage.</p>
 </section>
 
+<section id="agent-report">
+  <h2>The agent's release report: English, Korean and PDF</h2>
+  <p>On <b>배포 › 릴리즈 노트</b> an admin can ask the hub's agent to write a package's release report (what got better
+  since the previous minor version, mostly with images). Since W58 (U182) every such report exists in <b>English and
+  Korean</b>: the agent writes it in Korean, then the finished report is translated — the same facts, numbers, tables,
+  figures and ROI / model names, no second analysis — and both are published together. The hub refuses a translation
+  that lost a number, an image or a table row; the report then goes out in Korean alone and the request says why.</p>
+  <ul>
+    <li><b>Reading.</b> The report page has an <b>EN | KR</b> switch (it starts on your UI language). A translated version
+    says so in one line.</li>
+    <li><b>PDF.</b> <b>PDF</b> downloads the version on screen as <code>&lt;version&gt;-report-en.pdf</code> or
+    <code>-ko.pdf</code> (A4, with its figures). The hub renders each PDF on 183 within a few minutes of publishing and
+    keeps it, so a download is instant; until then the button reads <i>PDF being prepared…</i>. Anyone who can read the
+    report can download it. The PDF you upload yourself on a release card is a different thing and stays as it was.</li>
+    <li><b>A report without one language</b> (those written before W58 are Korean only) says so and shows the original.
+    An admin presses <b>Add English</b> (or <b>Add Korean</b>): the agent translates the published report — a few
+    minutes and about a dollar of Claude usage; the progress and the cost show like a report run, and the page shows the
+    new version when it is done. Nothing translates old reports by itself.</li>
+  </ul>
+  <p>Details (routes, checks, the renderer): <a href="../components/hub.html#web-release-report-lang">hub W58</a>.</p>
+</section>
+
 <section id="gotchas">
   <h2>What can go wrong</h2>
   <div class="note warn"><b>A model shows two versions, or the wrong one</b><span>The same weights sit in several
