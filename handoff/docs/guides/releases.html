@@ -48,10 +48,10 @@
     validation, D37: class lists, GT channel count, empty channels, valid/valid_gt order); a failed validation is on
     <code>/spec/validation/&lt;model&gt;/&lt;data version&gt;</code> and marks the dataset not deployable in the hub. Model flags
     (duplicate weights, channel-swap suspects, D38) appear in the hub's model page.</li>
-    <li><b>새 패키지 (new package).</b> Choose a name (<code>x.y.z</code> or <code>prefix_x.y.z</code>) and the model versions; the
-    dialog shows the difference to an existing release before anything is written. Create writes
-    <code>/mnt/deploy/release/&lt;name&gt;/</code> (models + the shared files of the latest package). If the name exists you must
-    confirm the overwrite; the old folder is moved to <code>/mnt/deploy/trash/</code>, not deleted.</li>
+    <li><b>Make a new package</b> in the hub's 배포 › <b>새 릴리즈</b> (<a href="release-flow.html">the release flow</a>): a folder
+    from your PC, a model version already on the server, or both. The old 새 패키지 form (pick model versions, write a
+    folder without diff, version rules or notes, overwrite allowed) is <b>retired</b> since 2026-11-16 (§91.2, U188 A21b,
+    D358); the 모델 패키징 page links to 새 릴리즈 instead.</li>
     <li><b>Permit 동기화.</b> Pull the per-country ROI permits (KR, JP, US) from the certification sheet; the status strip
     shows how many ROIs each country allows. Each country reads one tab (<code>PERMIT_SHEET_TABS</code>: KR/JP
     <code>…OncoStudio 2.1.x</code>, US <code>FDA_OncoStudio 2.2.x</code>) — when RA renames or adds a version tab, update
@@ -64,7 +64,7 @@
   </ol>
   <p>The hub's <b>배포</b> section (§70, U134) offers the same actions through ai-pipeline's JSON API
   (<code>/api/v1/deploy/packaging…</code>, proxied as <code>/ui/api/deploy/packaging…</code>) with the same functions and
-  role rules: 새 패키지 options, diff and create; Permit 동기화; the permit CSVs; the per-model zips. A country build there
+  role rules: Permit 동기화; the permit CSVs; the per-model zips. A country build there
   is a background job (<code>POST packaging/build</code> → <code>packaging/builds/{id}</code> → the zip at
   <code>packaging/download?job_id=</code>), because a 2 GB bundle takes longer than the hub's 30 s request timeout. Details:
   <a href="../components/ai-pipeline.html#deploy-api">ai-pipeline component page</a>.</p>
@@ -85,8 +85,7 @@
   it released. A country build never includes <code>RELEASE.json</code>, because the state changes after the build.
   <span id="server-models"></span>Since v1.79 (§91.2, U188, D358) a model version <b>already deployed on the server</b> is a
   second source of the same wizard (새 릴리즈 › 서버의 모델: pick a version per family, or leave a family out), so the
-  older 새 패키지 form above is no longer needed; it still works until the hub's new page is live, then it answers
-  <code>410 use_release_flow</code> (A21b). How to: <a href="release-flow.html#server-models">the release flow</a>.
+  older 새 패키지 form is retired: its routes answer <code>410 use_release_flow</code> (A21b, 2026-11-16). How to: <a href="release-flow.html#server-models">the release flow</a>.
   How to: <a href="release-flow.html">the release flow</a>; the API:
   <a href="../components/ai-pipeline.html#releases-api">ai-pipeline component page</a>.</p>
 </section>
@@ -95,8 +94,7 @@
   <h2>Registration in the hub</h2>
   <p>ai-pipeline registers releases itself; nobody types them into the hub.</p>
   <div class="tbl"><table><thead><tr><th>Action in ai-pipeline</th><th>What the hub receives</th></tr></thead><tbody>
-  <tr><td>새 패키지 created</td><td>the release with its models (<code>POST /svc/v1/releases</code>, §3)</td></tr>
-  <tr><td>새 패키지 over an existing name</td><td>first a withdrawal of the old content (§6.3, reason "패키지 덮어쓰기"), then the new content — registering again un-withdraws it</td></tr>
+  <tr><td>새 릴리즈 created (the release flow; 새 패키지 until its retirement on 2026-11-16)</td><td>the release with its models and state (<code>POST /svc/v1/releases</code>, §3, §77.4). A package is never overwritten any more, so the old "패키지 덮어쓰기" withdrawal no longer happens</td></tr>
   <tr><td>Package build for a country</td><td>the release again with that country added. A build named after an existing release registers that release's <b>full</b> model set, never the modality-filtered subset; a build under a new name registers the built bundle itself</td></tr>
   <tr><td>A model version hidden in <code>/admin/models</code></td><td>its evaluations are withdrawn; releases are not changed</td></tr>
   </tbody></table></div>
