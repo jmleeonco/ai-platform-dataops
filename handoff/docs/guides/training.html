@@ -48,6 +48,9 @@
   labeler's banner and Submit say <i>ask an admin to bind your NAS account (관리 › 계정 연결) before you can train</i> —
   and a job is sent with the person's own identity; once it does, the job page still names the presser as the
   requester (<a href="../components/hub.html#s51-training-for-labelers">hub, S51</a>).
+  v1.78 §70.7: an <code>ra</code> account (RA) reads 학습 as a viewer does, and every call the hub makes to the executor
+  for it carries the role <code>viewer</code> (the executor knows no <code>ra</code>;
+  <a href="../components/hub.html#s76-role-ra">hub, S76</a>).
   <span id="deploy-forced-off">D330 (S51b): a job a labeler (or any account below lead) starts from the wizard
   (<i>From a project</i>, <i>From items anywhere</i>), <i>Advanced</i> or <i>Rerun</i> <b>never deploys</b> — the hub
   turns its deploy step off whatever was asked, answers <code>deploy_forced_off: true</code> and the job page and the
