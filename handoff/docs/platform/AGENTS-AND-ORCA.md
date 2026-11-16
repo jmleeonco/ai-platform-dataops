@@ -12,7 +12,7 @@ system's repository) and owning only that directory. Roles are stable; people, p
 ```mermaid
 flowchart TB
     U([User]) -->|goals, questions, direct orders| O
-    O["orchestrator · Fable 5.1<br/>repo onco-mlops · C:\onco-mlops (Windows PC)<br/>plans, CONTRACT, DECISIONS, acceptance<br/>inbox = ORCA Run · never edits product code"]
+    O["orchestrator · Fable 5.2<br/>repo onco-mlops · C:\onco-mlops (Windows PC)<br/>plans, CONTRACT, DECISIONS, acceptance<br/>inbox = ORCA Run · never edits product code"]
     O -->|"work order: FOR line / TASKS file<br/>+ one-line nudge (orca.sh send)"| OS["oncostudio · Opus 5.5<br/>repo onco-plan · C:\op (Windows PC)<br/>OncoStudio C++ app, headless suites, installer"]
     O --> LS["labeling-server · Opus 5.5<br/>repo Oncostudio-Labeling-Server · worktree Labeling-Server-Main (183)<br/>hub backend, migrations, tests, every hub deploy"]
     O --> LW["labeling-web · Opus 5.5<br/>same repo · worktree labeling-web (183)<br/>hub web UI (web/)"]
@@ -42,7 +42,7 @@ Rules that make this work (`COLLABORATION.md`):
 
 | Role | Model | Host | Workspace | Repository · branch | STATUS file |
 |---|---|---|---|---|---|
-| orchestrator | Fable 5.1 | Windows PC | `C:\onco-mlops` | `onco-mlops` · `main` | `STATUS.md` |
+| orchestrator | Fable 5.2 | Windows PC | `C:\onco-mlops` | `onco-mlops` · `main` | `STATUS.md` |
 | oncostudio | Opus 5.5 | Windows PC | `C:\op` | `onco-plan` · `feature/labeling-provenance` | `mlops_platform/STATUS.md` |
 | labeling-server | Opus 5.5 | 183 | hub worktree `…-Labeling-Server-Main` | `Oncostudio-Labeling-Server` · `Labeling-Server-Main` | `handoff/STATUS.md` |
 | labeling-web | Opus 5.5 | 183 | hub worktree `…-labeling-web` | `Oncostudio-Labeling-Server` · `labeling-web` | `handoff/STATUS-web.md` |
@@ -50,7 +50,7 @@ Rules that make this work (`COLLABORATION.md`):
 | ai-pipeline | Opus 5.5 | 183 | `…/ai-pipeline` (the production tree) | `ai-pipeline` · `mlops-phase1` | `handoff/STATUS.md` |
 | ai-platform-dataops | Opus 5.5 | 183 | `…/ai-platform-dataops` (the production tree) | `ai-platform-dataops` (GitHub `jmleeonco`) · `main` | `handoff/STATUS.md` |
 
-Model ids: `claude-fable-5-1` for the orchestrator, `claude-opus-5-5` for every implementer
+Model ids: `claude-fable-5-2` for the orchestrator, `claude-opus-5-5` for every implementer
 (`MODEL_ORCHESTRATOR`, `MODEL_IMPLEMENTER` in `workspaces.env`). Watchers and waiters the orchestrator spawns for
 long waits (training jobs, reports) run on Sonnet and are read-only.
 
