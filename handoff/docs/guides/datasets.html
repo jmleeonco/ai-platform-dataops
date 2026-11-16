@@ -192,6 +192,40 @@
   (labelers too) and a visitor without a login read it — the roadmap's ROI picker uses it. An anonymous reply carries
   no names: <code>custom[].created_by</code> is <code>null</code> (<code>app/ui/routes_registry.py</code> <code>roi</code>,
   <code>app/ui/auth.py</code> <code>blank_names</code>).</p>
+  <p id="registry-edit"><b>An admin edits the registry (v1.80 §92.4, S78, U189, D359 — 2026-11-16).</b> The official name of
+  an ROI is the name the latest released package emits (§92.1); ai-pipeline stays the only writer of
+  <code>roi_names.csv</code>, and the hub's edit is a call to ai-pipeline's §92.3 API as the admin. <b>Admin only</b>
+  (a lead, a viewer, RA or a labeler 403, a visitor 401; reads unchanged):
+  <code>PATCH /ui/api/registry/roi/{official}</code> <code>{rename?, aliases_add?, aliases_remove?}</code> and
+  <code>POST /ui/api/registry/roi</code> <code>{official, aliases?}</code>. The hub forwards the body unchanged
+  (<code>X-Hub-User</code> the admin, <code>X-Hub-Role: admin</code>), then in one transaction: on a rename it renames the
+  target in every project and every row keyed by the old official name (below), re-reads the file into the mirror at once
+  and writes an <code>admin_audit</code> row <code>roi_registry_edit</code> (refusals too). Reply <code>200</code> (PATCH)
+  / <code>201</code> (POST): <code>{official, aliases[] (the file's, then the hub's), hub_aliases[], previous_official
+  (null without a rename), changed, history (ai-pipeline's history copy), renamed: {projects, rows, tables: {table:
+  n}}, registry: {sha256, changed, ok}}</code>. On a rename the old official name stays an alternative name of the row,
+  so every name that resolved before still resolves. ai-pipeline's refusals pass through with their code and body:
+  <code>404 {detail: unknown_roi, roi}</code>, <code>409 {detail: name_taken, name, roi}</code> (the ROI holding the
+  name), <code>422 {detail: invalid_name, name}</code> (empty, <code>,</code> <code>|</code>, a control character),
+  <code>422 add_and_remove</code> / <code>duplicate_name</code>, <code>400 bad_request</code>; a body that is not a JSON
+  object <code>422</code> from the hub; ai-pipeline not reached <code>503 aipipeline_unreachable</code> /
+  <code>504 aipipeline_timeout</code>. <code>GET /ui/api/registry/roi</code> rows carry <code>n_projects</code> — the
+  projects (any status but deleted) whose targets hold the official name exactly, i.e. what a rename touches.</p>
+  <p id="registry-rename-rows"><b>What a rename renames</b> (<code>app/roi_rename.py</code>, the S65 procedure; exact
+  spelling): <code>labeling_project.roi_set</code> in place (order kept; when the project already names the new one, the
+  two become one at the first position), <code>roi_goals</code> / <code>roi_aliases</code> keys (a key already under the
+  new name keeps its value), <code>assignment.roi_status</code> keys, <code>label_check_roi</code> /
+  <code>label_check</code> (derived; an old row whose new key exists is dropped), <code>roi_plan</code> (a plan already
+  under the new name wins), <code>roi_plan_log</code>, <code>roi_request.roi_official</code> (the typed <code>roi</code>
+  is kept) and <code>roi_alias_hub.official</code> (the hub's alternative names follow their ROI). Never touched: drawn
+  names (<code>label_revision.roi_names</code>, <code>rtss_file</code>, <code>roi_stats</code> — U27), training jobs
+  and their registry snapshot (§48), hidden ROIs (resolved through the old name, now an alias). The same procedure runs
+  by hand as <code>python -m jobs.roi_rename --map map.tsv</code> (dry run, rolled back) / <code>--apply</code>; it ran on
+  prod for the §92.2 revert (S78, 2026-11-16: 0 project targets carried a TG-263 name of the list; 178
+  <code>label_check_roi</code> and 8 <code>roi_plan_log</code> rows renamed). <b>Dev</b>: the dev hub mirrors dev
+  ai-pipeline's own file (<code>deploy/setup.sh dev</code> mounts its instance folder and sets
+  <code>ROI_REGISTRY_PATH</code>; <code>DEV_ROI_REGISTRY_DIR=</code> empty → the prod file as before), so a rename on
+  the dev pair never reaches the prod file.</p>
 </section>
 
 <section id="gotchas">
