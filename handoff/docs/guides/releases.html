@@ -83,6 +83,10 @@
   <code>RELEASE_NOTES.md</code> and its own config tag. <i>Latest</i> on the dashboard and the hub is the highest
   <b>released</b> package; folders made before that date count as released, and 1.7.0.3 is a candidate until QA marks
   it released. A country build never includes <code>RELEASE.json</code>, because the state changes after the build.
+  <span id="server-models"></span>Since v1.79 (§91.2, U188, D358) a model version <b>already deployed on the server</b> is a
+  second source of the same wizard (새 릴리즈 › 서버의 모델: pick a version per family, or leave a family out), so the
+  older 새 패키지 form above is no longer needed; it still works until the hub's new page is live, then it answers
+  <code>410 use_release_flow</code> (A21b). How to: <a href="release-flow.html#server-models">the release flow</a>.
   How to: <a href="release-flow.html">the release flow</a>; the API:
   <a href="../components/ai-pipeline.html#releases-api">ai-pipeline component page</a>.</p>
 </section>

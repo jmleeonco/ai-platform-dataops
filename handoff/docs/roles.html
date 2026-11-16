@@ -54,8 +54,11 @@
   <p>Opening the hub without a login shows <b>the same shell as after a login</b> — top bar with a 로그인 button, theme and language toggles,
   and a nav limited to what anyone may see: <b>개요</b> › 로드맵, ROI 카탈로그 and 릴리즈 노트 (in 개요 since 2026-11-02; its PDF reports
   open for everyone), <b>배포</b> › 대시보드 · 릴리즈 — since v1.73 §87.1 three entries with tab strips (대시보드 · 릴리즈 · 관리; 모델 merged into 릴리즈,
-  <code>/deploy/models</code> redirects to <code>/deploy/releases</code>), of which an anonymous visitor sees 대시보드 (사용법 behind the
-  <code>?</code> of every 배포 header) and 릴리즈 with the 패키지 릴리즈, 모델 다운로드 and 스펙 문서 tabs (the pages the ai-pipeline site itself shows to a
+  <code>/deploy/models</code> redirects to <code>/deploy/releases</code>; since W60 / W63 the 릴리즈 strip is 릴리즈 · 스펙 문서 · 다운로드 for
+  everyone, 관리 holds Config 관리 (lead), 추론 관리 (admin) and 개별 모델 릴리즈 (lead), the 모델 패키징 page is gone and
+  <code>/deploy/packaging</code> redirects to <code>/deploy/releases</code> for every visitor — a release page's 맞춤 빌드 has its lead rule), of which an
+  anonymous visitor sees 대시보드 (사용법 behind the
+  <code>?</code> of every 배포 header) and 릴리즈 with the 릴리즈, 스펙 문서 and 다운로드 tabs (the pages the ai-pipeline site itself shows to a
   <code>general</code> login, D321; since v1.70 §84.3 the former ROI · ROI 뷰어 are the ROI 카탈로그's Catalog and Viewer views —
   <code>/deploy/roi…</code> and <code>/deploy/roi-viewer…</code> redirect there; its Registry view and 배포 › Model release need a lead). <code>/</code> opens the roadmap; any other address
   asks for a login and returns there afterwards. The view is read-only and nameless: every write and every model / release zip needs a login
