@@ -350,7 +350,7 @@
     shows which target ROIs its label holds and lacks; <b>Only rows with all target ROIs</b> hides the rest. Hub routes:
     <code>GET /ui/api/training/items/search</code>, <code>POST …/items/roi-names</code>. A search writes nothing.</li>
     <li>Add items to Train or Valid per item (one label per series; a patient's items stay on one side), or use <i>Pick
-    20 % automatically</i>. The count line says how many items hold all target ROIs and how many projects + central-only
+    &lt;n&gt; % of the added</i> (the percent is yours to type, <a href="#wizard-valid-pick">below</a>). The count line says how many items hold all target ROIs and how many projects + central-only
     items they come from.</li>
     <li>Parameters &amp; submit: the chosen pipeline's parameters, the model type, the family name (required — there is no
     project to name it), the class mode. <i>Preview</i> (<code>POST /ui/api/training/jobs/preview</code>) shows the counts
@@ -387,7 +387,7 @@
     back; every row can be left out — a bundle sample with no image series by its sample id, §88.5); <b>Add data</b>, optional — the same search and table as <a href="#items-anywhere-web">From items anywhere</a>
     with the model's classes as the target ROIs; a result already in the model's data is greyed <i>already in the
     model's data</i>, and a patient of the model's Train (Valid) can only be added to Train (Valid), as the row says;
-    <i>Pick 20 % of the added automatically</i>. <b>Parameters &amp; submit</b>: the target ROIs are the model's classes
+    <i>Pick &lt;n&gt; % of the added</i> (<a href="#wizard-valid-pick">the percent</a>). <b>Parameters &amp; submit</b>: the target ROIs are the model's classes
     (read-only); the family name is the model's, so the new model is that family's next version (type another name to
     start a new family); the version line is the assigned one (§86.1). The summary previews every change; the hub's
     refusals are shown word for word, with <i>Remove the added items of these n patients</i> for the two leak-guard
@@ -411,7 +411,17 @@
     moving one item takes that patient's other added items along (the line under the lists says <i>n moved to Valid
     (k of them were not selected …)</i>); in <i>From an existing model</i> a patient held on one side by the model's data
     stays there (the refusal line names how many). The counts and the count line follow at once; <i>Remove</i> and
-    <i>Pick 20 %</i> work as before.</li>
+    <i>Pick &lt;n&gt; %</i> work as before.</li>
+    <li id="wizard-valid-pick"><b>Your own Valid percent</b> (U197, W69 — web only, the job request is unchanged). Beside
+    the pick button in the Valid list (<a href="#items-anywhere-web">From items anywhere</a>'s Items step and
+    <a href="#train-from-model-web">From an existing model</a>'s <b>Add data</b>) is a percent field: a whole number
+    1–99, 20 at first, kept for this browser tab's session (a reload in the same tab keeps it; a new tab starts at 20). The
+    button reads <i>Pick &lt;n&gt; % of the added</i>, and before you press it the line beside it says what it will move —
+    <i>→ p patients · n items</i>: n % of the added Train patients, rounded to whole patients (at least one; 35 % of 20
+    patients = 7), with all of each patient's items. Anything outside 1–99 (or not a whole number) marks the field and turns
+    the button off; the last good percent stays in use until you type another. The rules stay: a patient's items are on
+    one side; from a model, the patients its train data holds stay Train and are not counted (35 % of 18 free patients =
+    6).</li>
     <li id="executor-slow">A slow or unreachable executor (S49b, 2026-11-02) no longer makes the whole hub answer
     <i>database unavailable</i>: no training page or action keeps a database connection while it waits for the
     executor; its info, templates and account links are fetched once for all pages at a time (only the first 2 s of a fetch are waited for — later pages do not wait — then the page says <i>the training executor has not answered yet</i>), a failure is remembered

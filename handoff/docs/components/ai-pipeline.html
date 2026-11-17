@@ -442,7 +442,11 @@
   (<code>deploy.warm_replies</code>, after the A24 snapshots) recomputes <code>spec/compare?target=&lt;latest released&gt;</code> and
   <code>spec/profile/all</code> in the background. After a write of ours the next read starts the recompute behind and waits for it at
   most 1.5 s, then serves the older answer; a reply older than 30 s is recomputed behind its read. Only a pair never computed
-  before (another base/target) is computed in the request, as a job after 20 s (§70.3).</p>
+  before (another base/target) is computed in the request, as a job after 20 s (§70.3).
+  <b>Background saves keep their directory</b>: a cache rebuild behind a read (<code>metrics_reader._schedule_rebuild</code>) and a
+  persisted reply save into the cache directory taken when they were scheduled — on 2026-11-16 a test's rebuild that ended after
+  its teardown wrote a test-tree <code>spec_profile_deployed4</code> and <code>roi_eval_index</code> into production's <code>data/</code> (served
+  stale on :5000 until removed; copies in <code>~/aip-backup-2026-11-16-a26/polluted/</code>).</p>
 
   <h2 id="a25-deployed-model">The deployed model of an ROI (§93.2, v1.81, U194, D361 — A25)</h2>
   <p>Several models emit the same ROI (Liver: Abdomen, Bag_Bowel, Kidney, TotalSoftTissue, MR_AbdChest, MR_WholeBody …). The
