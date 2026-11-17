@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_catalog.html" import avail, comm with context %}
+{% block title %}데이터셋 카탈로그{% endblock %}
+{% block body %}
+<h1>데이터셋 카탈로그</h1>
+<p class="muted">알려진 모든 데이터셋 — 받았든 아직 받지 않았든. 목록(감수본 xlsx)의 모든 열을 그대로 담고, NAS 폴더를 읽기 전용으로 살펴 보유 상태를 고칩니다.
+카탈로그 항목은 인테이크가 아닙니다: 여기서는 아무것도 내려받거나 옮기지 않습니다. 원본 폴더가 확인된 항목은 항목 페이지에서 분석(인테이크)을 시작할 수 있습니다.</p>
+{% if db_error %}<p class="err">{{ db_error }}</p>{% endif %}
+{% if total %}
+<div class="grid">
+  <div class="stat"><b>{{ total }}</b><span>항목 (목록 행 + 내부 폴더)</span></div>
+  {% for k in ['downloaded', 'downloading', 'not_downloaded', 'blocked', 'failed', 'unknown'] %}
+  <a class="stat" href="{{ root }}/catalog?availability={{ k }}"><b>{{ tot.availability.get(k, 0) }}</b><span>{{ avail(k) }}</span></a>
+  {% endfor %}
+  {% for k in ['yes', 'no', 'unknown'] %}
+  <a class="stat" href="{{ root }}/catalog?commercial={{ k }}"><b>{{ tot.commercial_use.get(k, 0) }}</b><span>{{ comm(k) }}</span></a>
+  {% endfor %}
+</div>
+<p class="muted small">
+  {% if last.list %}목록: {{ last.list.file_name }} ({{ last.list.rows_read }}행, {{ last.list.run_at }}){% endif %}
+  {% if last.scan %} · 폴더 스캔 {{ last.scan.run_at }}{% endif %}
+  {% if last.sizes %} · 용량 집계 {{ last.sizes.run_at }}{% else %} · 용량 집계: 아직 없음 (밤 시간대에 천천히 채웁니다){% endif %}
+</p>
+{% endif %}
+
+<form method="get" action="{{ root }}/catalog" class="cat-layout" id="catalog-filters">
+<aside class="facets">
+  <label class="facet-q">찾기 <input name="q" value="{{ q }}" placeholder="이름, ROI, 링크, 폴더"></label>
+  <p><button>적용</button> <a href="{{ root }}/catalog">모두 지우기</a></p>
+  <p><a class="badge b-ok" href="{{ root }}/catalog?{{ query(params, q, commercial=['yes', 'unknown']) }}" title="상업 불가(no)인 항목을 뺍니다. 확인 필요(unknown)는 남습니다.">비상업 제외</a>
+     <a class="badge" href="{{ root }}/catalog?{{ query(params, q, commercial=['yes']) }}">상업 가능만</a></p>
+  {% for key, (label, _) in facets.items() %}
+  {% set c = counts.get(key, {}) %}
+  {% if c %}
+  <details class="facet"{% if key in open_facets or params.get(key) %} open{% endif %}>
+    <summary>{{ label }}{% if params.get(key) %} <span class="badge">{{ params[key]|length }}</span>{% endif %}</summary>
+    {% for v, n in c.most_common() %}
+    <label class="facet-v"><input type="checkbox" name="{{ key }}" value="{{ v }}"{% if v in params.get(key, []) %} checked{% endif %}>
+      <span>{{ labels.get(key, {}).get(v, v) }}</span> <span class="muted">{{ n }}</span></label>
+    {% endfor %}
+  </details>
+  {% endif %}
+  {% endfor %}
+</aside>
+<section class="cat-main">
+  <p><b>{{ rows|length }}</b> / {{ total }} 항목
+    {% for k, vs in params.items() %}{% for v in vs %}<a class="badge" href="{{ root }}/catalog?{{ query(params, q, **{k: (vs|reject('equalto', v)|list) or None}) }}" title="이 조건 빼기">{{ facets[k][0] }}: {{ labels.get(k, {}).get(v, v) }} ✕</a> {% endfor %}{% endfor %}
+    <span class="push"></span>
+    <a href="{{ root }}/catalog.csv?{{ qs }}">CSV</a> · <a href="{{ root }}/catalog.xlsx?{{ qs }}">xlsx</a> <span class="muted small">(지금 거른 목록, 모든 열)</span></p>
+  <div class="table-wrap"><table class="cat-t">
+  <tr><th>#</th><th>데이터셋</th><th>보유</th><th>상업적 이용</th><th>라이선스</th><th>구분</th><th>모달리티</th><th>ROI 범주</th><th>부위</th><th>국가</th><th>폴더</th></tr>
+  {% for e in rows %}
+  <tr{% if e.is_marker %} class="marker"{% endif %}>
+    <td class="num muted">{{ e.list_row or '' }}</td>
+    <td><a href="{{ root }}/catalog/{{ e.entry_id }}">{{ e.name }}</a>
+      {% if e.is_marker %}<span class="badge" title="링크 없는 팀 메모 행 (지우지 않고 표시)">메모 행</span>{% endif %}
+      {% if e.edited %}<span class="badge b-warn" title="사람이 고친 값: {{ e.edited|join(', ') }}">수정됨</span>{% endif %}
+      {% if e.tags.new_rois == 'yes' %}<span class="badge" title="신규 ROI 있음">신규 ROI</span>{% endif %}</td>
+    <td>{{ avail(e.eff.availability, e.availability_note) }}</td>
+    <td>{{ comm(e.eff.commercial_use, e.commercial_reason) }}</td>
+    <td class="small">{{ e.eff.licence or '-' }}</td>
+    <td>{{ labels.origin.get(e.eff.origin, e.eff.origin) }}</td>
+    <td class="small">{{ e.tags.modality|join(', ') }}</td>
+    <td class="small">{{ e.tags.roi_category|join(', ') }}</td>
+    <td class="small">{{ e.tags.body|join(', ') }}</td>
+    <td class="small">{{ e.tags.country|join(', ') }}</td>
+    <td class="small mono">{% for m in e.folders if m.state == 'confirmed' %}{{ m.folder.path }}{% if m.folder.size_bytes is not none %} <span class="muted">({{ (m.folder.size_bytes / 1e9)|round(1) }} GB, {{ "{:,}".format(m.folder.file_count) }} 파일)</span>{% endif %}<br>{% endfor %}
+      {% if e.n_proposed %}<span class="badge b-warn">후보 {{ e.n_proposed }} — 확인 필요</span>{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="11" class="muted">{% if total %}조건에 맞는 항목이 없습니다.{% else %}카탈로그가 비어 있습니다: <code>python -m dataops catalog-import 목록.xlsx</code>{% endif %}</td></tr>
+  {% endfor %}
+  </table></div>
+  {% if unmatched %}
+  <details class="more"><summary>목록 항목과 연결되지 않은 공개 데이터 폴더 {{ unmatched|length }}개</summary>
+    <p class="muted small">이름으로 맞는 항목을 찾지 못한 폴더입니다. 항목 페이지의 “폴더 연결”에서 사람이 연결할 수 있습니다.</p>
+    <ul class="small mono">{% for f in unmatched %}<li>{{ f.path }}{% if f.top_entries == 0 %} <span class="muted">(비어 있음)</span>{% endif %}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</section>
+</form>
+<script src="{{ root }}/static/catalog.js?v={{ static_v }}"></script>
+{% endblock %}

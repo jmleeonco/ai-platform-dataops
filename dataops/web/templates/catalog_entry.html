@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "_catalog.html" import avail, comm with context %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}{{ e.name }} · 카탈로그{% endblock %}
+{% block body %}
+<p><a href="{{ root }}/catalog">← 카탈로그</a></p>
+<h1>{{ e.name }}</h1>
+<p>{{ avail(e.eff.availability) }} {{ comm(e.eff.commercial_use) }}
+  <span class="badge">{{ labels.origin.get(e.eff.origin, e.eff.origin) }}</span>
+  <span class="badge">{{ e.eff.licence or 'none stated' }}</span>
+  {% if e.is_marker %}<span class="badge">팀 메모 행 (링크 없음)</span>{% endif %}
+  {% if e.gone_at %}<span class="badge b-warn">새 목록에 없음 ({{ e.gone_at }})</span>{% endif %}
+  {% if e.edited %}<span class="badge b-warn">사람이 고친 값: {{ e.edited|join(', ') }}</span>{% endif %}</p>
+
+<section>
+<h2>보유 상태와 위치</h2>
+<dl class="kv">
+  <dt>보유 상태</dt><dd>{{ avail(e.eff.availability) }} <span class="muted">{{ e.availability_note or '' }}</span></dd>
+  <dt>목록의 다운로드 여부</dt><dd>{{ e.list_download or '(비어 있음)' }}</dd>
+  <dt>변환 여부</dt><dd>{{ e.conversion or '(비어 있음)' }}{% for m in e.folders if m.state == 'confirmed' and m.folder.role == 'converted' %} · 변환본 폴더 {{ m.folder.path }}{% endfor %}</dd>
+  <dt>상업적 이용</dt><dd>{{ comm(e.eff.commercial_use) }} <span class="muted">{{ e.commercial_reason or '' }}</span></dd>
+  <dt>라이선스 원문</dt><dd>{{ e.licence_text or '(없음)' }}</dd>
+</dl>
+<div class="table-wrap"><table>
+<tr><th>폴더</th><th>종류</th><th>연결</th><th class="num">바로 아래 항목</th><th class="num">파일 수</th><th class="num">용량</th><th>집계 시각</th><th></th></tr>
+{% for m in e.folders %}
+<tr><td class="mono">{{ m.folder.path }}{% if not m.folder.present %} <span class="badge b-bad">지금 없음</span>{% endif %}</td>
+  <td>{{ '원본' if m.folder.role == 'source' else '변환본' }}</td>
+  <td><span class="badge {{ 'b-ok' if m.state == 'confirmed' else ('b-bad' if m.state == 'rejected' else 'b-warn') }}">{{ {'confirmed': '확인됨', 'proposed': '후보', 'rejected': '아님'}[m.state] }}</span>
+    <span class="muted small">{{ {'exact': '이름 일치', 'list_path': '목록의 경로', 'name': '이름 비슷', 'person': '사람이 정함', 'internal': '내부 폴더'}.get(m.method, m.method) }}{% if m.decided_by %} · {{ m.decided_by }}{% endif %}</span></td>
+  <td class="num">{{ m.folder.top_entries if m.folder.top_entries is not none else '-' }}</td>
+  <td class="num">{{ "{:,}".format(m.folder.file_count) if m.folder.file_count is not none else '-' }}</td>
+  <td class="num">{{ ((m.folder.size_bytes / 1e9)|round(2)) ~ ' GB' if m.folder.size_bytes is not none else '-' }}{% if m.folder.size_bytes is not none and not m.folder.size_complete %} <span class="muted">(일부)</span>{% endif %}</td>
+  <td class="small">{{ m.folder.size_scanned_at or '아직 (밤에 집계)' }}</td>
+  <td>{% if m.state != 'confirmed' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/match" class="inline">{{ csrf_field(csrf) }}
+      <input type="hidden" name="folder_id" value="{{ m.folder_id }}"><input type="hidden" name="state" value="confirmed">
+      <input name="by" placeholder="확인한 사람" required size="8"><button>이 폴더가 맞음</button></form>{% endif %}
+    {% if m.state != 'rejected' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/match" class="inline">{{ csrf_field(csrf) }}
+      <input type="hidden" name="folder_id" value="{{ m.folder_id }}"><input type="hidden" name="state" value="rejected">
+      <input name="by" placeholder="확인한 사람" required size="8"><button>아님</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">연결된 폴더가 없습니다 (NAS 루트에서 이름이 맞는 폴더를 찾지 못함).</td></tr>{% endfor %}
+</table></div>
+{% if unmatched %}
+<details><summary>폴더 연결 (아직 어느 항목에도 연결되지 않은 폴더 {{ unmatched|length }}개 중에서)</summary>
+<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/match" class="inline">{{ csrf_field(csrf) }}
+  <select name="folder_id">{% for f in unmatched %}<option value="{{ f.folder_id }}">{{ f.path }}</option>{% endfor %}</select>
+  <input type="hidden" name="state" value="confirmed"><input name="by" placeholder="확인한 사람" required size="8"><button>연결</button></form>
+</details>
+{% endif %}
+<h3>인테이크 (분석 시작)</h3>
+{% if intake %}
+<p>원본 폴더가 확인되었습니다. 분석은 폴더를 읽기만 합니다; 이미지는 이 서버에 한 번에 한 데이터셋만 작업 사본으로 머물고, central PACS가 받은 뒤 지워집니다 (§78.6).
+NAS의 원본 폴더는 누군가 지우기 전까지 그대로 남는 사본입니다.</p>
+<ul>{% for f in intake %}<li><a href="{{ root }}/new?dir={{ quote(f.path) }}">{{ f.path }} — 새 분석 화면으로</a></li>{% endfor %}</ul>
+{% elif sources %}
+<p class="muted">확인된 폴더가 분석 입력 루트 밖에 있습니다 ({{ input_roots|join(', ') }}). 인테이크하려면 입력 루트를 넓혀야 합니다.</p>
+{% else %}
+<p class="muted">원본 폴더가 확인되지 않아 인테이크를 시작할 수 없습니다. 이 페이지는 아무것도 내려받지 않습니다.</p>
+{% endif %}
+</section>
+
+<section>
+<h2>목록의 모든 열</h2>
+<dl class="kv">
+{% for h in headers %}<dt>{{ h }}</dt><dd>{% set v = e.fields.get(h) %}{% if v is none %}<span class="muted">-</span>{% elif v is string and v.startswith('http') %}<a href="{{ v }}" rel="noopener noreferrer" target="_blank">{{ v }}</a>{% else %}{{ v }}{% endif %}</dd>
+{% endfor %}
+{% for h, v in e.fields.items() if h not in headers %}<dt>{{ h }}</dt><dd>{{ v }}</dd>{% endfor %}
+</dl>
+<p class="muted small">목록 {{ e.list_source or '' }}{% if e.list_row %} · {{ e.list_row }}행{% endif %} · 같은 이름+링크의 {{ e.ordinal }}번째 행 · 처음 본 날 {{ e.first_seen_at }}</p>
+<h3>필터 값 (정규화)</h3>
+<dl class="kv">
+  <dt>모달리티</dt><dd>{{ e.tags.modality|join(', ') }}</dd><dt>ROI 범주</dt><dd>{{ e.tags.roi_category|join(', ') }}</dd>
+  <dt>촬영 부위</dt><dd>{{ e.tags.body|join(', ') }}</dd><dt>수집 국가</dt><dd>{{ e.tags.country|join(', ') }}</dd>
+  <dt>검증 상태</dt><dd>{{ e.tags.verification }}</dd><dt>신규 ROI</dt><dd>{{ labels.new_rois.get(e.tags.new_rois) }}</dd>
+</dl>
+</section>
+
+<section>
+<h2>사람이 고치기</h2>
+<p class="muted">비워 두면 목록·스캔이 정한 값으로 돌아갑니다. 고친 값은 다음 목록 가져오기에서도 덮어쓰지 않고, 가져온 값이 달라지면 가져오기 보고에 남습니다.</p>
+<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/edit" class="grid-form">{{ csrf_field(csrf) }}
+  <label>출처 구분 (지금 {{ e.origin }})<select name="origin"><option value="">목록 값</option>{% for v in editable.origin %}<option value="{{ v }}"{% if e.origin_override == v %} selected{% endif %}>{{ labels.origin.get(v) }}</option>{% endfor %}</select></label>
+  <label>라이선스 (지금 {{ e.licence }})<input name="licence" value="{{ e.licence_override or '' }}" maxlength="64" placeholder="예: CC BY 4.0"></label>
+  <label>상업적 이용 (지금 {{ e.commercial_use }})<select name="commercial_use"><option value="">목록 값</option>{% for v in editable.commercial_use %}<option value="{{ v }}"{% if e.commercial_use_override == v %} selected{% endif %}>{{ labels.commercial.get(v) }}</option>{% endfor %}</select></label>
+  <label>보유 상태 (지금 {{ e.availability }})<select name="availability"><option value="">스캔 값</option>{% for v in editable.availability %}<option value="{{ v }}"{% if e.availability_override == v %} selected{% endif %}>{{ labels.availability.get(v) }}</option>{% endfor %}</select></label>
+  <label class="span2">메모 (왜 고치는지, 필수)<input name="note" required maxlength="2000" value=""></label>
+  <label>고친 사람<input name="by" required maxlength="128"></label>
+  <button>저장</button>
+</form>
+{% if edits %}
+<h3>고친 기록</h3>
+<div class="table-wrap"><table><tr><th>시각</th><th>항목</th><th>이전</th><th>새 값</th><th>메모</th><th>누가</th></tr>
+{% for x in edits %}<tr><td class="small">{{ x.edited_at }}</td><td>{{ x.field }}</td><td>{{ x.old_value or '' }}</td><td>{{ x.new_value or '' }}</td><td>{{ x.note }}</td><td>{{ x.edited_by }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+</section>
+{% endblock %}

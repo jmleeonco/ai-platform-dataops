@@ -1,4 +1,4 @@
-# Handover — state of the project (2026-11-09)
+# Handover — state of the project (2026-11-17)
 
 Read this first. It is the current picture; the other docs hold the details and some of their older status
 sections (dated 2026-10-28/29) describe states that have since changed. Where they disagree, this file and
@@ -47,7 +47,7 @@ copies of the existing LAB DB and of the model-training bundles in `/mnt/deploy/
 cd /drive/project/ai-platform-dataops
 PY=~/.venvs/ai-platform-dataops/bin/python
 set -a; . ~/.config/ai-platform-dataops/env; set +a          # for ad-hoc scripts
-PYTHONPATH=. $PY -m pytest -q -p no:warnings                  # 139 tests, ~110 s (DB tests use dataops_test_* schemas)
+PYTHONPATH=. $PY -m pytest -q -p no:warnings                  # 170 tests, ~130 s (DB tests use dataops_test_* schemas)
 deploy/web.sh start|stop|restart|restart-web|status|logs      # web (:8096) + one job worker; not auto-started after reboot
 deploy/db.sh up                                                # Docker MariaDB 11.4, container ai-platform-dataops-db, 127.0.0.1:13306
 $PY -m dataops db-status | db-migrate
@@ -59,7 +59,8 @@ Origin checks on POSTs). `restart-web` after template/code changes; a running jo
 CLI (`python -m dataops …`): `plan`, `ingest`, `validate`, `prepare`, `verify`, `register`, `show`,
 `send-local`, `echo`, `runs`, `db-migrate`, `db-status`, `deid-map-save`, `import-legacy`, `import-deploy`
 (`--dry-run`, `--rescan`), `worker`, `analyze`, `pilot`, `approve`, `publish`, `serve`, `prefix-check`,
-`purge` (delete a run's image files on this host; `runs` shows each run's footprint).
+`purge` (delete a run's image files on this host; `runs` shows each run's footprint), `catalog-import XLSX`,
+`catalog-scan [--sizes]`, `catalog-report` (the dataset catalogue, §78.7).
 
 Nightly backup: user crontab 00:30 → `ops/backup/nightly_backup.sh` → `/mnt/ai-pipeline/backups/ai-platform-dataops/`
 (DB dumps incl. map DB, run metadata, repo bundle) and `…-files/` (rsync snapshot of `runtime/runs`).
@@ -81,16 +82,17 @@ screenshots.
 | Send | `local_send.py` (local SCP, per-instance journal, guard), `publish.py` (approval + Central adapter), `progress.py` |
 | Record | `records.py` (the one run → DB-rows projection, used by preview and registration), `db.py` (migrations, idempotent registration, conflict rollback), `metadata.py` (per-series metadata schema), `report.py` (standard report) |
 | Jobs / runs | `jobs.py` (analyze / pilot / publish jobs for the worker), `runs.py` (`runtime/runs/<run_id>/`) |
+| Dataset catalogue (§78.7) | `catalogue.py` (audited list import, licence → commercial use, read-only NAS scan + name matching, availability rule, throttled size walk, hand edits, filters/exports), `web/catalogue_view.py` (`/catalog`), `ops/catalogue_nightly.sh` (cron 02:30) |
 | Existing DB & catalogue imports | `legacy_db.py` (schema read, `/legacy` page), `legacy_import.py` (`import-legacy`), `deploy_import.py` (`import-deploy`), `central_find.py` (C-FIND / C-GET RTSTRUCT) |
 | Web | `web/app.py` (runs, reports, sample views, Central page, backups), `web/actions.py` (POST actions), `web/dbview.py` (`/db` raw tables, live), `web/catalog.py` (`/datasets`, `/series/<uid>`, `/search`), `web/browse.py` (`/browse` flat table + search panel) |
 | Ops | `deploy/web.sh`, `deploy/db.sh`, `ops/backup/*`, `ops/transfer_progress.py` |
-| SQL | `sql/migrations/0001–0007` (management DB), `sql/deid_map_migrations/` (map DB) |
+| SQL | `sql/migrations/0001–0008` (management DB), `sql/deid_map_migrations/` (map DB) |
 
 Runtime state (gitignored): `runtime/runs/<run>/` (run.json status + events, plan, manifests, journals,
 artifacts), `runtime/jobs/`, `runtime/deploy_scan/` (cached header scans of the deploy bundles, ~65 MB),
 `runtime/legacy_schema.json`.
 
-## 5. What the management DB holds now (`public_dataops`, migration 0007)
+## 5. What the management DB holds now (`public_dataops`, migration 0008)
 
 datasets 128 · subjects 23,788 · studies 13,041 · series 43,560 · dataset_series 90,368 · instances 98,975 ·
 transfer_results 99,066 · ingest_runs 1 · external_mappings 68. Three origins (`series.source_kind` tells
@@ -106,6 +108,17 @@ Both imports are idempotent and cheap to re-run (deploy scans cached). Details: 
 
 Map DB `dataops_deid_map` (own account): original↔pseudonym rows from pseudonymised pilot runs and the
 copied enc maps. Never shown outside the admin pages; backed up nightly.
+
+**The dataset catalogue (2026-11-17, CONTRACT §78.7, U208).** Every known dataset, downloaded or not: the audited
+list (`~/dataops-inbox/latest_audited_20260821_corrected.xlsx`, sheet `latest`, 348 rows × 35 columns; never commit the
+file) imported whole into `catalog_entries.fields`, plus one entry per internal folder (`Onco_dataset`,
+`pseudonymized_data`). Availability = the list's 다운로드 여부 corrected by a read-only listing of the NAS roots
+(`catalogue.ROOTS`); exact names / list paths are confirmed automatically, similar names are proposals a person confirms
+on `/catalog/<id>`. Internal → commercial use yes; public → from the licence text, unclear → unknown (never yes). Hand
+edits live in `*_override` columns and are never overwritten by a re-import. Sizes / file counts come from the nightly
+throttled walk (02:30, ≤ 500 entries/s, 3 h budget, cached). First import: 373 entries (348 list + 25 internal);
+availability 208 downloaded · 17 downloading · 110 not downloaded · 13 blocked · 3 failed · 22 unknown; commercial use
+224 yes · 74 no · 75 unknown. Nothing is downloaded by the catalogue (U156).
 
 ## 6. Runs on disk (`runtime/runs`)
 
@@ -124,7 +137,8 @@ copied enc maps. Never shown outside the admin pages; backed up nightly.
 
 ## 7. Web pages
 
-`/` dashboard · `/new` start an analysis · `/runs/<run>` report, plan edits, pilot, approve, publish, sample
+`/` dashboard · `/catalog` dataset catalogue (§78.7: filters in the URL, counts, 비상업 제외, CSV/xlsx, entry pages
+with every field, folder confirm, hand edits) · `/new` start an analysis · `/runs/<run>` report, plan edits, pilot, approve, publish, sample
 views (source vs outgoing values), slice viewer with RTSTRUCT contours · `/reports` compare datasets ·
 `/central` everything sent to Central · `/datasets` catalogue (origin filter, totals) · `/datasets/<uuid>`
 (split / modality / ROI filters) · `/series/<uid>` (datasets holding it, ROI, referenced image, siblings,

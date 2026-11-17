@@ -86,6 +86,31 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 Source values are shown as they are. Migration 0007 indexes `series.referenced_series_uid` and
 `subjects.patient_id` for these lookups.
 
+## Dataset catalogue (2026-11-17, CONTRACT §78.7)
+
+Every known dataset, downloaded or not (`dataops/catalogue.py`, page `/catalog`). Not the intake: nothing is
+downloaded, moved or deleted.
+
+```bash
+PYTHONPATH=. $PY -m dataops catalog-import ~/dataops-inbox/<list>.xlsx [--sheet latest] [--dry-run]  # + a scan
+PYTHONPATH=. $PY -m dataops catalog-scan            # list the NAS roots again, recompute availability (~15 s)
+PYTHONPATH=. $PY -m dataops catalog-scan --sizes --budget 600 --max-rate 500   # size walk: off-hours only
+PYTHONPATH=. $PY -m dataops catalog-report          # counts, list-vs-scan differences, unclassified
+```
+
+- The list file is never committed (it stays in `~/dataops-inbox/`, outside the repo); every column of it is kept in
+  `catalog_entries.fields`. Re-import by name + link (+ occurrence): the report lists added / changed / gone and the
+  hand edits a newer list would have changed (hand edits are never overwritten).
+- Roots scanned (read only, `catalogue.ROOTS`): `/mnt2/data/{Public_dataset,Restricted_dataset_need_permission,
+  Onco_dataset,pseudonymized_data,processed_Public_dataset_dicom,processed_Public_dataset_Onconii}`,
+  `/mnt/lsh/public_dataset/raw`. Internal roots' folders become entries of origin internal (commercial use yes).
+- Folder ↔ entry: exact names (notes like "(CT)", "(TCIA)", Korean remarks dropped) and paths written in the list
+  are confirmed; similar names are proposals a person confirms or rejects on `/catalog/<id>` (with their name).
+- Sizes: `ops/catalogue_nightly.sh` from the crontab block at 02:30 — scan, then the size walk under `nice`, with a
+  lock, ≤ 500 directory entries/s, 3 h budget, oldest first, re-walked after 30 days. Metadata only (no file is
+  opened). Errors: `/tmp/ai-platform-dataops-catalogue.err`. Do not run `--sizes` by hand in working hours: training
+  jobs read the same NAS.
+
 ## Browser flow (owner decision 2026-10-28)
 
 `deploy/web.sh start` runs the web app and one **worker** (jobs run one at a time; logs in
@@ -272,8 +297,10 @@ Commands:
 ```bash
 ops/backup/nightly_backup.sh              # run now (same-day re-run replaces today's folder)
 ops/backup/restore_check.sh [YYYY-MM-DD]  # prove restore without touching live data
-ops/backup/install_cron.sh [--remove]     # add/replace or remove the crontab block
+ops/backup/install_cron.sh [--remove]     # add/replace or remove the crontab block (backup 00:30 + catalogue 02:30)
 ```
+
+The DB dump is of the whole schema, so the catalogue tables (`catalog_*`) are in it and in `row_counts.tsv`.
 
 ## Restore
 

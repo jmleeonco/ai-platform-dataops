@@ -1,0 +1,8 @@
+{% macro avail(k, title='') -%}
+{%- set cls = {'downloaded': 'b-ok', 'downloading': 'b-warn', 'blocked': 'b-bad', 'failed': 'b-bad', 'unknown': 'b-warn'} -%}
+<span class="badge {{ cls.get(k, '') }}"{% if title %} title="{{ title }}"{% endif %}>{{ labels.availability.get(k, k) }}</span>
+{%- endmacro %}
+{% macro comm(k, title='') -%}
+{%- set cls = {'yes': 'b-ok', 'no': 'b-bad', 'unknown': 'b-warn'} -%}
+<span class="badge {{ cls.get(k, '') }}"{% if title %} title="{{ title }}"{% endif %}>{{ labels.commercial.get(k, k) }}</span>
+{%- endmacro %}

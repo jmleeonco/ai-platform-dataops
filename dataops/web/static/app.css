@@ -155,3 +155,18 @@ details.more > summary { cursor: pointer; color: var(--accent); margin: 6px 0; }
 .colpick { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0; }
 .colpick label { white-space: nowrap; font-size: 13px; }
 table.browse th { white-space: nowrap; }
+/* dataset catalogue (§78.7) */
+.cat-layout { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: start; }
+.facets { position: sticky; top: 60px; max-height: 92vh; overflow-y: auto; font-size: 13px; }
+.facets details.facet { border-top: 1px solid var(--line); padding: 4px 0; }
+.facet-v { display: flex; gap: 6px; align-items: baseline; padding: 1px 0; }
+.facet-v span:first-of-type { flex: 1; word-break: break-word; }
+.facet-q { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
+.cat-main { min-width: 0; }
+.cat-main > p { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+table.cat-t td { vertical-align: top; }
+table.cat-t td.mono { min-width: 240px; max-width: 360px; overflow-wrap: anywhere; }
+tr.marker td { color: var(--muted); }
+a.stat { text-decoration: none; color: inherit; }
+@media (max-width: 800px) { .cat-layout { grid-template-columns: 1fr; } .facets { position: static; max-height: none; } }
+table td > form.inline { display: inline-flex; gap: 4px; margin: 2px 0; }

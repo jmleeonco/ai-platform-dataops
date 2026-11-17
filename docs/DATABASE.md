@@ -142,3 +142,19 @@ already in the DB → linked; otherwise a read-only series-level C-FIND on Centr
 owner). A json-only bundle (no UIDs, no files) keeps its patients only. Non-DICOM ids in the json (UUIDs) are
 ignored. Scans and C-FIND answers are cached in `runtime/deploy_scan/`; a bundle whose `dicom/` lists the same files (names, sampled sizes) as one already read reuses that scan (TotalBone/Muscle/SoftTissue/Vessels and HNN/Neck 1.9.1–2.0.0 are copies). Rows registered by this system's runs or the
 existing-DB import are never overwritten — they gain the bundle link. `dataset_series.split` (migration 0006) keeps the json's split for each series: by UID when the json names it, else by its patient when that patient is in one split only (NULL otherwise). RTSTRUCT that only Central holds are read by C-GET (RTSTRUCT only, in memory, `StructureSetGetter`; cached in `runtime/deploy_scan/central_rtss.json`) for their ROI names and referenced series (owner 2026-11-03).
+
+## Dataset catalogue (migration 0008, 2026-11-17, CONTRACT §78.7)
+
+| Table | One row per | Notes |
+|---|---|---|
+| `catalog_entries` | entry: a row of the audited list (`kind=list`) or an internal folder (`kind=folder`) | `entry_key` = sha1(kind, name, link, n-th occurrence) or of the path; `fields` = every imported column (JSON); `tags` = normalised filter values; `origin`, `licence` (+ `licence_text`), `commercial_use` (+ `commercial_reason`), `list_download` / `list_availability` (what the list says), `availability` (+ `availability_note`; "차이:" = list and scan disagree); `*_override` + `override_note/by/at` = hand edits, never touched by an import; `gone_at` = absent from a newer list |
+| `catalog_folders` | top-level folder of a scanned NAS root | `role` source / converted, `present`, `top_entries` (0 = empty), `file_count` / `size_bytes` / `size_complete` / `size_scanned_at` from the throttled walk |
+| `catalog_matches` | entry ↔ folder | `method` exact / list_path / name / person / internal; `state` confirmed / proposed / rejected; `decided_by/at` |
+| `catalog_edits` | hand edit | field, old, new, note, who, when |
+| `catalog_imports` | list import, scan or size walk | file name + sha256, counts, JSON report (added / changed / gone / held hand edits) |
+
+Availability rule (`catalogue.decide_availability`): files in a confirmed folder → `downloaded` (or `downloading` if the
+list says so); no confirmed folder → the list's value, except list = done → `unknown` with the difference; a list
+without a value → `not_downloaded`. Commercial use (`catalogue.classify_licence`): internal → yes; public: explicit
+non-commercial / challenge-only / research-only → no, explicit commercial-use tag without an open question → yes,
+everything else → unknown (never guessed to yes).

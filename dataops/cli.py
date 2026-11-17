@@ -18,6 +18,10 @@
   approve RUN --by NAME --confirm DATASET_NAME   record approval after a fully received pilot
   publish RUN [--dry-run]            approved run: full freeze -> Central SCP -> DB (needs DATAOPS_CENTRAL_*)
   purge RUN [--yes]                  delete the run's image files on this host, keep its record (§78.6)
+  catalog-import XLSX [--sheet latest] [--dry-run]   import the audited dataset list into the catalogue (§78.7)
+  catalog-scan [--sizes --budget S --max-rate N]     list the NAS roots (read only) and recompute availability;
+                                     --sizes walks matched folders for file count / size (off-hours, throttled)
+  catalog-report                     counts per availability / commercial use, list-vs-scan differences
 """
 from __future__ import annotations
 
@@ -142,6 +146,18 @@ def main(argv=None) -> int:
     pc = sub.add_parser("prefix-check", help="check a PatientID prefix against the company naming rule")
     pc.add_argument("prefix")
     pc.add_argument("--commercial", choices=["Y", "N", "U"], default="U")
+    ci = sub.add_parser("catalog-import", help="import the audited dataset list (xlsx) into the catalogue")
+    ci.add_argument("xlsx")
+    ci.add_argument("--sheet", default="latest")
+    ci.add_argument("--dry-run", action="store_true")
+    ci.add_argument("--no-scan", action="store_true", help="do not list the NAS roots afterwards")
+    ci.add_argument("--by", default="cli")
+    cs = sub.add_parser("catalog-scan", help="list the NAS roots (read only); --sizes: file count / size walk")
+    cs.add_argument("--sizes", action="store_true")
+    cs.add_argument("--budget", type=int, default=3 * 3600, help="seconds the size walk may take (default 3 h)")
+    cs.add_argument("--max-rate", type=float, default=1000.0, help="directory entries per second (default 1000)")
+    cs.add_argument("--by", default="cli")
+    sub.add_parser("catalog-report", help="catalogue counts and list-vs-scan differences")
     args = p.parse_args(argv)
     if args.cmd == "prefix-check":            # needs no settings or DB
         from .plan import prefix_problems
@@ -233,6 +249,26 @@ def main(argv=None) -> int:
             if not settings.db_configured:
                 raise RunError("DB 설정 없음")
             _print(run_deploy_import(settings, rescan=args.rescan, dry_run=args.dry_run))
+        elif args.cmd in ("catalog-import", "catalog-scan", "catalog-report"):
+            from . import catalogue
+            if not settings.db_configured:
+                raise RunError("DB 설정 없음")
+            with dbmod.connection(settings.db) as conn:
+                if args.cmd == "catalog-import":
+                    rep = catalogue.import_list(conn, Path(args.xlsx), args.sheet, by=args.by, dry_run=args.dry_run)
+                    rep.pop("headers", None)
+                    rep["changed"] = len(rep["changed"])
+                    _print(rep)
+                    if not args.dry_run and not args.no_scan:
+                        _print({k: v for k, v in catalogue.scan(conn, by=args.by).items()
+                                if k != "internal_entries_added"})
+                elif args.cmd == "catalog-scan":
+                    if args.sizes:
+                        _print(catalogue.size_walk(conn, budget_s=args.budget, max_rate=args.max_rate, by=args.by))
+                    else:
+                        _print(catalogue.scan(conn, by=args.by))
+                else:
+                    _print(catalogue.summary(conn))
         elif args.cmd == "deid-map-save":
             from .jobs import save_deid_map
             ids = [r["run_id"] for r in list_runs(settings.runs_dir)] if args.run == "all" else [args.run]
