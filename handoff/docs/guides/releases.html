@@ -320,9 +320,22 @@
   </ul>
   <p>The release team's tools — the agent's report requests (admin), <b>불러오기</b> (admin), each authored version with
   its uploaded PDF and bug-fix notes (lead and admin) — sit under <b>Release tools</b> at the bottom, for those roles only.
-  Coming with W72: the lines and the comparison base from ai-pipeline itself, mean ± SD, the gallery grouped improved /
-  added with ROI and model, and one stacked PDF from any earlier line. Details:
-  <a href="../components/hub.html#web-release-notes-customers">hub W71</a>.</p>
+  Details: <a href="../components/hub.html#web-release-notes-customers">hub W71</a>.</p>
+  <p id="release-notes-w72"><b>Since W72</b> (after ai-pipeline's A28 and the hub's S83, 2026-11-17):</p>
+  <ul>
+    <li><b>The lines are ai-pipeline's</b> (one rule for the whole platform): 1.7.0's current build is 1.7.0.4, its previous
+    line 1.6.4. <b>DSC · HD95</b> compares the two lines' current builds — the tab names them (<i>packages measured: 1.6.4 →
+    1.7.0.4</i>) — and shows <b>mean ± SD</b> for both sides; the CSV has the SD columns too. Older lines take their
+    release day from Notion (1.6.4: 2026-08-13).</li>
+    <li><b>What improved</b> groups the report's figures as <i>What improved</i>, <i>New ROIs</i> and <i>Check before use</i>
+    (1.7.0: 7 · 3 · 5); each card names the ROI and modality, the model before → after, and the report's caption in the
+    language on screen.</li>
+    <li><b>Download from version …</b> (next to <i>Download PDF</i>): pick a start version; the page lists what the PDF
+    will hold, newest first — <i>full report</i> for a line with the agent's report, <i>release notes only</i> for the others
+    (a page made from the line's facts and its Notion entry) — and <b>Download PDF (n versions)</b> saves one PDF with a
+    contents page, in the language on screen (<code>release-notes-1.6.0-to-1.7.0-ko.pdf</code>). The hub has the ones that end
+    at the newest line ready; another one is put together in about 30 s while the page waits and then saves it by itself.</li>
+  </ul>
   <h3 id="release-lines">Release lines and the previous one — one rule, in ai-pipeline (v1.84 §95.1, A28)</h3>
   <p>A <b>release line</b> is a three-number version with its four-number debugging builds (1.7.0 with 1.7.0.1 … 1.7.0.4).
   Its <b>current build</b> is its newest <i>released</i> member — what customers run (1.7.0.4); a line whose members are all
