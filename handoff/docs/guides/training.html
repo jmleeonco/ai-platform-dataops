@@ -1240,6 +1240,20 @@
   search. <b>S82</b> reads the rest in the background — a short slice every 10 minutes, paced so labeling work and the
   nightly jobs are not slowed — so <code>read</code> climbs toward <code>known</code>; a structure set that cannot be read is
   counted in <code>unreadable</code> with its reason in <code>reasons</code> (<a href="../components/hub.html#s82-rtss-names">hub</a>). Fields: <a href="../components/hub.html#s81-items-by-roi">hub</a>; the web's <i>Search by ROI</i> follows (W70).</p>
+  <p id="w70-search-by-roi"><b>Search by ROI in the wizard</b> (W70, U201). In <i>From items anywhere</i>'s Items step
+  and in <i>From an existing model</i>'s <b>Add data</b>, <b>Search</b> switches between <i>Items</i> (the search above:
+  projects, and the PACS by patient or date) and <b>By ROI on the PACS</b>. There the ROI chips start as the job's target
+  ROIs; × removes one, typing a name (or picking one from the list) adds it as its official name, <i>Back to the target
+  ROIs</i> resets them. <b>Holds</b> <i>all</i> (every ROI on the chips) or <i>any</i> (at least one); an optional modality
+  (the job's at first) and study-date range — no 31-day limit, nothing is asked of the PACS. <b>Search by ROI</b> lists one
+  row per image series, newest study first, 100 a page (<i>Previous</i> / <i>Next</i>), each with the ROI names written in its
+  file; the line above says how much of the PACS was searched (<i>Searched 11,373 of 21,197 structure sets on the PACS
+  (53 %) · 244 unreadable</i>) and what was left out (hub labels — they are in the Items search with their review state —
+  and auto-generated sets). The <i>Target ROIs</i> column, <i>Has all target ROIs</i> and the count line always judge a
+  row against the job's target ROIs, whatever the chips say; a row that holds none of them, or one the hub refuses, is greyed
+  with its reason and cannot be added. Selecting (one, a range, a drag), <b>Add to Train</b> / <b>Add to Valid</b> and the
+  two lists below work as for any other result, and the job request carries a hit exactly like an item from the Items
+  search.</p>
 </section>
 
 <section id="gotchas">
