@@ -62,7 +62,7 @@
   <code>general</code> login, D321; since v1.70 §84.3 the former ROI · ROI 뷰어 are the ROI 카탈로그's Catalog and Viewer views —
   <code>/deploy/roi…</code> and <code>/deploy/roi-viewer…</code> redirect there; its Registry view and 배포 › Model release need a lead). <code>/</code> opens the roadmap; any other address
   asks for a login and returns there afterwards. The view is read-only and nameless: every write and every model / release zip needs a login
-  (the pages show a 로그인 후 다운로드 link), the server blanks usernames in anonymous replies, and <code>GET /ui/api/meta</code> answers
+  (the pages show a 로그인 후 다운로드 link), the server blanks usernames in anonymous replies (S85: an ROI request's <code>entered_by</code> and <code>requester_name</code> too), and <code>GET /ui/api/meta</code> answers
   <code>{me: null, now, version, contract_version, public: true}</code>. The hub forwards the public 배포 reads to ai-pipeline as
   <code>X-Hub-User: public</code> / <code>X-Hub-Role: general</code> (<code>app/ui/routes_deploy.py</code> <code>deploy_read / public_path</code>, S47);
   a labeler's session is forwarded the same way on those reads, except the job poll <code>jobs/{id}</code>, which goes as the person (S52b, v1.61). On the hub the public set is the scope <code>public-read</code>

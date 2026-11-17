@@ -433,6 +433,30 @@
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
 
+  <h2 id="a29-catalogue-numbers">ROI catalogue rows: the deployed model's numbers and the latest package (v1.85 §96.4, U205 — A29)</h2>
+  <p>The hub's ROI 카탈로그 (W74) shows HD95 next to DSC for the ROI's deployed model (§93.2) and one package version. The
+  catalogue rows (<code>catalog.rows[]</code> of <code>roi</code> and <code>roi/management</code>, built by
+  <code>metrics_reader.roi_catalog()</code>) carried neither, so they now have:</p>
+  <div class="tbl"><table><thead><tr><th>Field</th><th>What</th></tr></thead><tbody>
+  <tr><td><code>dsc_mean</code>, <code>hd95_mean</code>, <code>n</code></td><td>the deployed model's mean DSC, mean HD95 (mm) and test
+  cases for the ROI: the row of that model in the 인증 profile of the latest released package
+  (<code>spec/profile/&lt;deployed_package&gt;</code>), so the two always show the same number; null when the deployed model has
+  no evaluation of the ROI, or the ROI has no deployed model (generated, not in a preset). A profile row with N = 0 (no test case
+  has the ROI's ground truth: Bone_Marrow, PenileBulb, V_Venacava_S on 1.7.0.4) gives its <code>deployed_models[]</code> entry
+  <code>n</code> 0 and null means, and the row null numbers</td></tr>
+  <tr><td><code>metrics_model</code>, <code>metrics_model_version</code>, <code>metrics_data_version</code>, <code>metrics_modality</code></td>
+  <td>the model, model version and data version the numbers come from; an ROI routed in CT and MR takes the first deployed model
+  with numbers, CT first</td></tr>
+  <tr><td><code>deployed_models[]</code></td><td>each entry (family, version, modality) also carries its own <code>dsc_mean</code>,
+  <code>hd95_mean</code>, <code>n</code>, <code>model_version</code>, <code>data_version</code> — the MR numbers of an ROI routed in both</td></tr>
+  <tr><td><code>latest_package</code></td><td>the newest <b>released</b> standard package that contains the ROI — state
+  <code>released</code>, or <code>superseded</code> (it shipped: an ROI last shipped in 1.5.0 shows 1.5.0); candidates, withdrawn
+  and customer builds do not count; <code>versions</code> keeps the full list and <code>latest</code> the newest folder of any state</td></tr>
+  </tbody></table></div>
+  <p>Nothing existed under other names: <code>roi/best-metrics</code> is the <i>best</i> evaluation of any model, not the deployed
+  model's. The <code>/roi</code> reply stays a kept snapshot (A24) and follows the profile's cache; published in
+  <code>openapi.json</code> (<code>/roi</code> schema <code>catalog.rows[]</code>, block <code>x-catalog-numbers</code>).</p>
+
   <h2 id="a28-release-lines">Release lines, the previous line and the comparison base (v1.84 §95.1, U203, D365 — A28)</h2>
   <p>The hub and ai-pipeline disagreed on what a release is compared with (hub <code>previous_version</code>: 1.8.0 →
   1.7.0.4; ai-pipeline <code>previous_package</code>: 1.8.0 → 1.7.0). One rule now, in <code>app/main/releases.py</code>
