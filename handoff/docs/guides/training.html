@@ -1087,6 +1087,12 @@
       with no target ROI is dropped. Other jobs and the ROI names are not affected. The job page's
       <code>cohort_resolved.excluded_rois</code> counts the items per ROI and <code>excluded_all</code> lists the dropped
       ones (<a href="../components/executor.html#e32-item-roi-exclude">executor</a>).</li>
+    <li id="executor-convert-dropped"><b>Series the conversion left out</b> (E-J94): when the DICOM → NIfTI step
+      cannot convert a series the job selected, for example an MR series in a CT job, the step names each one with the
+      reason in its log and on the job page (<code>series_failed</code>). If one of them is in the project's frozen
+      validation set, the step fails right there, because the validation set is not changed silently; decide whether
+      to leave those series out of the job or to fix their data, then submit again
+      (<a href="../components/executor.html#ej94-convert-dropped">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
@@ -1220,6 +1226,18 @@
   states now take ~10 ms instead of ~150 ms (migration 081; <a href="../components/hub.html#s80-deploy-cache">hub</a>): the list went
   from 7.5 s to about 1.2 s cold and is served from memory after that. <code>TRAINING_COUNTS_CACHE=0</code> reads everything
   on every call.</p>
+  <p id="s81-items-by-roi"><b>S81 — search the central PACS by ROI</b> (v1.83 §94 step 1, U201, D364). The hub answers
+  "which series on ONCOPACS have a structure set with these ROIs" from the ROI names it has already read from the structure
+  sets it knows there (on 2026-11-17: about 11,000 read of 21,000 known; step 2, S82, reads the rest in the background):
+  <code>GET /ui/api/training/items/by-roi?rois=Liver,Spleen&amp;match=all</code> (or <code>any</code>), optionally
+  <code>modality</code>, a study-date range <code>date</code> / <code>date_to</code> and paging <code>offset</code> / <code>limit</code>.
+  A name is matched the way the rest of the wizard and the submit check match it — the official name or any registry alias,
+  case and spaces ignored — so searching an alias gives the same list as its official name, and a hit added to Train or
+  Valid is checked like any other item from items anywhere. Each row is one image series with its newest matching structure
+  set, its ROI names as written in the file and which target ROIs it holds; structure sets that are already hub labels are
+  left out here (search the <i>hub</i> source for them, with their review state), and so are auto-generated ones. The answer
+  says how much of the PACS it covers (<code>coverage {known, read, unreadable}</code>). Nothing is fetched or sent by a
+  search. Fields: <a href="../components/hub.html#s81-items-by-roi">hub</a>; the web's <i>Search by ROI</i> follows (W70).</p>
 </section>
 
 <section id="gotchas">

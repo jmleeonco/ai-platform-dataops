@@ -64,9 +64,9 @@
     byte-identical image content (SHA-256), never a patient ID or name. Leaked cases are skipped, dropped from every
     aggregate and listed on the pair's detail page. A pair whose every case leaked cannot be queued.</li>
     <li><b>Profiles.</b> The 인허가 프로파일 pages cross-tabulate train and valid demographics (sex, age, vendor, slice thickness,
-    contrast, country) from the per-case JSONs, per package, per model × data version, or over <b>every deployed model</b>
-    (<code>/spec/profile/all</code>, each non-hidden model at its newest evaluated version; models never evaluated are listed
-    as 미평가). Since 2026-10-14 (RA request) a profile has: a 모델 정보 table (evaluated and newest model version, data
+    contrast, country) from the per-case JSONs, per package, per model × data version, or over <b>every model</b>
+    (<code>/spec/profile/all</code>: each non-hidden model folder at its <b>latest</b> version, deployed or in development; a model
+    or ROI without an evaluation is listed with empty metrics as 미평가 — <a href="#a27-every-model">A27</a>). Since 2026-10-14 (RA request) a profile has: a 모델 정보 table (evaluated and newest model version, data
     version, newest release that ships it, train/test N, ROI and permit-ROI counts, failures); CT and MR apart (Data
     Summary per modality, the MR one without the contrast block; ROI Test CT and ROI Test MR tabs); ROI rows grouped into
     <b>H&amp;N / Thorax / Abdomen / Pelvis / Whole Body&nbsp;/&nbsp;Others</b> (the ROI board's region classifier; brain counts as
@@ -301,7 +301,7 @@
   <tr><td><code>/roi/catalog.csv</code> · <code>/roi/certification.csv</code> · <code>/roi/certification.xlsx</code> · <code>/roi/board.pptx</code></td><td>all</td><td>the page's files</td></tr>
   <tr><td>POST <code>/roi/aliases</code> {roi_name, new_roi_name?, aliases[]} · DELETE <code>/roi/{name}</code></td><td>research, data</td><td>{action added|updated, roi_name, aliases}: the list replaces the row's aliases · the row deleted (404 unknown)</td></tr>
   <tr><td>POST <code>/roi/planned</code> {id?, roi, region, expected, note} · DELETE <code>/roi/planned/{id or unique name}</code> · POST <code>/roi/excluded</code> {rois[], note} · DELETE <code>/roi/excluded/{name}</code></td><td>research, data</td><td>the planned list after the change (201 when added) · the 인허가 제외 list after the change</td></tr>
-  <tr><td><code>/sheets/roi-viewer</code> (<code>?format=csv|pptx</code>) · POST <code>/sheets/roi-viewer/fetch</code> · <code>/sheets/certification</code></td><td>all · admin · all</td><td>the fetched viewer sheets, raw and grouped by region (404 for the files before a fetch) · reads the Google Sheet again (read-only) · certification as the ROI page shows it: <code>countries</code> {label, version, approved}, <code>by_country</code>, <code>by_roi</code> (KR_ / FDA_ / Japan_ tabs resolved through the registry), and <code>fetched:false</code> when the sheet could not be read</td></tr>
+  <tr><td><code>/sheets/roi-viewer</code> (<code>?format=csv|pptx</code>) · POST <code>/sheets/roi-viewer/fetch</code> · <code>/sheets/certification</code></td><td>all · admin · all</td><td>the fetched viewer sheets, raw and grouped by region (404 for the files before a fetch) · reads the Google Sheet again (read-only) · certification as the ROI page shows it: <code>countries</code> {label, version, approved}, <code>by_country</code>, <code>by_roi</code> (KR_ / FDA_ / Japan_ tabs resolved through the registry), and <code>fetched:false</code> when the sheet could not be read; A27: <code>models</code> (every model at its latest version with <code>eval_state</code>) and <code>models_by_roi</code></td></tr>
   </tbody></table></div>
   <p><b>A4: 릴리즈 노트, 변경 이력 and 관리</b> (<code>app/api/deploy_admin.py</code>). Notion is only read (no write endpoint, §3). Model visibility goes through the site's helpers (<code>hide_model</code>, <code>hide_version</code>, <code>hide_models</code> in <code>app/admin/routes.py</code>). Each change writes <code>hidden_models.json</code>, invalidates the caches, adds an audit row (<code>hidden_by = hub:&lt;user&gt;</code>), and makes the hub withdraw or re-register the affected evaluations (§6.3). The audit log is read-only, and this site's user administration is not exposed (D310).</p>
   <div class="tbl"><table><thead><tr><th>A4 endpoint</th><th>Roles</th><th>Reply</th></tr></thead><tbody>
@@ -432,6 +432,47 @@
     <li><b>ETag</b> (weak, of the body) on every JSON GET of <code>/api/v1/deploy</code>; <code>If-None-Match</code> with it answers 304.
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
+
+  <h2 id="a27-every-model">Every model at its latest version in the 인증 profile and the certification sheet (U200 — A27)</h2>
+  <p>The user (U200): the certification tab's export "should cover all models including developing ones (latest ones)". Before,
+  <code>spec/profile/all</code> held only models with an evaluation, each at its newest <i>evaluated</i> version (39 of the folders
+  under <code>/mnt/deploy/models</code>). Now one function, <code>metrics_reader.model_inventory()</code>, lists every folder under
+  the models root at its <b>latest</b> version (the newest version folder with a <code>global_fingerprint.json</code> that is not a
+  hidden version) and says where its numbers come from:</p>
+  <div class="tbl"><table><thead><tr><th><code>eval_state</code></th><th>When</th><th>Rows</th></tr></thead><tbody>
+  <tr><td><code>evaluated</code></td><td>the latest version has an evaluation</td><td>as before: that evaluation's rows (newest data version)</td></tr>
+  <tr><td><code>newer_version</code></td><td>only an older version has one</td><td>the older evaluation's numbers, named by <code>metrics_model_version</code> / <code>metrics_data_version</code>; <code>latest_model_version</code> says which version is newer; an ROI only the latest version emits gets a row with empty metrics (<code>not_evaluated</code>), one the latest no longer emits has <code>in_latest_version: false</code></td></tr>
+  <tr><td><code>not_evaluated</code></td><td>no evaluation of any version</td><td>one row per ROI of the latest fingerprint: N 0, no metrics, <code>model_version</code> = the latest, <code>data_version</code> null</td></tr>
+  </tbody></table></div>
+  <p>Left out, and named in <code>model_inventory()["skipped"]</code>: hidden models (<code>hidden_models.json</code>), test scaffolding
+  (<code>test*</code>, <code>*.tmp</code>) and folders without a fingerprint (<code>OD</code>: the landmark detector shipped in packages, no
+  fingerprint, no ROIs). The deployed-model marking (A25, <code>is_deployed_model</code>) stays. Where it shows:</p>
+  <ul>
+    <li><code>spec/profile/all</code> (JSON, page, body): every row carries <code>eval_state</code>, <code>latest_model_version</code>,
+    <code>metrics_model_version</code>, <code>metrics_data_version</code>, <code>in_latest_version</code>; <code>models_info[]</code> has
+    <code>eval_state</code> and <code>latest_model_version</code> (<code>model_version</code> null = not evaluated). The page shows 미평가 /
+    "최신 vX 미평가" badges. Published in <code>openapi.json</code> → <code>x-every-model</code>.</li>
+    <li><code>?format=csv</code>: three columns at the end — Latest model ver, Evaluation state (<i>evaluated</i> · <i>not evaluated</i> ·
+    <i>newer version than the evaluated one</i>), Metrics from (<i>model mv × data dv</i>).</li>
+    <li>The <b>plain</b> workbook (no permit, no boost: <code>?format=xlsx</code>, xlsx-jobs <code>ra</code> / <code>tg263</code>) ends with
+    a sheet <b>All models</b> (every model × ROI row with its state, grey without an evaluation); on RA's Test sheets an added row
+    says its state in column Q, and an ROI only an unevaluated model emits is added with N 0 and the note "Not evaluated: &lt;model&gt;
+    v&lt;latest&gt; has no evaluation of this structure".</li>
+    <li>The <b>permit-form</b> workbooks (<code>permit=KR|US|JP</code>, <code>boost</code>) and a release page's workbooks keep their content:
+    they are built from <code>metrics_reader.evaluated_view()</code>, the rows with numbers (on prod data 2026-11-17 cell for cell equal
+    to the workbooks before A27).</li>
+    <li>The certification sheet: <code>sheets/certification</code> adds <code>models</code> and <code>models_by_roi{roi: [{model,
+    latest_model_version, eval_state, metrics_model_version, …, is_deployed_model}]}</code>; <code>roi/certification.csv</code> and
+    <code>.xlsx</code> add the columns <i>Models (latest version)</i> (e.g. "Thoracic_LN v0.0.4 (not evaluated)") and <i>Deployed
+    model</i>. <code>sheets/certification</code> is now a kept reply (A24 <code>snapshot=True</code>: answered from the last reply,
+    refreshed behind after 30 s and after every write of ours).</li>
+  </ul>
+  <p>Models still in development outside the models folder are not listed (nothing is built for them): the executor's run output
+  under <code>/mnt</code> (<code>AITW_NAS_ROOT</code>; a trained model reaches <code>/mnt/deploy/models/&lt;family&gt;/&lt;next&gt;</code> only
+  through its deploy stage), its dev deploy scratch <code>/mnt/ljm/oncostudio/aitw-dev-deploy-scratch/models/</code> and this
+  app's dev scratch <code>instance/dev/models/</code>. Listing them would take an inventory source of the executor's (its exported
+  models with family, version and fingerprint) — a contract item, not a folder walk. The cached snapshot and ETag of
+  <code>spec/profile/all</code> (A24/A26) stay: the profile cache is <code>spec_profile_deployed5</code>.</p>
 
   <h2 id="a26-persisted-reads">Reads too slow for a cold request: persisted and warmed (§93.3, U193 — A26)</h2>
   <p>The hub's 버전 비교 opens with <code>spec/compare?target=&lt;latest released&gt;</code>; on a cold :5000 that comparison (and
