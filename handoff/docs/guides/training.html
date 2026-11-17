@@ -1093,6 +1093,11 @@
       validation set, the step fails right there, because the validation set is not changed silently; decide whether
       to leave those series out of the job or to fix their data, then submit again
       (<a href="../components/executor.html#ej94-convert-dropped">executor</a>).</li>
+    <li id="executor-modality-at-submit"><b>Items of another modality</b> (E-J94b): a job whose items include a
+      series of another modality than the job's (for example an MR series in a CT job) is refused when you submit it,
+      before anything runs. The message names each such item (patient, series, modality); leave them out, or submit them
+      in a job of their modality. A series that arrives with no image (only its structure set) is listed as failed at the
+      download instead of being kept (<a href="../components/executor.html#ej94b-modality-at-submit">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
