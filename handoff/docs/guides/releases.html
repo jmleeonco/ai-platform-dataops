@@ -193,6 +193,21 @@
     modality, priority, body region, needed-by date and why. Others add <i>+1</i>. A lead decides (<i>Accepted</i>,
     <i>Planned</i>, <i>Done</i>, <i>Declined</i>) with a note and the registry ROI it maps to; <i>Planned</i> or
     <i>Accepted</i> with a registry ROI creates its plan on the roadmap.</li>
+    <li id="roi-request-form"><b>The request form</b> (v1.85 §96, U205, W75 — it replaces the Notion labeling request; Notion
+    is no longer written). <i>Request an ROI</i> has the Notion form's four parts: <b>요청자 정보</b> — who asks (you; a lead may
+    name another hub user; anyone may enter it for <i>someone without a login</i> by their name — you are recorded as the
+    one who entered it), the request date (today), urgency (<i>Normal</i> / <i>Priority</i>), wanted-by date; <b>요청 배경</b>
+    — background (required) and purpose; <b>라벨 대상</b> — the ROIs (required; a name not yet in the registry is allowed
+    and marked <i>new</i>), modality (optional), number of cases (empty = as many as training needs) and the case selection
+    (who to include or leave out), where the DICOM data is (central PACS / elsewhere, with a note), contrast, data details,
+    body region; <b>추가 요청 사항</b> — other notes, the contour guide (links), the guide summary (line breaks and numbered
+    lists kept), images, example contours (where they are, how many, the ROI name used there → the name to use), work kind
+    (add / modify), work link (a hub page or a URL) and related material (links). <i>Edit</i> changes any of it later
+    (an emptied field is cleared). In the list each request shows its urgency, wanted-by date, modality, number of cases,
+    status and who asked (<i>entered by …</i> when someone else entered it); filters by status, urgency and modality;
+    <b>Details</b> opens it laid out like the Notion page — the four parts, the images in place, links in a new tab
+    (<code>?tab=requests&amp;req=&lt;id&gt;</code> opens one directly). The first one, CommonBileDuct (BileDuct_Common,
+    2026-11-16), was entered from its Notion page as it stood.</li>
   </ul>
   <p class="note">Hub routes (proposed §46): <code>GET /ui/api/roi-board</code> (rows per ROI × modality: projects with
   <code>labeled_n</code> — the project's own human labels whose ROI names hold it, alias-aware —, <code>goal_n</code>,
