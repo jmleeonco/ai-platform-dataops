@@ -433,6 +433,34 @@
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
 
+  <h2 id="a28-release-lines">Release lines, the previous line and the comparison base (v1.84 §95.1, U203, D365 — A28)</h2>
+  <p>The hub and ai-pipeline disagreed on what a release is compared with (hub <code>previous_version</code>: 1.8.0 →
+  1.7.0.4; ai-pipeline <code>previous_package</code>: 1.8.0 → 1.7.0). One rule now, in <code>app/main/releases.py</code>
+  (<code>line_of</code>, <code>is_debug_build</code>, <code>lines_from</code>, <code>release_lines</code>, <code>line_entry</code>), read from
+  the release folders' <code>RELEASE.json</code>:</p>
+  <ul>
+    <li><b>Line</b> = an unprefixed <code>x.y.z</code> with its <code>x.y.z.n</code> debugging builds; customer builds
+    (<code>wsch_…</code>, <code>smu_…</code>) are on no line.</li>
+    <li><b>Current build</b> = the line's newest member in state <code>released</code>; when none is released any more, its
+    newest <code>superseded</code> member (it was released). Candidates and withdrawn builds never are.</li>
+    <li><b>Previous line</b> = the next lower line that has a current build; <b>previous build</b> = that line's current build.</li>
+  </ul>
+  <div class="tbl"><table><thead><tr><th>Read (hub <code>/ui/api/deploy/…</code>)</th><th>What A28 adds</th></tr></thead><tbody>
+  <tr><td><code>releases</code></td><td>rows: <code>line</code> (null for a customer build), <code>is_debug_build</code>;
+  <code>lines</code>: <code>[{line, current_build, builds (newest first), previous_line, previous_build, released_at}]</code>,
+  newest first; <code>released_at</code> is the current build's</td></tr>
+  <tr><td><code>spec/compare</code></td><td>without parameters: target = the newest line's current build, base = the
+  previous line's current build (1.6.4 vs 1.7.0.4); a <code>target</code> alone gets its previous line's current build as
+  base; <code>base_line</code> / <code>target_line</code> name the lines; rows gain <code>base_dice_sd</code>,
+  <code>target_dice_sd</code>, <code>base_hd95_sd</code>, <code>target_hd95_sd</code> (the SD of each side's per-case values,
+  as in the package rows' <code>dice_std</code> / <code>hd95_std</code>)</td></tr>
+  <tr><td><code>spec/release/{v}</code>, <code>…/model/{m}</code></td><td>without <code>base</code>: <code>previous_package(v)</code>
+  = the previous line's current build (1.7.0 and 1.7.0.4 → 1.6.4); the reply's <code>base</code> names it</td></tr>
+  </tbody></table></div>
+  <p>The start-up warm-up (A26) now also builds the parameterless <code>spec/compare</code>; it and
+  <code>spec/compare?target=&lt;latest released&gt;</code> are kept and persisted as before. Published in
+  <code>openapi.json</code> (<code>/releases</code> and <code>/spec/compare</code> descriptions and schemas).</p>
+
   <h2 id="a27-every-model">Every model at its latest version in the 인증 profile and the certification sheet (U200 — A27)</h2>
   <p>The user (U200): the certification tab's export "should cover all models including developing ones (latest ones)". Before,
   <code>spec/profile/all</code> held only models with an evaluation, each at its newest <i>evaluated</i> version (39 of the folders

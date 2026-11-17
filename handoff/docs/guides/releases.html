@@ -323,6 +323,18 @@
   Coming with W72: the lines and the comparison base from ai-pipeline itself, mean ± SD, the gallery grouped improved /
   added with ROI and model, and one stacked PDF from any earlier line. Details:
   <a href="../components/hub.html#web-release-notes-customers">hub W71</a>.</p>
+  <h3 id="release-lines">Release lines and the previous one — one rule, in ai-pipeline (v1.84 §95.1, A28)</h3>
+  <p>A <b>release line</b> is a three-number version with its four-number debugging builds (1.7.0 with 1.7.0.1 … 1.7.0.4).
+  Its <b>current build</b> is its newest <i>released</i> member — what customers run (1.7.0.4); a line whose members are all
+  superseded keeps the newest one (1.6.4). The <b>previous line</b> is the next lower line that has a current build:
+  1.7.0 → 1.6.4, 1.7.1 → 1.7.0, 1.8.0 → 1.7.0 — never a debugging build's own number. A line with only candidates has
+  no current build and is never compared. <code>deploy/releases</code> gives each row its <code>line</code> and
+  <code>is_debug_build</code>, and a list <code>lines</code> (newest first: <code>line</code>, <code>current_build</code>,
+  <code>builds</code>, <code>previous_line</code>, <code>previous_build</code>, <code>released_at</code> = the current build's).
+  <b>"1.6.4 vs 1.7.0"</b> compares the two lines' current builds (1.6.4 vs 1.7.0.4 today): <code>spec/compare</code> without
+  parameters and the release report without a base use it, and every comparison row carries the SD of both means
+  (<code>base_dice_sd</code>, <code>target_dice_sd</code>, <code>base_hd95_sd</code>, <code>target_hd95_sd</code>). Details:
+  <a href="../components/ai-pipeline.html#a28-release-lines">ai-pipeline A28</a>.</p>
 </section>
 
 <section id="agent-report">
