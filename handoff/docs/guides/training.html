@@ -1236,8 +1236,10 @@
   Valid is checked like any other item from items anywhere. Each row is one image series with its newest matching structure
   set, its ROI names as written in the file and which target ROIs it holds; structure sets that are already hub labels are
   left out here (search the <i>hub</i> source for them, with their review state), and so are auto-generated ones. The answer
-  says how much of the PACS it covers (<code>coverage {known, read, unreadable}</code>). Nothing is fetched or sent by a
-  search. Fields: <a href="../components/hub.html#s81-items-by-roi">hub</a>; the web's <i>Search by ROI</i> follows (W70).</p>
+  says how much of the PACS it covers (<code>coverage {known, read, unreadable, reasons}</code>). Nothing is fetched or sent by a
+  search. <b>S82</b> reads the rest in the background — a short slice every 10 minutes, paced so labeling work and the
+  nightly jobs are not slowed — so <code>read</code> climbs toward <code>known</code>; a structure set that cannot be read is
+  counted in <code>unreadable</code> with its reason in <code>reasons</code> (<a href="../components/hub.html#s82-rtss-names">hub</a>). Fields: <a href="../components/hub.html#s81-items-by-roi">hub</a>; the web's <i>Search by ROI</i> follows (W70).</p>
 </section>
 
 <section id="gotchas">

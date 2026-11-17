@@ -290,6 +290,41 @@
   <i>Show › in progress</i> follow the hub stage.</p>
 </section>
 
+<section id="release-notes-customers">
+  <h2>릴리즈 노트 for customers: the newest release first</h2>
+  <p><b>배포 › 릴리즈 노트</b> (<code>/deploy/release-notes</code>, no login needed) is the page a customer reads (v1.84
+  §95.3, U203, D365; W71 on the data of 2026-11-17). It opens on <b>the newest release line only</b> — a three-number
+  version such as 1.7.0 — and in this order:</p>
+  <ul>
+    <li><b>The line</b>: its number, its date (the release date; for 1.7.0, which was imported without one, the earliest
+    release date of its builds) and <i>Compared with 1.6.4</i> — the previous line, the next lower three-number version
+    that was released or superseded. Customer builds (<code>wsch_…</code>, <code>smu_…</code>) are not on this page. The
+    report's one-sentence summary follows.</li>
+    <li><b>The report PDF, in the page</b>: Korean first whatever language the screen is in; <b>EN</b> switches it (and
+    the report's text below) to English, <b>KR</b> back; <b>Download PDF</b> saves
+    <code>&lt;line&gt;-report-ko.pdf</code> / <code>-en.pdf</code>. The page draws the PDF itself, page by page as you
+    scroll, so it works on a phone too. A line without a PDF in that language shows the report's text instead, with a
+    line saying no PDF exists yet; a line without any report says so.</li>
+    <li><b>Summary</b>: how many ROIs improved, were added, stayed the same or got lower against the previous line (same
+    patients, same evaluation data — ROIs measured on other data are counted apart), then the report's text without its
+    figures, in short sections.</li>
+    <li><b>What improved</b>: the report's figures as a gallery under the report's own headings (model, version change),
+    each with its caption as the report wrote it; a click enlarges it, Esc closes.</li>
+    <li><b>DSC · HD95</b>: every ROI against the previous line (from the comparison of 스펙 문서): mean DSC and HD95 of
+    both, the change, n, and the change as a word (Improved · Lower · Unchanged · Added · Removed · Other data); filters
+    by modality and change, a search, largest DSC change first; <b>CSV</b> downloads the rows shown.</li>
+    <li><b>Debugging builds</b> (closed): the line's four-number builds (1.7.0.1 … 1.7.0.4) with date, state, the note
+    and Jira keys. Nothing of them shows until you open it.</li>
+    <li><b>Earlier versions</b> (closed): the earlier lines (each opens the same view for that line,
+    <code>?line=1.6.4</code>) and the Notion notes.</li>
+  </ul>
+  <p>The release team's tools — the agent's report requests (admin), <b>불러오기</b> (admin), each authored version with
+  its uploaded PDF and bug-fix notes (lead and admin) — sit under <b>Release tools</b> at the bottom, for those roles only.
+  Coming with W72: the lines and the comparison base from ai-pipeline itself, mean ± SD, the gallery grouped improved /
+  added with ROI and model, and one stacked PDF from any earlier line. Details:
+  <a href="../components/hub.html#web-release-notes-customers">hub W71</a>.</p>
+</section>
+
 <section id="agent-report">
   <h2>The agent's release report: English, Korean and PDF</h2>
   <p>On <b>배포 › 릴리즈 노트</b> an admin can ask the hub's agent to write a package's release report (what got better
