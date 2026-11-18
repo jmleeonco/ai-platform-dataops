@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 from .. import __version__
 from .. import db as dbmod
-from .. import retention
+from .. import dataset_list, retention
 from ..compare import sample_view
 from ..config import Settings
 from ..jobs import active_job, deid_allowed, job_log, list_jobs
@@ -542,9 +542,10 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
 
     register_actions(app, settings, page, get_run)
     register_db_views(app, settings, page, db_conn, _csv, map_conn)
-    register_catalog_views(app, page, db_conn, settings.runs_dir)
+    lists = dataset_list.ListCache(settings.runs_dir)                # the one dataset list (§78.8), shared by both views
+    register_catalog_views(app, page, db_conn, settings.runs_dir, lists)
     register_browse_views(app, page, db_conn, _csv)
-    register_catalogue_views(app, settings, page, db_conn, _csv)
+    register_catalogue_views(app, settings, page, db_conn, _csv, lists)
 
     @app.get("/healthz")
     def healthz():

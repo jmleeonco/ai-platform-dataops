@@ -8,6 +8,8 @@
 <section>
 <dl class="kv">
   <dt>UUID</dt><dd class="mono">{{ ds.dataset_uuid }}</dd>
+  {% if listed %}<dt>한 목록에서</dt><dd><span class="badge {{ 'b-ok' if listed.stand in ('central', 'registered') else '' }}">{{ stands.get(listed.stand, listed.stand) }}</span>
+    {% for e in listed.entries %}<a href="{{ root }}/catalog/{{ e.entry_id }}">카탈로그: {{ e.name }}</a>{% if not loop.last %} · {% endif %}{% else %}<span class="muted">카탈로그(감수 목록·내부 폴더)와 연결되지 않음</span>{% endfor %}</dd>{% endif %}
   <dt>출처</dt><dd>{% if ds.origin == 'legacy' %}기존 DB #{{ ds.legacy_id }}{% else %}{{ origins[ds.origin] }}{% endif %}{% if ds.source_url %} · <span class="mono">{{ ds.source_url }}</span>{% endif %}</dd>
   <dt>라이선스 / 상업적 이용</dt><dd>{{ ds.license or '-' }} / {{ ds.commercial_use }}</dd>
   <dt>설명</dt><dd>{% if ds.description and ds.description|length > 300 %}<details><summary>{{ ds.description[:300] }}…</summary><div class="pre-wrap">{{ ds.description }}</div></details>{% else %}{{ ds.description or '-' }}{% endif %}</dd>

@@ -1,4 +1,4 @@
-# Handover — state of the project (2026-11-17)
+# Handover — state of the project (2026-11-19)
 
 Read this first. It is the current picture; the other docs hold the details and some of their older status
 sections (dated 2026-10-28/29) describe states that have since changed. Where they disagree, this file and
@@ -83,16 +83,17 @@ screenshots.
 | Record | `records.py` (the one run → DB-rows projection, used by preview and registration), `db.py` (migrations, idempotent registration, conflict rollback), `metadata.py` (per-series metadata schema), `report.py` (standard report) |
 | Jobs / runs | `jobs.py` (analyze / pilot / publish jobs for the worker), `runs.py` (`runtime/runs/<run_id>/`) |
 | Dataset catalogue (§78.7) | `catalogue.py` (audited list import, licence → commercial use, read-only NAS scan + name matching, availability rule, throttled size walk, hand edits, filters/exports), `web/catalogue_view.py` (`/catalog`), `ops/catalogue_nightly.sh` (cron 02:30) |
+| One dataset list (§78.8) | `dataset_list.py` (registered datasets + catalogue entries → one row per dataset: links by intake run / prefix / person, name proposals, stand, filters, export, 60 s cache); view `web/catalogue_view.py` (`/datasets`, `/datasets.csv|xlsx`, `/catalog*` redirects, entry pages) |
 | Existing DB & catalogue imports | `legacy_db.py` (schema read, `/legacy` page), `legacy_import.py` (`import-legacy`), `deploy_import.py` (`import-deploy`), `central_find.py` (C-FIND / C-GET RTSTRUCT) |
 | Web | `web/app.py` (runs, reports, sample views, Central page, backups), `web/actions.py` (POST actions), `web/dbview.py` (`/db` raw tables, live), `web/catalog.py` (`/datasets`, `/series/<uid>`, `/search`), `web/browse.py` (`/browse` flat table + search panel) |
 | Ops | `deploy/web.sh`, `deploy/db.sh`, `ops/backup/*`, `ops/transfer_progress.py` |
-| SQL | `sql/migrations/0001–0008` (management DB), `sql/deid_map_migrations/` (map DB) |
+| SQL | `sql/migrations/0001–0009` (management DB), `sql/deid_map_migrations/` (map DB) |
 
 Runtime state (gitignored): `runtime/runs/<run>/` (run.json status + events, plan, manifests, journals,
 artifacts), `runtime/jobs/`, `runtime/deploy_scan/` (cached header scans of the deploy bundles, ~65 MB),
 `runtime/legacy_schema.json`.
 
-## 5. What the management DB holds now (`public_dataops`, migration 0008)
+## 5. What the management DB holds now (`public_dataops`, migration 0009)
 
 datasets 128 · subjects 23,788 · studies 13,041 · series 43,560 · dataset_series 90,368 · instances 98,975 ·
 transfer_results 99,066 · ingest_runs 1 · external_mappings 68. Three origins (`series.source_kind` tells
@@ -120,6 +121,14 @@ throttled walk (02:30, ≤ 500 entries/s, 3 h budget, cached). First import: 373
 availability 208 downloaded · 17 downloading · 110 not downloaded · 13 blocked · 3 failed · 22 unknown; commercial use
 224 yes · 74 no · 75 unknown. Nothing is downloaded by the catalogue (U156).
 
+**One dataset list (2026-11-19, CONTRACT §78.8, U210).** 데이터셋 (`/datasets`) shows the registered datasets and the
+catalogue entries together, one row per dataset with its stand (등록 · Central 전송 / 등록됨 / 받음 (미등록) / 받는 중 /
+받지 않음 / 차단 / 실패 / 모름), source, licence, commercial use, prefix and modality (`dataset_list.py`). A catalogue entry
+and a registered dataset are one row only via an intake run's folder, the same PatientID prefix, or a person's link
+(`catalog_dataset_links`, migration 0009); a name match is a proposal. `/catalog` redirects to `/datasets`. First build:
+499 rows = 373 catalogue entries (AMOS 2022 (CT) and (MR) are one row with the registered AMOS run, sent to central) +
+127 registered datasets outside the catalogue; 128 registered rows, 371 not registered.
+
 ## 6. Runs on disk (`runtime/runs`)
 
 | Run | Data | Status |
@@ -137,10 +146,11 @@ availability 208 downloaded · 17 downloading · 110 not downloaded · 13 blocke
 
 ## 7. Web pages
 
-`/` dashboard · `/catalog` dataset catalogue (§78.7: filters in the URL, counts, 비상업 제외, CSV/xlsx, entry pages
-with every field, folder confirm, hand edits) · `/new` start an analysis · `/runs/<run>` report, plan edits, pilot, approve, publish, sample
+`/` dashboard · **`/datasets`** the one dataset list (§78.8: registered + catalogue, stand, filters in the URL, counts,
+비상업 제외, CSV/xlsx; `/catalog` redirects here) · `/catalog/<id>` entry pages (every field, folder confirm, registered
+dataset link, hand edits) · `/new` start an analysis · `/runs/<run>` report, plan edits, pilot, approve, publish, sample
 views (source vs outgoing values), slice viewer with RTSTRUCT contours · `/reports` compare datasets ·
-`/central` everything sent to Central · `/datasets` catalogue (origin filter, totals) · `/datasets/<uuid>`
+`/central` everything sent to Central · `/datasets/<uuid>`
 (split / modality / ROI filters) · `/series/<uid>` (datasets holding it, ROI, referenced image, siblings,
 transfers) · `/search` (datasets, ROI names, patients, series) · **`/browse`** ("표": one flat table per
 series or per patient; search panel with dataset and ROI suggestions, ROI matching the RTSTRUCT and the image

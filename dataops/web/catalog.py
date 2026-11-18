@@ -8,19 +8,17 @@ from __future__ import annotations
 
 import json
 import re
-import time
 
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .. import db as dbmod
-from ..runs import list_runs
+from ..dataset_list import STAND_KO
 
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 UID_RE = re.compile(r"[0-9.]{1,64}")
 PAGE = 100
 SEARCH_LIMIT = 200
-LIST_TTL = 60                      # seconds the dataset list's counts are reused (they change on imports only)
 ORIGINS = {"own": "이 시스템", "legacy": "기존 DB", "deploy": "배포 묶음"}
 ORIGIN_SQL = ("CASE WHEN x.target_dataset_id IS NOT NULL THEN 'legacy' WHEN d.name LIKE 'deploy/%%' THEN 'deploy'"
               " ELSE 'own' END")
@@ -37,7 +35,7 @@ def roi_list(v) -> list[str]:
     return [str(x) for x in got] if isinstance(got, list) else [str(got)]
 
 
-def register_catalog_views(app, page, db_conn, runs_dir=None) -> None:
+def register_catalog_views(app, page, db_conn, runs_dir=None, lists=None) -> None:
     def with_conn(request, fn, template_on_error="datasets.html"):
         conn, err = db_conn()
         if conn is None:
@@ -47,54 +45,6 @@ def register_catalog_views(app, page, db_conn, runs_dir=None) -> None:
             return fn(conn)
         finally:
             conn.close()
-
-    listed = {}
-
-    def dataset_list(conn):
-        if listed and time.monotonic() - listed["at"] < LIST_TTL:
-            return listed["rows"], listed["totals"]
-        rows = dbmod.query(conn, f"""
-                SELECT d.dataset_uuid, d.name, d.license, d.commercial_use, d.patient_id_prefix, d.created_at,
-                       x.target_dataset_id AS legacy_id, {ORIGIN_SQL} AS origin,
-                       COALESCE(sb.n, 0) AS n_subjects, COALESCE(ag.n_series, 0) AS n_series,
-                       COALESCE(ag.n_rt, 0) AS n_rt, COALESCE(ag.n_inst, 0) AS n_instances,
-                       COALESCE(ag.n_train, 0) AS n_train, COALESCE(ag.n_valid, 0) AS n_valid
-                FROM datasets d
-                LEFT JOIN external_mappings x ON x.dataset_uuid=d.dataset_uuid
-                     AND x.target_system='oncolabdb.lab_datasets'
-                LEFT JOIN (SELECT dataset_uuid, COUNT(DISTINCT pid) AS n FROM (  -- own patients + linked series patients
-                             SELECT dataset_uuid, patient_id AS pid FROM subjects
-                             UNION SELECT m.dataset_uuid, sj.patient_id FROM dataset_series m
-                               JOIN series se ON se.series_uid=m.series_uid JOIN studies st ON st.study_uid=se.study_uid
-                               JOIN subjects sj ON sj.subject_uuid=st.subject_uuid) u GROUP BY dataset_uuid) sb
-                     ON sb.dataset_uuid=d.dataset_uuid
-                LEFT JOIN (SELECT m.dataset_uuid, COUNT(*) AS n_series, SUM(se.modality='RTSTRUCT') AS n_rt,
-                                  SUM(se.instance_count) AS n_inst, SUM(m.split LIKE 'train%%') AS n_train,
-                                  SUM(m.split LIKE 'valid%%') AS n_valid
-                           FROM dataset_series m JOIN series se ON se.series_uid=m.series_uid
-                           GROUP BY m.dataset_uuid) ag ON ag.dataset_uuid=d.dataset_uuid
-                ORDER BY d.name""")
-        totals = dbmod.query(conn, "SELECT (SELECT COUNT(DISTINCT patient_id) FROM subjects) AS subjects,"
-                                   " (SELECT COUNT(*) FROM studies) AS studies,"
-                                   " (SELECT COUNT(*) FROM series) AS series,"
-                                   " (SELECT COALESCE(SUM(instance_count),0) FROM series) AS instances")[0]
-        listed.update(at=time.monotonic(), rows=rows, totals=totals)
-        return rows, totals
-
-    # ------------------------------------------------------------------ every dataset
-    @app.get("/datasets", response_class=HTMLResponse)
-    def datasets(request: Request, origin: str = "", q: str = ""):
-        def run(conn):
-            rows, totals = dataset_list(conn)
-            planned = {m["dataset_uuid"]: m["patient_id_prefix"] for m in (reversed(list_runs(runs_dir)) if runs_dir else [])
-                       if m.get("patient_id_prefix")}                     # newest run's plan wins
-            rows = [{**r, "patient_id_prefix": r["patient_id_prefix"] or planned.get(r["dataset_uuid"])} for r in rows]
-            counts = {k: sum(1 for r in rows if r["origin"] == k) for k in ORIGINS}
-            shown = [r for r in rows if (not origin or r["origin"] == origin)
-                     and (not q or q.lower() in r["name"].lower() or q.lower() in (r["patient_id_prefix"] or "").lower())]
-            return page(request, "datasets.html", rows=shown, counts=counts, totals=totals, n_all=len(rows),
-                        origin=origin if origin in ORIGINS else "", q=q, origins=ORIGINS, db_error=None)
-        return with_conn(request, run)
 
     # ------------------------------------------------------------------ one dataset
     @app.get("/datasets/{dataset_uuid}", response_class=HTMLResponse)
@@ -153,7 +103,15 @@ def register_catalog_views(app, page, db_conn, runs_dir=None) -> None:
             for r in rows:
                 r["meta"] = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
                 r["rois"] = roi_list(r["roi_names"])
-            return page(request, "dataset.html", ds=ds[0], rows=rows, total=total, p=p,
+            listed = None                                  # this dataset's row of the one list (§78.8)
+            if lists is not None:
+                try:
+                    every, *_ = lists.get(conn)
+                    listed = next((x for x in every if any(d["dataset_uuid"] == dataset_uuid for d in x["datasets"])),
+                                  None)
+                except dbmod.pymysql.MySQLError:
+                    listed = None
+            return page(request, "dataset.html", ds=ds[0], listed=listed, stands=STAND_KO, rows=rows, total=total, p=p,
                         pages=max(1, -(-total // PAGE)), modality=modality or "", q=q or "", split=split or "",
                         modalities=modalities, splits=splits, kinds=kinds, n_subjects=n_subjects,
                         delivery=delivery, origins=ORIGINS, source_kinds=SOURCE_KINDS)

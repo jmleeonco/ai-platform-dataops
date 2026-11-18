@@ -59,8 +59,8 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 
 `dataops/web/catalog.py` shows the management DB as a catalogue of every dataset, whatever its origin
 (이 시스템 = own runs, 기존 DB = `import-legacy`, 배포 묶음 = `import-deploy`).
-- `/datasets`: totals, origin filter and name filter. Per dataset: patients (its own plus those of its linked
-  series, by PatientID), series, RTSTRUCT, train/valid, DICOM files. Counts are cached for 60 s.
+- `/datasets`: since 2026-11-19 the one dataset list (registered + catalogue, see "One dataset list" below). Per
+  registered dataset: patients (its own plus those of its linked series, by PatientID), series, DICOM files.
 - `/datasets/<uuid>`: filters by modality / split / text (PatientID, description, UID, ROI name), the source
   of each series, ROI names under each RTSTRUCT.
 - `/series/<uid>`: patient, study, every dataset holding the series (with its split), ROI names, the image an
@@ -86,9 +86,31 @@ reload. Polling pauses while the tab is hidden or after "일시 정지".
 Source values are shown as they are. Migration 0007 indexes `series.referenced_series_uid` and
 `subjects.patient_id` for these lookups.
 
+## One dataset list (2026-11-19, CONTRACT §78.8, U210)
+
+데이터셋 (`/datasets`) is the single list of every dataset the system knows: the registered datasets (old DB,
+deployment bundles, this system's intake) and every catalogue entry, one row per dataset (`dataops/dataset_list.py`,
+view `web/catalogue_view.py`). `/catalog`, `/catalog.csv`, `/catalog.xlsx` redirect to `/datasets*` with their query
+(the old `?origin=own|legacy|deploy` still works, as the 출처 filter); entry pages stay at `/catalog/<id>`.
+- Each row's stand (어디까지 왔나): 등록 · Central 전송 (this system's accepted central sends), 등록됨, 받음 (미등록),
+  받는 중, 받지 않음, 차단·동의 필요, 실패·보류, 모름; plus source, licence, commercial use, prefix, modality, the
+  registered counts (patients, series, DICOM files) and the confirmed folders.
+- One row = a catalogue entry and a registered dataset joined only by (a) an intake run of this system that read a
+  folder the catalogue holds for the entry (not rejected), (b) a person's link on the entry page
+  (`catalog_dataset_links`), or (c) registered datasets with the same PatientID prefix. A similar name is only a
+  proposal (연결 후보) a person confirms (같은 데이터셋) or rejects (아님) with their name; a rejection also splits an
+  intake-run link. Unlinked ones stay two rows; the 목록 ↔ 등록 연결 filter counts them.
+- A merged row takes the most restrictive commercial use of its parts (no > unknown > yes); a registered dataset
+  outside the catalogue takes the DB's Y/N/U and its origin from the prefix tier (PUB/NC public, IO internal) or
+  모름.
+- Filters: every §78.7 filter plus 어디까지 왔나, 등록, 출처, 목록 ↔ 등록 연결; header tiles count registered rows
+  (and registered datasets) against unregistered. CSV / xlsx export the filtered rows with every list column.
+  Built rows are cached 60 s per web process; any write through the web clears the cache.
+- Nothing on this page downloads, moves, deletes or sends (U156); the intake flow is unchanged.
+
 ## Dataset catalogue (2026-11-17, CONTRACT §78.7)
 
-Every known dataset, downloaded or not (`dataops/catalogue.py`, page `/catalog`). Not the intake: nothing is
+Every known dataset, downloaded or not (`dataops/catalogue.py`; shown on `/datasets` since §78.8). Not the intake: nothing is
 downloaded, moved or deleted.
 
 ```bash
@@ -105,7 +127,7 @@ PYTHONPATH=. $PY -m dataops catalog-report          # counts, list-vs-scan diffe
   Onco_dataset,pseudonymized_data,processed_Public_dataset_dicom,processed_Public_dataset_Onconii}`,
   `/mnt/lsh/public_dataset/raw`. Internal roots' folders become entries of origin internal (commercial use yes).
 - Folder ↔ entry: exact names (notes like "(CT)", "(TCIA)", Korean remarks dropped) and paths written in the list
-  are confirmed; similar names are proposals a person confirms or rejects on `/catalog/<id>` (with their name).
+  are confirmed; similar names are proposals a person confirms or rejects on the entry page `/catalog/<id>` (with their name).
 - Sizes: `ops/catalogue_nightly.sh` from the crontab block at 02:30 — scan, then the size walk under `nice`, with a
   lock, ≤ 500 directory entries/s, 3 h budget, oldest first, re-walked after 30 days. Metadata only (no file is
   opened). Errors: `/tmp/ai-platform-dataops-catalogue.err`. Do not run `--sizes` by hand in working hours: training

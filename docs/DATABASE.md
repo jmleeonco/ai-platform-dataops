@@ -158,3 +158,12 @@ list says so); no confirmed folder → the list's value, except list = done → 
 without a value → `not_downloaded`. Commercial use (`catalogue.classify_licence`): internal → yes; public: explicit
 non-commercial / challenge-only / research-only → no, explicit commercial-use tag without an open question → yes,
 everything else → unknown (never guessed to yes).
+
+## One dataset list (migration 0009, 2026-11-19, CONTRACT §78.8)
+
+| Table | One row per | Notes |
+|---|---|---|
+| `catalog_dataset_links` | a person's decision on catalogue entry ↔ registered dataset | `state` confirmed (same dataset: one row on `/datasets`) / rejected (not the same; also splits a derived link); `note`, `decided_by/at`; FKs to `catalog_entries` and `datasets` |
+
+Derived links (not stored): an `ingest_runs.input_root` inside a non-rejected folder of the entry (`intake_run`), and
+registered datasets sharing a `patient_id_prefix`. Name matches are proposals only (`dataset_list.link`).

@@ -785,26 +785,28 @@ def search_text(e: dict) -> str:
                                      *(m["folder"]["path"] for m in e["folders"]))).lower()
 
 
-def apply_filters(entries: list[dict], params: dict[str, list[str]], q: str = "") -> tuple[list[dict], dict]:
+def apply_filters(entries: list[dict], params: dict[str, list[str]], q: str = "",
+                  facets: dict | None = None) -> tuple[list[dict], dict]:
     """(filtered entries, {facet: Counter}). Values inside one facet are OR; facets are AND. Each facet's counts
     are taken over the entries the *other* facets and the text search leave, so a count says what ticking that
     value would add."""
     words = [w for w in q.lower().split() if w]
+    facets = FACETS if facets is None else facets
 
     def keep(e, skip=None):
         if words and not all(w in e["_text"] for w in words):
             return False
         for k, vals in params.items():
-            if k == skip or not vals or k not in FACETS:
+            if k == skip or not vals or k not in facets:
                 continue
-            if not set(FACETS[k][1](e)) & set(vals):
+            if not set(facets[k][1](e)) & set(vals):
                 return False
         return True
 
     for e in entries:
         e.setdefault("_text", search_text(e))
     counts = {}
-    for k, (_, fn) in FACETS.items():
+    for k, (_, fn) in facets.items():
         c = Counter()
         for e in entries:
             if keep(e, skip=k):

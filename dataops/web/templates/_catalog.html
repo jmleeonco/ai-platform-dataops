@@ -6,3 +6,7 @@
 {%- set cls = {'yes': 'b-ok', 'no': 'b-bad', 'unknown': 'b-warn'} -%}
 <span class="badge {{ cls.get(k, '') }}"{% if title %} title="{{ title }}"{% endif %}>{{ labels.commercial.get(k, k) }}</span>
 {%- endmacro %}
+{% macro stand(k, title='') -%}
+{%- set cls = {'central': 'b-ok', 'registered': 'b-ok', 'downloading': 'b-warn', 'blocked': 'b-bad', 'failed': 'b-bad', 'unknown': 'b-warn'} -%}
+<span class="badge {{ cls.get(k, '') }}"{% if title %} title="{{ title }}"{% endif %}>{{ labels.stand.get(k, k) }}</span>
+{%- endmacro %}

@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dataops import catalogue as cat
+from dataops import dataset_list as dl
 from dataops import db as dbmod
 from dataops.web.app import create_app
 
@@ -267,21 +268,24 @@ def test_catalogue_pages_filters_exports_and_edits(settings, test_db, tmp_path, 
     pid = next(e["entry_id"] for e in entries if e["name"] == "02 Pancreas-CT TCIA")
     chaos = next(e["entry_id"] for e in entries if e["name"] == "CHAOS-MR")
     client = TestClient(create_app(settings))
+    r = client.get("/catalog", follow_redirects=False)                 # the old page leads to the one list
+    assert r.status_code == 302 and r.headers["location"] == "/datasets"
+    assert client.get("/catalog?commercial=yes", follow_redirects=False).headers["location"] == \
+        "/datasets?commercial=yes"
     r = client.get("/catalog")
     assert r.status_code == 200 and "02 Pancreas-CT TCIA" in r.text and "CHAOS-MR" in r.text and "비상업 제외" in r.text
-    assert "상업 불가" in r.text and "받음" in r.text and 'href="/catalog?commercial=yes&amp;commercial=unknown"' in r.text
-    r = client.get("/catalog?commercial=yes")
+    assert "상업 불가" in r.text and "받음" in r.text and 'href="/datasets?commercial=yes&amp;commercial=unknown"' in r.text
+    r = client.get("/datasets?commercial=yes")
     assert "02 Pancreas-CT TCIA" in r.text and ">CHAOS-MR<" not in r.text
-    r = client.get("/catalog?commercial=yes&origin=public&q=pancreas")
-    assert re.search(r"<b>1</b> / 8 항목", r.text)
-    csv_text = client.get("/catalog.csv?commercial=no").text
+    r = client.get("/datasets?commercial=yes&origin=public&q=pancreas")
+    assert re.search(r"<b>1</b> / 8 행", r.text)
+    csv_text = client.get("/catalog.csv?commercial=no").text            # follows the redirect
     assert "CHAOS-MR" in csv_text and "Pancreas" not in csv_text and "라이선스 정보" in csv_text
-    x = client.get("/catalog.xlsx?availability=downloaded")
+    x = client.get("/datasets.xlsx?availability=downloaded")
     ws = openpyxl.load_workbook(io.BytesIO(x.content)).active
-    names = [row[0].value for row in ws.iter_rows(min_row=2, min_col=len(cat.EXPORT_FIXED) + 1,
-                                                  max_col=len(cat.EXPORT_FIXED) + 1)]
+    names = [row[0].value for row in ws.iter_rows(min_row=2, max_col=1)]
     assert "02 Pancreas-CT TCIA" in names and "Never-Downloaded-Set" not in names
-    assert ws.max_column == len(cat.EXPORT_FIXED) + len(HEAD)
+    assert ws.max_column == len(dl.EXPORT_FIXED) + len(HEAD)
     r = client.get(f"/catalog/{pid}")
     assert r.status_code == 200 and "/new?dir=" in r.text and "라이선스 정보" in r.text and "(상업적 이용가능" in r.text
     r = client.get(f"/catalog/{chaos}")
@@ -296,7 +300,7 @@ def test_catalogue_pages_filters_exports_and_edits(settings, test_db, tmp_path, 
     r = client.post(f"/catalog/{pid}/edit", data={"csrf": token, "commercial_use": "no", "note": "checked", "by": "t"},
                     follow_redirects=True)
     assert "사람이 고친 값" in r.text and "checked" in r.text
-    assert ">02 Pancreas-CT TCIA<" not in client.get("/catalog?commercial=yes").text
+    assert ">02 Pancreas-CT TCIA<" not in client.get("/datasets?commercial=yes").text
     r = client.post(f"/catalog/{chaos}/match", data={"csrf": token, "folder_id": "abc", "state": "confirmed", "by": "t"},
                     follow_redirects=False)
     assert "err=" in r.headers["location"]
@@ -304,13 +308,118 @@ def test_catalogue_pages_filters_exports_and_edits(settings, test_db, tmp_path, 
 
 def test_catalogue_page_without_db_or_tables(settings, test_db):
     client = TestClient(create_app(settings))
-    assert client.get("/catalog").status_code == 200
+    assert client.get("/datasets").status_code == 200
     settings.db = test_db                                            # schema exists, tables do not
-    r = TestClient(create_app(settings)).get("/catalog")
+    r = TestClient(create_app(settings)).get("/datasets")
     assert r.status_code == 200 and "db-migrate" in r.text
 
 
 def test_migration_is_additive():
-    sql = (cat.Path(dbmod.MIGRATIONS_DIR) / "0008_dataset_catalogue.sql").read_text(encoding="utf-8")
-    assert not re.search(r"\b(DROP|ALTER|DELETE|UPDATE|TRUNCATE)\b", sql, re.I)
-    assert os.path.basename(sorted(cat.Path(dbmod.MIGRATIONS_DIR).glob("0*.sql"))[-1]) == "0008_dataset_catalogue.sql"
+    for name in ("0008_dataset_catalogue.sql", "0009_catalog_dataset_links.sql"):
+        sql = (cat.Path(dbmod.MIGRATIONS_DIR) / name).read_text(encoding="utf-8")
+        assert not re.search(r"\b(DROP|ALTER|DELETE|UPDATE|TRUNCATE)\b", sql, re.I)
+    assert os.path.basename(sorted(cat.Path(dbmod.MIGRATIONS_DIR).glob("0*.sql"))[-1]) == \
+        "0009_catalog_dataset_links.sql"
+
+
+# --------------------------------------------------------------------------- §78.8 one dataset list
+def _register(cur, uuid, name, *, prefix=None, commercial="U", legacy_id=None, input_root=None, central=0):
+    """A registered dataset as the importers / the intake leave it: one subject, study, CT series, an intake run
+    reading `input_root` and `central` instances accepted by the central target."""
+    cur.execute("INSERT INTO datasets (dataset_uuid, name, license, commercial_use, patient_id_prefix)"
+                " VALUES (%s,%s,%s,%s,%s)", (uuid, name, "CC BY 4.0" if commercial == "Y" else None, commercial, prefix))
+    if legacy_id:
+        cur.execute("INSERT INTO external_mappings VALUES (%s,'oncolabdb.lab_datasets',%s)", (uuid, legacy_id))
+    sub, st = uuid[:8] + "-0000-4000-8000-000000000000", "1.2." + uuid[0]
+    se = st + ".1"
+    cur.execute("INSERT INTO subjects (subject_uuid, dataset_uuid, source_subject_key, patient_id)"
+                " VALUES (%s,%s,'k','P1')", (sub, uuid))
+    cur.execute("INSERT INTO studies (study_uid, subject_uuid) VALUES (%s,%s)", (st, sub))
+    cur.execute("INSERT INTO series (series_uid, study_uid, modality, instance_count) VALUES (%s,%s,'CT',3)", (se, st))
+    cur.execute("INSERT INTO dataset_series (dataset_uuid, series_uid) VALUES (%s,%s)", (uuid, se))
+    if input_root:
+        run = uuid[:8] + "-1111-4000-8000-000000000000"
+        cur.execute("INSERT INTO ingest_runs (run_uuid, run_label, dataset_uuid, revision, status, plan_json,"
+                    " input_root, registered_at) VALUES (%s,%s,%s,1,'CENTRAL_SENT','{}',%s,CURRENT_TIMESTAMP)",
+                    (run, "r-" + uuid[:6], uuid, input_root))
+        for i in range(central):
+            sop = f"{se}.{i}"
+            cur.execute("INSERT INTO instances (sop_uid, series_uid, sop_class_uid, artifact_sha256,"
+                        " artifact_relative_path, prepared_run_uuid) VALUES (%s,%s,'1.2.840',%s,'a',%s)",
+                        (sop, se, "0" * 64, run))
+            cur.execute("INSERT INTO transfer_results (run_uuid, target_key, sop_uid, target_snapshot, status)"
+                        " VALUES (%s,'central:ONCOPACS@x:4002',%s,'{}','accepted')", (run, sop))
+
+
+U_PAN, U_CHAOS, U_DEP, U_A, U_B = (f"{i}0000000-aaaa-4bbb-8ccc-00000000000{i}" for i in range(1, 6))
+
+
+def test_one_dataset_list_merges_only_on_links(settings, test_db, tmp_path, nas):
+    root, roots = nas
+    settings.db = test_db
+    with dbmod.connection(test_db) as conn:
+        dbmod.migrate(conn)
+        _import_and_scan(conn, tmp_path, roots)
+        with conn.cursor() as cur:
+            # the intake read the Pancreas folder and sent it to central
+            _register(cur, U_PAN, "Pancreas-CT (intake)", prefix="PANC_ABD_CT_PUB", commercial="Y",
+                      input_root=str(root / "Public_dataset" / "02 Pancreas-CT TCIA"), central=2)
+            _register(cur, U_CHAOS, "CHAOS", legacy_id=71, commercial="N")          # similar name, no link
+            _register(cur, U_DEP, "deploy/Organ/1.0.0")
+            _register(cur, U_A, "Prostate revision 1", prefix="PROS_PEL_CT_IO")
+            _register(cur, U_B, "Prostate revision 2", prefix="PROS_PEL_CT_IO")     # same prefix: one dataset
+        conn.commit()
+        entries, _ = cat.load(conn)
+        rows = dl.build(entries, dl.registered(conn), dl.person_links(conn))
+    by = {r["name"]: r for r in rows}
+    assert len(rows) == len(entries) + 3           # Pancreas merged; CHAOS, the bundle, the prostate pair apart
+    pan = by["02 Pancreas-CT TCIA"]
+    assert [d["dataset_uuid"] for d in pan["datasets"]] == [U_PAN] and pan["stand"] == "central"
+    assert pan["registered"] == "yes" and pan["prefixes"] == ["PANC_ABD_CT_PUB"] and pan["n_central"] == 2
+    assert pan["links"][0]["method"] == "intake_run" and pan["sources"] == ["list", "own"]
+    chaos = by["CHAOS-MR"]
+    assert chaos["registered"] == "no" and chaos["stand"] == "downloaded" and chaos["eff"]["commercial_use"] == "no"
+    assert "proposal" in chaos["link_state"] and not chaos["datasets"]
+    assert by["CHAOS"]["registered"] == "yes" and by["CHAOS"]["link_state"][0] == "registered_only"
+    assert by["CHAOS"]["eff"]["commercial_use"] == "no" and by["CHAOS"]["eff"]["origin"] == "unknown"
+    pros = by["Prostate revision 1"]
+    assert len(pros["datasets"]) == 2 and pros["eff"]["origin"] == "internal" and pros["n_series"] == 2
+    assert by["Never-Downloaded-Set"]["stand"] == "not_downloaded"
+    sel, counts = dl.apply_filters(rows, {"commercial": ["yes"]})
+    names = {r["name"] for r in sel}
+    assert "02 Pancreas-CT TCIA" in names and "CHAOS-MR" not in names and "CHAOS" not in names
+    assert counts["registered"] == {"yes": 1, "no": 3}                     # counts under the other filters
+    counts = dl.apply_filters(rows, {})[1]
+    assert counts["registered"]["yes"] == 4 and counts["stand"]["central"] == 1
+
+    client = TestClient(create_app(settings))
+    page = client.get("/datasets").text
+    assert "Pancreas-CT (intake)" in page and "deploy/Organ/1.0.0" in page and "등록 · Central 전송" in page
+    assert re.search(r"<b>4</b><span>.*관리 DB 등록 \(5개 데이터셋\)", page)
+    r = client.get("/datasets?origin=deploy")                               # the old page's origin filter
+    assert "deploy/Organ/1.0.0" in r.text and ">CHAOS-MR<" not in r.text and "배포 묶음" in r.text
+    r = client.get("/datasets?registered=no&commercial=no")
+    assert ">CHAOS-MR<" in r.text and ">CHAOS<" not in r.text
+    assert "카탈로그: 02 Pancreas-CT TCIA" in client.get(f"/datasets/{U_PAN}").text
+    chaos_id = chaos["entry_id"]
+    r = client.get(f"/catalog/{chaos_id}")
+    assert "이름 비슷 (후보)" in r.text and "같은 데이터셋" in r.text
+    token = client.cookies.get("dataops_csrf")
+    form = {"csrf": token, "dataset_uuid": U_CHAOS, "state": "confirmed", "by": ""}
+    assert "err=" in client.post(f"/catalog/{chaos_id}/dataset", data=form, follow_redirects=False).headers["location"]
+    r = client.post(f"/catalog/{chaos_id}/dataset", data={**form, "by": "lead"}, follow_redirects=True)
+    assert "등록 데이터셋 연결을 저장했습니다" in r.text and "사람이 연결" in r.text
+    page = client.get("/datasets?registered=yes").text                    # the write cleared the cache
+    assert ">CHAOS-MR<" in page and "등록: CHAOS →" in page
+    client.post(f"/catalog/{chaos_id}/dataset", data={**form, "state": "rejected", "by": "lead"})
+    assert ">CHAOS-MR<" not in client.get("/datasets?registered=yes").text
+    pan_id = pan["entry_id"]                                               # a person splits an intake-run link
+    client.post(f"/catalog/{pan_id}/dataset", data={**form, "dataset_uuid": U_PAN, "state": "rejected", "by": "lead"})
+    assert "02 Pancreas-CT TCIA" in client.get("/datasets?registered=no").text
+    with dbmod.connection(test_db) as conn:
+        assert dbmod.query(conn, "SELECT COUNT(*) AS n FROM catalog_dataset_links")[0]["n"] == 2
+    h = {"x-forwarded-prefix": "/dataops-ui"}
+    r = client.get("/catalog?registered=yes", headers=h, follow_redirects=False)
+    assert r.headers["location"] == "/dataops-ui/datasets?registered=yes"
+    page = client.get("/datasets", headers=h).text
+    assert 'href="/dataops-ui/catalog/' in page and 'href="/datasets' not in page

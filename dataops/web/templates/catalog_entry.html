@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% from "_catalog.html" import avail, comm with context %}
+{% from "_catalog.html" import avail, comm, stand with context %}
 {% from "_macros.html" import csrf_field %}
-{% block title %}{{ e.name }} · 카탈로그{% endblock %}
+{% block title %}{{ e.name }} · 데이터셋{% endblock %}
 {% block body %}
-<p><a href="{{ root }}/catalog">← 카탈로그</a></p>
+<p><a href="{{ root }}/datasets">← 데이터셋</a></p>
 <h1>{{ e.name }}</h1>
-<p>{{ avail(e.eff.availability) }} {{ comm(e.eff.commercial_use) }}
+<p>{{ stand(row.stand) }} {{ avail(e.eff.availability) }} {{ comm(e.eff.commercial_use) }}
   <span class="badge">{{ labels.origin.get(e.eff.origin, e.eff.origin) }}</span>
   <span class="badge">{{ e.eff.licence or 'none stated' }}</span>
   {% if e.is_marker %}<span class="badge">팀 메모 행 (링크 없음)</span>{% endif %}
@@ -56,6 +56,40 @@ NAS의 원본 폴더는 누군가 지우기 전까지 그대로 남는 사본입
 <p class="muted">확인된 폴더가 분석 입력 루트 밖에 있습니다 ({{ input_roots|join(', ') }}). 인테이크하려면 입력 루트를 넓혀야 합니다.</p>
 {% else %}
 <p class="muted">원본 폴더가 확인되지 않아 인테이크를 시작할 수 없습니다. 이 페이지는 아무것도 내려받지 않습니다.</p>
+{% endif %}
+</section>
+
+<section>
+<h2>관리 DB 등록 (한 목록에서 한 행)</h2>
+<p class="muted">목록 항목과 등록 데이터셋은 인테이크 run이 읽은 폴더, 같은 접두어, 또는 사람의 확인으로만 한 행이 됩니다. 이름이 비슷한 것은 후보로만 보이고, 사람이 “같은 데이터셋”을 눌러야 합쳐집니다.
+{% if row.entries|length > 1 %}이 행에는 목록 항목 {{ row.entries|length }}개가 있습니다: {% for x in row.entries %}<a href="{{ root }}/catalog/{{ x.entry_id }}">{{ x.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}.{% endif %}</p>
+<div class="table-wrap"><table>
+<tr><th>등록 데이터셋</th><th>연결</th><th>근거</th><th>접두어</th><th class="num">환자</th><th class="num">시리즈</th><th class="num">Central 전송 파일</th><th></th></tr>
+{% for x in links %}
+<tr><td><a href="{{ root }}/datasets/{{ x.dataset_uuid }}">{{ x.dataset.name }}</a> <span class="muted small">{{ labels.source.get(x.dataset.origin) }}</span></td>
+  <td><span class="badge {{ 'b-ok' if x.state == 'confirmed' else ('b-bad' if x.state == 'rejected' else 'b-warn') }}">{{ {'confirmed': '같은 데이터셋', 'proposed': '후보', 'rejected': '아님'}[x.state] }}</span>
+    <span class="muted small">{{ labels.method.get(x.method, x.method) }}{% if x.by %} · {{ x.by }}{% endif %}</span></td>
+  <td class="small">{{ x.note or '' }}</td>
+  <td class="mono small">{{ x.dataset.prefix or x.dataset.patient_id_prefix or '-' }}</td>
+  <td class="num">{{ "{:,}".format(x.dataset.n_subjects) }}</td><td class="num">{{ "{:,}".format(x.dataset.n_series) }}</td>
+  <td class="num">{{ "{:,}".format(x.dataset.n_central) if x.dataset.n_central else '-' }}</td>
+  <td>{% if x.state != 'confirmed' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/dataset" class="inline">{{ csrf_field(csrf) }}
+      <input type="hidden" name="dataset_uuid" value="{{ x.dataset_uuid }}"><input type="hidden" name="state" value="confirmed">
+      <input name="by" placeholder="확인한 사람" required size="8"><button>같은 데이터셋</button></form>{% endif %}
+    {% if x.state != 'rejected' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/dataset" class="inline">{{ csrf_field(csrf) }}
+      <input type="hidden" name="dataset_uuid" value="{{ x.dataset_uuid }}"><input type="hidden" name="state" value="rejected">
+      <input name="by" placeholder="확인한 사람" required size="8"><button>아님</button></form>{% endif %}
+    {% if x.by %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/dataset" class="inline">{{ csrf_field(csrf) }}
+      <input type="hidden" name="dataset_uuid" value="{{ x.dataset_uuid }}"><input type="hidden" name="state" value="clear">
+      <input name="by" placeholder="누가" required size="8"><button>결정 취소</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">관리 DB에 등록된 같은 데이터셋이 없습니다 (미등록).</td></tr>{% endfor %}
+</table></div>
+{% if linkable %}
+<details><summary>등록 데이터셋과 직접 연결 (같은 데이터셋이라고 사람이 확인)</summary>
+<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/dataset" class="inline">{{ csrf_field(csrf) }}
+  <select name="dataset_uuid">{% for d in linkable %}<option value="{{ d.dataset_uuid }}">{{ d.name }}</option>{% endfor %}</select>
+  <input type="hidden" name="state" value="confirmed"><input name="note" placeholder="메모 (선택)" size="20"><input name="by" placeholder="확인한 사람" required size="8"><button>같은 데이터셋</button></form>
+</details>
 {% endif %}
 </section>
 
