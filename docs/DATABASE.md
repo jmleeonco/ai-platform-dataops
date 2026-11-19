@@ -167,3 +167,6 @@ everything else → unknown (never guessed to yes).
 
 Derived links (not stored): an `ingest_runs.input_root` inside a non-rejected folder of the entry (`intake_run`), and
 registered datasets sharing a `patient_id_prefix`. Name matches are proposals only (`dataset_list.link`).
+
+Migration 0010 (2026-11-20, D370) adds `catalog_matches.note` (VARCHAR 2000, nullable): the evidence a folder
+decision rests on (`catalogue.decide_match(..., note)`, the 근거 field on the entry page).

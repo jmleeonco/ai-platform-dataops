@@ -717,19 +717,20 @@ def edit_entry(conn, entry_id: int, changes: dict, note: str, by: str) -> list[s
     return done
 
 
-def decide_match(conn, entry_id: int, folder_id: int, state: str, by: str) -> None:
-    """A person confirms or rejects a proposed folder (or links one by hand); availability follows."""
+def decide_match(conn, entry_id: int, folder_id: int, state: str, by: str, note: str = "") -> None:
+    """A person confirms or rejects a proposed folder (or links one by hand); availability follows. `note` keeps the
+    evidence the decision rests on (D370)."""
     if state not in ("confirmed", "rejected", "proposed"):
         raise CatalogueError("confirmed / rejected 중 하나")
     with conn.cursor() as cur:
         if not _q(cur, "SELECT 1 AS x FROM catalog_entries WHERE entry_id=%s", (entry_id,)) or \
                 not _q(cur, "SELECT 1 AS x FROM catalog_folders WHERE folder_id=%s", (folder_id,)):
             raise CatalogueError("항목이나 폴더가 없습니다")
-        cur.execute("""INSERT INTO catalog_matches (entry_id, folder_id, method, state, decided_by, decided_at)
-                       VALUES (%s,%s,'person',%s,%s,CURRENT_TIMESTAMP)
+        cur.execute("""INSERT INTO catalog_matches (entry_id, folder_id, method, state, decided_by, decided_at, note)
+                       VALUES (%s,%s,'person',%s,%s,CURRENT_TIMESTAMP,%s)
                        ON DUPLICATE KEY UPDATE state=VALUES(state), decided_by=VALUES(decided_by),
-                                               decided_at=CURRENT_TIMESTAMP""",
-                    (entry_id, folder_id, state, by[:128]))
+                                               decided_at=CURRENT_TIMESTAMP, note=VALUES(note)""",
+                    (entry_id, folder_id, state, by[:128], (note or "").strip()[:2000] or None))
         recompute(cur)
     conn.commit()
 

@@ -42,7 +42,7 @@ publication adapter consuming reviewed immutable artifacts.
 |---|---|---|
 | `dataops/` | the system: scan / agent / plan / prepare / send / publish / records / db / imports; code map in `docs/HANDOVER.md` §4 | ours |
 | `dataops/web/` | web app (`app.py`, `actions.py`, `dbview.py`, `catalog.py`, `catalogue_view.py`, `browse.py`), templates, static | ours; CSP blocks inline scripts/styles |
-| `sql/migrations/`, `sql/deid_map_migrations/` | additive migrations of the two schemas (latest `0009`) | ours; never edit an applied migration |
+| `sql/migrations/`, `sql/deid_map_migrations/` | additive migrations of the two schemas (latest `0010`) | ours; never edit an applied migration |
 | `deploy/`, `ops/` | `web.sh`, `db.sh`; nightly backup + restore check, `catalogue_nightly.sh` (02:30 catalogue refresh) | ours |
 | `tests/` | pytest; DB tests use `dataops_test_*` schemas | ours |
 | `docs/`, `AGENTS.md`, `README.md` | the owner's documents (`docs/HANDOVER.md` = current state) | keep them true; the owner's rules are not relaxed |
@@ -62,7 +62,7 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 ```
 
 - **Tests**: check `MemAvailable` ≥ 12 GB first (D51), then
-  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **171 passed** (2026-11-19,
+  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **171 passed** (2026-11-20,
   ~130 s; needs the DB container; DB tests create and drop `dataops_test_*` schemas) and
   `bash /drive/project/onco-mlops/scripts/docs-gate.sh HEAD~1..HEAD` (silent = OK; also the pre-commit hook).
 - **Deploy**: the workspace is the production tree. Once a change is proven, `deploy/web.sh restart-web` (a running

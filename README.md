@@ -12,7 +12,7 @@ Central(`ONCOPACS@10.101.1.4:4002`)은 2026-11-02부터 소유자가 승인한 r
 | 버전 있는 plan(schema 1) + 결정적 검증기, 미해결 항목/추정 modality 구분 | 구현, 테스트 |
 | 고정 artifact(prepare): DICOM 바이트 그대로 복사, NIfTI→DICOM 결정적 변환, sha256 manifest | 구현, 테스트 |
 | Local SCP 전송: 인스턴스별 journal, 재시도, 변조 artifact 차단, 원격 host 차단 | 구현, 테스트 (loopback SCP) |
-| 관리 DB: MariaDB 11.4 (Docker, 183), migration 0001–0009, 멱등 등록·충돌 시 롤백, 가명 대응 DB 분리 | 구현, 테스트 (일회용 schema) |
+| 관리 DB: MariaDB 11.4 (Docker, 183), migration 0001–0010, 멱등 등록·충돌 시 롤백, 가명 대응 DB 분리 | 구현, 테스트 (일회용 schema) |
 | 로컬 HTML 뷰어 (run·메타데이터·DB 예정/등록 비교·전송 결과·슬라이스 뷰어·DB 테이블·백업) | 구현, 테스트 (읽기 전용) |
 | Nightly backup → `/mnt/ai-pipeline/backups/ai-platform-dataops` (00:30, §65 규격) | 구현, 1회 실행, 복원 검증 |
 | 웹 흐름: 폴더 → 분석 에이전트(Claude, 읽기 전용) → 결정적 검증 → 보고서·수정 → 파일럿 → 승인 | 구현, 테스트, AMOS로 실제 실행 |

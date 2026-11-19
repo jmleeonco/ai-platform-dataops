@@ -99,7 +99,9 @@ view `web/catalogue_view.py`). `/catalog`, `/catalog.csv`, `/catalog.xlsx` redir
   folder the catalogue holds for the entry (not rejected), (b) a person's link on the entry page
   (`catalog_dataset_links`), or (c) registered datasets with the same PatientID prefix. A similar name is only a
   proposal (연결 후보) a person confirms (같은 데이터셋) or rejects (아님) with their name; a rejection also splits an
-  intake-run link. Unlinked ones stay two rows; the 목록 ↔ 등록 연결 filter counts them.
+  intake-run link. Unlinked ones stay two rows; the 목록 ↔ 등록 연결 filter counts them. Folder decisions take an
+  optional 근거 (evidence) note (`catalog_matches.note`, migration 0010); write what the decision rests on (counts,
+  modality, folder contents) so a later reader can check or undo it.
 - A merged row takes the most restrictive commercial use of its parts (no > unknown > yes); a registered dataset
   outside the catalogue takes the DB's Y/N/U and its origin from the prefix tier (PUB/NC public, IO internal) or
   모름.

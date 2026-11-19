@@ -27,17 +27,17 @@
 <tr><td class="mono">{{ m.folder.path }}{% if not m.folder.present %} <span class="badge b-bad">지금 없음</span>{% endif %}</td>
   <td>{{ '원본' if m.folder.role == 'source' else '변환본' }}</td>
   <td><span class="badge {{ 'b-ok' if m.state == 'confirmed' else ('b-bad' if m.state == 'rejected' else 'b-warn') }}">{{ {'confirmed': '확인됨', 'proposed': '후보', 'rejected': '아님'}[m.state] }}</span>
-    <span class="muted small">{{ {'exact': '이름 일치', 'list_path': '목록의 경로', 'name': '이름 비슷', 'person': '사람이 정함', 'internal': '내부 폴더'}.get(m.method, m.method) }}{% if m.decided_by %} · {{ m.decided_by }}{% endif %}</span></td>
+    <span class="muted small">{{ {'exact': '이름 일치', 'list_path': '목록의 경로', 'name': '이름 비슷', 'person': '사람이 정함', 'internal': '내부 폴더'}.get(m.method, m.method) }}{% if m.decided_by %} · {{ m.decided_by }}{% endif %}</span>{% if m.note %}<div class="small muted">{{ m.note }}</div>{% endif %}</td>
   <td class="num">{{ m.folder.top_entries if m.folder.top_entries is not none else '-' }}</td>
   <td class="num">{{ "{:,}".format(m.folder.file_count) if m.folder.file_count is not none else '-' }}</td>
   <td class="num">{{ ((m.folder.size_bytes / 1e9)|round(2)) ~ ' GB' if m.folder.size_bytes is not none else '-' }}{% if m.folder.size_bytes is not none and not m.folder.size_complete %} <span class="muted">(일부)</span>{% endif %}</td>
   <td class="small">{{ m.folder.size_scanned_at or '아직 (밤에 집계)' }}</td>
   <td>{% if m.state != 'confirmed' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/match" class="inline">{{ csrf_field(csrf) }}
       <input type="hidden" name="folder_id" value="{{ m.folder_id }}"><input type="hidden" name="state" value="confirmed">
-      <input name="by" placeholder="확인한 사람" required size="8"><button>이 폴더가 맞음</button></form>{% endif %}
+      <input name="note" placeholder="근거 (선택)" size="14" maxlength="2000"><input name="by" placeholder="확인한 사람" required size="8"><button>이 폴더가 맞음</button></form>{% endif %}
     {% if m.state != 'rejected' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/match" class="inline">{{ csrf_field(csrf) }}
       <input type="hidden" name="folder_id" value="{{ m.folder_id }}"><input type="hidden" name="state" value="rejected">
-      <input name="by" placeholder="확인한 사람" required size="8"><button>아님</button></form>{% endif %}</td></tr>
+      <input name="note" placeholder="근거 (선택)" size="14" maxlength="2000"><input name="by" placeholder="확인한 사람" required size="8"><button>아님</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="8" class="muted">연결된 폴더가 없습니다 (NAS 루트에서 이름이 맞는 폴더를 찾지 못함).</td></tr>{% endfor %}
 </table></div>
 {% if unmatched %}
@@ -78,7 +78,7 @@ NAS의 원본 폴더는 누군가 지우기 전까지 그대로 남는 사본입
       <input name="by" placeholder="확인한 사람" required size="8"><button>같은 데이터셋</button></form>{% endif %}
     {% if x.state != 'rejected' %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/dataset" class="inline">{{ csrf_field(csrf) }}
       <input type="hidden" name="dataset_uuid" value="{{ x.dataset_uuid }}"><input type="hidden" name="state" value="rejected">
-      <input name="by" placeholder="확인한 사람" required size="8"><button>아님</button></form>{% endif %}
+      <input name="note" placeholder="근거 (선택)" size="14" maxlength="2000"><input name="by" placeholder="확인한 사람" required size="8"><button>아님</button></form>{% endif %}
     {% if x.by %}<form method="post" action="{{ root }}/catalog/{{ e.entry_id }}/dataset" class="inline">{{ csrf_field(csrf) }}
       <input type="hidden" name="dataset_uuid" value="{{ x.dataset_uuid }}"><input type="hidden" name="state" value="clear">
       <input name="by" placeholder="누가" required size="8"><button>결정 취소</button></form>{% endif %}</td></tr>

@@ -87,13 +87,13 @@ screenshots.
 | Existing DB & catalogue imports | `legacy_db.py` (schema read, `/legacy` page), `legacy_import.py` (`import-legacy`), `deploy_import.py` (`import-deploy`), `central_find.py` (C-FIND / C-GET RTSTRUCT) |
 | Web | `web/app.py` (runs, reports, sample views, Central page, backups), `web/actions.py` (POST actions), `web/dbview.py` (`/db` raw tables, live), `web/catalog.py` (`/datasets`, `/series/<uid>`, `/search`), `web/browse.py` (`/browse` flat table + search panel) |
 | Ops | `deploy/web.sh`, `deploy/db.sh`, `ops/backup/*`, `ops/transfer_progress.py` |
-| SQL | `sql/migrations/0001–0009` (management DB), `sql/deid_map_migrations/` (map DB) |
+| SQL | `sql/migrations/0001–0010` (management DB), `sql/deid_map_migrations/` (map DB) |
 
 Runtime state (gitignored): `runtime/runs/<run>/` (run.json status + events, plan, manifests, journals,
 artifacts), `runtime/jobs/`, `runtime/deploy_scan/` (cached header scans of the deploy bundles, ~65 MB),
 `runtime/legacy_schema.json`.
 
-## 5. What the management DB holds now (`public_dataops`, migration 0009)
+## 5. What the management DB holds now (`public_dataops`, migration 0010)
 
 datasets 128 · subjects 23,788 · studies 13,041 · series 43,560 · dataset_series 90,368 · instances 98,975 ·
 transfer_results 99,066 · ingest_runs 1 · external_mappings 68. Three origins (`series.source_kind` tells
@@ -128,6 +128,11 @@ and a registered dataset are one row only via an intake run's folder, the same P
 (`catalog_dataset_links`, migration 0009); a name match is a proposal. `/catalog` redirects to `/datasets`. First build:
 499 rows = 373 catalogue entries (AMOS 2022 (CT) and (MR) are one row with the registered AMOS run, sent to central) +
 127 registered datasets outside the catalogue; 128 registered rows, 371 not registered.
+**Open proposals decided (2026-11-20, D-LINKS, D370).** Every proposal was decided on evidence by "orchestrator (D370)",
+the evidence in the decision's note (`catalog_matches.note` is migration 0010): entry ↔ registered 3 confirmed
+(TCGA-READ ×2 ↔ TCGA_READ_2026, test_HNN), 5 rejected (internal Prostate folder ↔ bundles / old-DB set of other sizes);
+entry ↔ folder 42 confirmed, 11 rejected, 4 open (RIDER-LungCT-Seg, EAY131 ×3: counts disagree). `/datasets` 496 rows
+(128 registered, 368 not). Undo on the entry page.
 
 ## 6. Runs on disk (`runtime/runs`)
 

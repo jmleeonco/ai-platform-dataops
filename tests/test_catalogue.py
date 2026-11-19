@@ -246,7 +246,9 @@ def test_import_scan_availability_and_reimport(settings, test_db, tmp_path, nas)
         # a person confirms the proposed CHAOS folder; the size walk fills sizes
         chaos = next(x for x in entries if x["name"] == "CHAOS-MR")
         fid = chaos["folders"][0]["folder_id"]
-        cat.decide_match(conn, chaos["entry_id"], fid, "confirmed", "lead")
+        cat.decide_match(conn, chaos["entry_id"], fid, "confirmed", "lead", "evidence: Train_Sets/MR 20 subjects")
+        decided = next(x for x in cat.load(conn)[0] if x["entry_id"] == chaos["entry_id"])["folders"]
+        assert next(m for m in decided if m["folder_id"] == fid)["note"] == "evidence: Train_Sets/MR 20 subjects"
         res = cat.size_walk(conn, budget_s=60, max_rate=0)
         assert res["walked"] >= 3 and res["left"] == 0
         entries, _ = cat.load(conn)
@@ -318,8 +320,11 @@ def test_migration_is_additive():
     for name in ("0008_dataset_catalogue.sql", "0009_catalog_dataset_links.sql"):
         sql = (cat.Path(dbmod.MIGRATIONS_DIR) / name).read_text(encoding="utf-8")
         assert not re.search(r"\b(DROP|ALTER|DELETE|UPDATE|TRUNCATE)\b", sql, re.I)
+    sql = (cat.Path(dbmod.MIGRATIONS_DIR) / "0010_catalog_match_note.sql").read_text(encoding="utf-8")
+    stmts = [x.strip() for x in re.sub(r"--[^\n]*", "", sql).split(";") if x.strip()]
+    assert stmts == ["ALTER TABLE catalog_matches ADD COLUMN note VARCHAR(2000) NULL AFTER decided_at"]
     assert os.path.basename(sorted(cat.Path(dbmod.MIGRATIONS_DIR).glob("0*.sql"))[-1]) == \
-        "0009_catalog_dataset_links.sql"
+        "0010_catalog_match_note.sql"
 
 
 # --------------------------------------------------------------------------- §78.8 one dataset list

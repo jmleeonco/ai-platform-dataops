@@ -208,7 +208,7 @@ def register_catalogue_views(app, settings, page, db_conn, csv_response, lists: 
                 folder_id = int(form.get("folder_id", ""))
             except ValueError:
                 raise cat.CatalogueError("폴더를 고르세요") from None
-            cat.decide_match(conn, entry_id, folder_id, form.get("state", ""), form["by"])
+            cat.decide_match(conn, entry_id, folder_id, form.get("state", ""), form["by"], form.get("note", ""))
         return write(entry_id, fn, "폴더 연결을 저장했습니다 (보유 상태를 다시 계산했습니다)")
 
     @app.post("/catalog/{entry_id}/dataset")

@@ -1098,6 +1098,21 @@
       before anything runs. The message names each such item (patient, series, modality); leave them out, or submit them
       in a job of their modality. A series that arrives with no image (only its structure set) is listed as failed at the
       download instead of being kept (<a href="../components/executor.html#ej94b-modality-at-submit">executor</a>).</li>
+    <li id="executor-start-retry"><b>A training that fails at its start</b> (E-PORT): if the training dies on its
+      node before its first epoch because of the node or the moment, the executor sends it again by itself, at most
+      twice, on another node when one is free. Such causes are a port in use, an image that could not be pulled, or a
+      node that dropped out. Each attempt and its reason are in the Wait for training log and in the job's
+      <code>start_retries</code>. The trainer's port is now chosen free on the node, and the log names it. When a
+      training fails for good, the stage error is Ray's own cause (for example <i>EADDRINUSE</i>, <i>node has died</i>)
+      instead of <i>exit 1</i>. An error of the training itself before epoch 0 is not retried
+      (<a href="../components/executor.html#e-port-free-port-start-retry">executor</a>).</li>
+    <li id="executor-full-eval-workers"><b>Full validation of a model with many classes</b> (E-FULLVAL): full
+      validation holds whole cases with one channel per class in memory, so a model of many classes (62 bones, for
+      example) could fill the training container's memory and be killed. The executor now sizes the number of
+      full-validation loader workers to the container's memory from your dataset (classes × the largest validation
+      case) and says so in the Submit log. A model of a few classes is unchanged. If a training is still killed, the
+      stage error says where (<i>during full validation, batch k/n</i>) and what the node's memory showed
+      (<a href="../components/executor.html#e-fullval-full-eval-workers">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
