@@ -748,6 +748,7 @@
   <code>version</code>). v1.70's development line (<code>0.y.z</code> only, 400 <code>deploy_version_dev</code>) and v1.72's
   <i>never typed</i> are withdrawn; existing folders keep their numbers. A release proposes the middle number — see
   <a href="../components/hub.html#s89-deploy-always">hub S89</a>.</p>
+  <p id="deploy-always-web"><b>W78 (labeling-web).</b> The wizard shows the switch <b>on</b> in every mode (project, <i>From items anywhere</i>, from a model), the model name the hub proposes and the version it assigns; a kept family shows <i>Deploys to the existing model &lt;F&gt; until it is renamed</i> with a link to 배포 › 개별 모델 릴리즈, where an admin renames it (a dry run first) — see <a href="../components/hub.html#web-model-release-w78">hub W78</a>.</p>
   <p id="deploy-rename"><b>v1.88 §97.3 (U212, S90) — after a rename.</b> When an admin renames a model in 배포 › 개별 모델
   릴리즈 (ai-pipeline renames its folders, the hub its records), a project that deployed to the old name deploys to the
   new one: the wizard and the job page then say <i>deploys to the existing model &lt;new name&gt; until it is renamed
@@ -1181,6 +1182,20 @@
     (<code>POST /api/v1/deploy/models/{family}/{version}/evaluate</code>); it runs on the same queue and writes
     <code>/mnt/deploy/metrics/&lt;family&gt;/&lt;release version&gt;/&lt;data version&gt;/</code> — named by the release version even though a
     release copy's fingerprint names its source (<a href="../components/ai-pipeline.html#a31-release-evaluation">ai-pipeline › A31</a>).</li>
+    <li id="release-followup"><b>What the hub shows for a release (v1.89 §98.1, S91).</b> Both steps run by themselves after
+    an admin releases a model in 배포 › 개별 모델 릴리즈: first the <b>Dataset</b> (the executor's data deploy of the job that
+    trained the released version), then, once that succeeded, the <b>Metrics</b> (the evaluation above). Each release shows
+    both with their state — <i>pending</i>, <i>running</i>, <i>succeeded</i>, <i>failed</i> or <i>not available</i> (the
+    model was not trained by a hub job, or that job's files are gone) — the bundle path, DSC and HD95 once evaluated, and
+    the error of a failed step. A failed step does not undo the release: an admin presses <b>Retry</b> for that step (a
+    dataset retry also re-runs the metrics after it). Releases made before this change show both steps as not started;
+    nothing starts for them until an admin presses Retry. The hub checks the steps every 30 seconds and keeps their state
+    across a restart (<a href="../components/hub.html#s91-release-followup">hub › S91</a>). An evaluation that succeeded
+    but measured no ROI (the model and the bundle share none) shows amber <i>evaluated, no ROI measured</i> with that reason
+    instead of a green <i>done</i> and empty figures, and the release does not count as complete; green <i>done</i> with
+    DSC · HD95 and the number of ROIs measured appears only when at least one ROI was measured
+    (<a href="../components/hub.html#s96-metrics-measured">hub › S96</a>,
+    <a href="../components/hub.html#web-release-unmeasured">W83</a>).</li>
     <li><b>Leaked cases are left out.</b> Validation cases the model trained on (same DICOM series, or identical image
     content) are skipped and listed as excluded; the training split comes from the hub's record of the job that produced
     the weights. Label states (§6.12) do not change what is scored.</li>

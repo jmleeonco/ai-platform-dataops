@@ -433,6 +433,37 @@
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
 
+  <h2 id="a33-candidate-lines">Release notes between two versions: candidate lines, any two lines compared, cumulative changes (v1.90 §99.1, U215, D376 — A33)</h2>
+  <p>The PO compares an installed version with a later one, the unreleased line included (1.6.4 → 1.7.1 = what 1.7.0 and 1.7.1
+  change). ai-pipeline gives the hub the three reads its stacked report (S92) and page (W82) are built on.</p>
+  <div class="tbl"><table><thead><tr><th>Endpoint (<code>/api/v1/deploy/…</code>)</th><th>What changed</th></tr></thead><tbody>
+  <tr><td><code>GET releases</code></td><td><code>lines[]</code> rows gain <code>state</code> <code>released | candidate</code>. A signed-in caller
+  also gets the <b>candidate lines</b> (a three-number line whose only live builds are candidates, e.g. 1.7.1 before its release):
+  <code>current_build</code> = its newest candidate, <code>released_at</code> null, <code>previous_line</code> by §95.1. The hub's public
+  principal gets released lines only. A line whose every build is withdrawn is no longer listed; a candidate line is never anyone's
+  <code>previous_line</code>, and the defaults of <code>spec/compare</code> / <code>spec/release</code> never take it.</td></tr>
+  <tr><td><code>GET spec/compare?base=&amp;target=</code></td><td>Any two lines: a three-number value is a line and means its current build
+  (a candidate line: its newest candidate); a four-number value is that exact build. New fields <code>base_build</code> /
+  <code>target_build</code> (the builds measured) and <code>base_state</code> / <code>target_state</code> (released | candidate). A row whose ROI
+  the target ships without target numbers yet has <code>status: "not_evaluated"</code> — kept, counted in
+  <code>summary.not_evaluated</code>, out of the up / down / same / uncontrolled tallies; every row has <code>change</code>
+  <code>added | removed | kept</code>. The public principal gets 403 <code>sign_in_required</code> for a candidate line or build (checked before
+  the persisted reply, which is shared by every caller).</td></tr>
+  <tr><td><code>GET releases/changes?base=&amp;target=</code> (new)</td><td>The cumulative change from <code>base</code> to <code>target</code>: every released line
+  after <code>base</code>, then <code>target</code> itself (a candidate line that never shipped in between is skipped), oldest first, each by its current build, read from the packages (each family
+  folder's shipped model version — the byte-verified one spec/compare shows — and the ROI names the package emits or routes, by their
+  official registry name). No measurement. <code>{base, target, base_build, target_build, target_state, models_added[{family, version,
+  added_in_line}], models_removed[{family, version, removed_in_line}], models_updated[{family, from_version, to_version, changed_in_line,
+  steps[{line, from_version, to_version}]}], rois_added[{roi, line}], rois_removed[{roi, line}], lines[{line, state, build,
+  previous_build, released_at, models_added, models_removed, models_updated, rois_added, rois_removed}]}</code>. The totals are base build
+  → target build (a model added and removed in between is in neither list; <code>lines[]</code> shows it). <code>target</code> defaults to the
+  newest released line; a four-number value stands for its line. 400 <code>bad_base</code> / <code>bad_target</code> /
+  <code>target_not_after_base</code>, 404 <code>no_such_line</code>, 403 <code>sign_in_required</code> (public principal, candidate line).</td></tr>
+  </tbody></table></div>
+  <p>Kept replies (§93.3) are now kept apart for the public principal and a named caller of the same role, so a signed-in reply with
+  candidate lines is never served to the public view. The site's own <code>/spec/compare</code> page keeps build semantics and shows
+  미평가 for <code>not_evaluated</code> rows.</p>
+
   <h2 id="a31-release-evaluation">Model-release evaluation: the full standard metrics of a released model (v1.89 §98.1 step 2, U213, D373 — A31)</h2>
   <p>After a model release the hub deploys the job's dataset as <code>/mnt/deploy/data/&lt;family&gt;/&lt;V&gt;/</code> (step 1, the
   executor) and then asks ai-pipeline for the metrics (step 2). ai-pipeline runs the same <code>inference/calculate.py</code> as for a

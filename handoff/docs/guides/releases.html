@@ -366,6 +366,22 @@
     contents page, in the language on screen (<code>release-notes-1.6.0-to-1.7.0-ko.pdf</code>). The hub has the ones that end
     at the newest line ready; another one is put together in about 30 s while the page waits and then saves it by itself.</li>
   </ul>
+  <p id="release-notes-compare"><b>버전 비교 / Compare versions</b> (v1.90 §99.3, W82, on S92 and A33; replaces <i>Download from
+  version …</i>): next to the PDF, <b>버전 비교</b> opens two pickers — <i>installed version</i> (any released version with a newer
+  one) and <i>target version</i> (every newer version; a signed-in reader also sees the versions not released yet, marked
+  <i>미출시 / not yet released</i>) — and <b>비교 / Compare</b> opens the address the PO can send,
+  <code>/deploy/release-notes?base=1.6.0&amp;to=1.7.0</code>. The page then reads as one report of what a customer on the installed
+  version receives: the heading <i>1.6.0 → 1.7.0</i> with a contents list (1.6.1, 1.6.2, 1.6.3, 1.6.4, 1.7.0 — oldest first, each
+  marked <i>full report</i>, <i>release notes</i> or <i>pre-release draft</i>); <b>What changes in total</b> — models updated
+  (from → to, and in which version; CrossRegional 2.0.1 → 2.1.2 over 1.6.2 and 1.7.0), added, removed, ROIs added / removed —
+  and a <b>DSC · HD95</b> tab of the two versions (the same filters, search and CSV as the line view; ROIs the target has not
+  been measured on yet say so); then <b>each version in order</b> with its date, state, its own model / ROI changes, its text
+  (the agent's report with its figures, or its notes / draft; a version with no text in the hub links its Notion page), Jira
+  keys, its PDF and its debugging builds. <b>PDF 다운로드 KR / EN</b> saves the stacked PDF of exactly this pair
+  (<code>release-notes-1.6.4-to-1.7.0-ko.pdf</code>; built on first ask while the page waits). A target not released yet needs
+  a signed-in reader — anyone else is asked to sign in. Without <code>base</code> / <code>to</code> the page is as before: the
+  newest released version (a version not released yet never becomes it). Details:
+  <a href="../components/hub.html#web-release-compare">hub W82</a>.</p>
   <h3 id="model-versions">One version line per model; renaming a model (v1.88 §97.2–97.3, A30)</h3>
   <p>Every training deploys the model under the project's name and adds 1 to the last number (Kidney 2.0.0 → 2.0.1). Releasing
   a model adds 1 to the middle number (2.0.2 → 2.1.0) — or to the last when the model gained ROIs — and must be above the
