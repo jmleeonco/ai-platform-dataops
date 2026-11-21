@@ -48,18 +48,90 @@
   65 and 66; the user may raise it, and an out-of-memory still halves from the job's own value
   (<a href="#oom-retry">§48.2</a>). The example template keeps its own 10 epochs (marked <code>executor</code>). See the
   <a href="../guides/training.html#train-defaults">training guide</a> for the values at the pin.</p>
-  <p id="job-deploy"><b>The deploy step in a job</b> (v1.38 §54, D234): <code>hub_loop</code> and <code>once</code>
-  end in a <code>deploy_model</code> step after the evaluation, switched by <code>deploy.enabled</code>
-  (<code>hub_loop</code> on, <code>once</code> off) with <code>deploy.model_name</code>, <code>deploy.version</code>,
-  <code>deploy.research_rois</code>, <code>deploy.memo</code> — the hub fills name, next version and memo.
-  <code>steps</code> lists it with <code>optional: true, switch: "deploy.enabled"</code>. A job body that sends no
-  <code>deploy.enabled</code> deploys only when it names a model (<code>deploy.model_name</code>), so the hub's loop
-  jobs from before v1.38 deploy nothing. Refused at creation, not after the training: an empty name, version or memo
+  <p id="job-deploy"><b>The deploy step in a job</b> (v1.38 §54, D234; default on since v1.88 §97.1): <code>hub_loop</code>,
+  <code>once</code> and the example end in a <code>deploy_model</code> step after the evaluation, switched by
+  <code>deploy.enabled</code> — <b>on by default in all three</b> (E-DEPLOY, U212, 2026-11-20; <code>once</code> was off,
+  so a wizard job stopped after <code>report</code> and a person pressed Deploy) — with <code>deploy.model_name</code>,
+  <code>deploy.version</code>, <code>deploy.research_rois</code>, <code>deploy.memo</code>; the hub fills name, next
+  version and memo. <code>steps</code> lists it with <code>optional: true, switch: "deploy.enabled"</code>. A job body
+  that sends no <code>deploy.enabled</code> deploys (until v1.88 it deployed only when it named a model);
+  <code>deploy.enabled: false</code> still strips the step. The hub sends the switch with every such body (prod jobs
+  84–98 all did), so the change reaches jobs the wizard or a pipeline leaves on. Running and finished jobs keep the
+  graph they were created with; one that finished without a deploy step is not deployed retroactively. Refused at creation, not after the training: an empty name, version or memo
   (<code>422</code>), a version that exists (<code>409 deploy_version_exists</code>), a person's own token without the
   deploy role (<code>403</code>; the hub's <code>app:hub</code> decides for its presser). The stage runs only when every
   earlier stage succeeded — the evaluation included — does what <code>POST /jobs/{id}/deploy</code> does (the same
   <code>deploy_model.sh</code> call, the same §3 <code>deploys</code> registration with the job's account) and is titled
   <i>Deploy &lt;name&gt; &lt;version&gt;</i> on the job page. The route itself is unchanged (D68).</p>
+  <p id="release-data-deploy"><b>A model release deploys its dataset</b> (v1.89 §98.1 step 1, U213, E-RELDATA,
+  2026-11-20; capability <code>release_data_deploy</code>). After a release the hub calls
+  <code>POST /exec/v1/jobs/{id}/deploy</code> for the job that trained the released model, even a job that finished
+  long ago, with <code>{"kind":"data", "name":"&lt;family&gt;", "version":"&lt;V&gt;", "memo":"release &lt;family&gt;
+  &lt;V&gt; from &lt;from_version&gt; · job &lt;id&gt; · by &lt;user&gt;"}</code>. <code>name</code> is the same field as
+  <code>model_name</code> (send one, or both equal). <code>requested_by</code> may be left out; it is then the token's own
+  subject (<code>app:hub</code>, minted <code>admin</code>). The answer is <code>201</code> with the deploy's state:
+  <code>{stage_id, kind:"data", name, version, path, memo, state:"queued", started, finished, exit_code, error,
+  items:{train_list:N, valid_list:M}}</code>. <code>dry_run:true</code> answers <code>200 {argv, target_path,
+  would_overwrite:false, items}</code> and queues nothing. The stage runs as the service account in a run of its own,
+  never on the job's chain, with its own log (<code>…/stages/{stage_id}/log</code>). It runs Research's
+  <code>deploy/data_deploy.sh</code> (not edited) as a generated copy, <code>&lt;job data&gt;/data_deploy_&lt;name&gt;_&lt;version&gt;.sh</code>,
+  with <code>CLEAN_TARGET=0</code> and <code>OVERWRITE=0</code>. The copy takes the job's <code>train_list.json</code> and
+  <code>valid_list.json</code>, and its <code>global_fingerprint.json</code> as <code>CLASSES_JSON</code> (the script writes
+  <code>classes.json</code> from its <code>input_classes</code>), with the memo. The bundle
+  <code>&lt;deploy root&gt;/data/&lt;name&gt;/&lt;version&gt;/</code> then holds <code>train_valid_dict.json</code>,
+  <code>classes.json</code>, <code>nifti/</code>, <code>dicom/</code> and <code>deploy_info.json</code>. DICOM is copied only for a
+  patient the central index (scpdb, read with a <code>SELECT</code>) does not hold, as the script does; nothing is sent to
+  any PACS or SCP (U156). <b>State</b>: <code>GET /exec/v1/jobs/{id}/deploys</code> →
+  <code>{job_id, deploys:[same rows, oldest first]}</code>. It lists every deploy of the job, its own graph's
+  <code>deploy_model</code> included. <code>error</code> is set when the stage failed: the script's own
+  <code>ERROR</code> line, e.g. <i>[train] P1: ERROR missing image source … -&gt; aborting</i>. <b>Refused, nothing
+  written or deleted</b>:</p>
+  <ul>
+    <li><code>409 deploy_version_exists</code>: the folder exists. When a failed deploy stage of ours left it without
+      proof that it made it (see Retry below), the detail names that stage.</li>
+    <li><code>409 deploy_in_progress</code>: a queued or running deploy writes the same folder.</li>
+    <li><code>409 deploy_inputs_missing</code>: the item lists or the fingerprint are gone or empty, or an image or mask
+      of the lists is in neither data root (the job's data folder, then its preprocessed folder; the script's own
+      rule). A later run of the same graph rewrites <code>&lt;data&gt;/nifti</code>, so an old job's NIfTI can be gone. The
+      script would make the target folder and then abort, so this is checked before anything is written.</li>
+    <li><code>409 missing_memo</code>; <code>422</code> for a bad name or version, or for two different names;
+      <code>403</code> without the deploy role.</li>
+  </ul>
+  <p id="release-data-retry"><b>Retry after a failure</b> (E-RELDATA2, D375, 2026-11-20). <code>data_deploy.sh</code>
+  creates the target first and copies case by case, so a run that dies partway leaves an incomplete folder. Without
+  this step a retry of the same version would be refused for ever. Now:</p>
+  <ol>
+    <li>Just before the script runs, the stage checks again that the target does not exist. If it now does, the stage
+      fails and does not run into it. Otherwise it records <code>target_absent_at</code> on its own row: proof that
+      any folder there afterwards is its own.</li>
+    <li>When the stage ends failed or cancelled with that proof, and the target exists, it is renamed on the same mount
+      (nothing is deleted) to <code>&lt;deploy root&gt;/data/&lt;name&gt;/.failed/&lt;version&gt;-&lt;stage_id&gt;/</code>.
+      This happens in the same place for a stage followed live and one settled after a restart.</li>
+    <li>It is not moved when there is no proof (a stage from before this change, such as dev's
+      <code>ZZ_RELDATA_TEST/1.0.0</code>), or when the folder's <code>deploy_info.json</code> holds a deploy record
+      with another memo. That folder is left where it is, and a retry gets <code>409</code> as before.</li>
+    <li>The stage's error (the row and <code>…/deploys</code>) is the script's own reason, followed by <i>— the partial
+      folder this stage created was moved to …/.failed/3.0.0-831 (nothing deleted); a retry of &lt;name&gt;
+      &lt;version&gt; is accepted</i>. The row also gets <code>moved_to</code> (the path, or <code>null</code>).</li>
+    <li>A retry is the same call again, and it is accepted.</li>
+  </ol>
+  <p><code>.failed</code> is a dot folder, so <code>GET /exec/v1/datasets</code> does not list it as a version. A reader
+  that lists <code>/mnt/deploy/data/&lt;name&gt;/</code> itself should skip dot names too. <b>Acceptance on dev</b>: job
+  <code>a4f34cee</code>, version 3.0.0. For the forced failure, one validation mask
+  (<code>PELVIS_2023_0011_mask.nii.gz</code>) was made unreadable, then its mode was restored. Stage 831 failed with
+  <i>PermissionError … — moved to …/ZZ_RELDATA_TEST/.failed/3.0.0-831</i> (15 files, 502 MB, kept). The retry of 3.0.0
+  was accepted and succeeded as stage 832 (16 NIfTI, train 6 / valid 2, one deploy record: the retry's memo). Tests: <code>test_release_data.py</code>.</p>
+  <p><b>Dev</b> (<code>AITW_DEPLOY_SCRATCH</code>): the data deploy runs the real script, with <code>OUTPUT_BASE</code> set to
+  <code>&lt;scratch&gt;/data</code>. That is its only output root, <code>deploy_history.jsonl</code> included, and it commits
+  nothing. A model deploy there still copies the export only, because <code>deploy_model.sh</code> writes
+  <code>/mnt/deploy</code> whatever the root (D67). <b>Acceptance on dev, 2026-11-20</b>: job <code>a4f34cee</code> (finished
+  2026-09-29; 6 train, 2 valid) went into <code>…/aitw-dev-deploy-scratch/data/ZZ_RELDATA_TEST/2.0.0/</code> in 7 min:
+  16 NIfTI files, 502 MB; <code>dicom/</code> empty because 8/8 patients are on central. A second call got
+  <code>409 deploy_version_exists</code>. Job <code>49f39b5e</code>, whose NIfTI a later run had rewritten, was first deployed
+  before this check existed: the script created the target and aborted on the first image (stage 829). Since the check
+  it gets <code>409 deploy_inputs_missing</code> naming 20 files. Code: <code>jobs.deploy</code> / <code>deploy_view</code> /
+  <code>deploys</code>, <code>runner._check_deploy_inputs</code>, <code>training.render_data_deploy</code>; tests
+  <code>test_release_data.py</code>, <code>test_exec_contract.py::test_the_release_data_call_on_the_mock</code>.</p>
   <p id="rtss-selection"><b>Which RTSTRUCTs a project job trains on</b> (v1.39 §53.1, D242): exactly the project's label
   revisions the hub names, no fall-back; one the download did not bring is fetched by its UIDs from the hub's label
   store, then from ONCOPACS (C-FIND by series UID + C-GET, <code>AITW_PACS_*</code>, D248), and one found nowhere is

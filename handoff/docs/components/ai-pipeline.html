@@ -433,6 +433,80 @@
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
 
+  <h2 id="a31-release-evaluation">Model-release evaluation: the full standard metrics of a released model (v1.89 §98.1 step 2, U213, D373 — A31)</h2>
+  <p>After a model release the hub deploys the job's dataset as <code>/mnt/deploy/data/&lt;family&gt;/&lt;V&gt;/</code> (step 1, the
+  executor) and then asks ai-pipeline for the metrics (step 2). ai-pipeline runs the same <code>inference/calculate.py</code> as for a
+  research deploy — every validation case of the bundle (<code>valid_gt</code> when it is a list), every ROI, DSC, HD95 and the other
+  standard measures, the train-metadata pass and contrast — on its <b>normal inference queue</b> (the shared GPU flock, the memory gate,
+  the leak guard; no bypass), and writes <code>/mnt/deploy/metrics/&lt;family&gt;/&lt;V&gt;/&lt;data_version&gt;/</code>.</p>
+  <div class="tbl"><table><thead><tr><th>Endpoint (<code>/api/v1/deploy/…</code>)</th><th>Request → response</th></tr></thead><tbody>
+  <tr><td><code>POST models/{family}/{version}/evaluate</code> (admin through the hub)</td><td><code>{"data_version": "1.0.0"}</code> →
+  <b>201</b> + the state below with <code>state: "queued"</code>, <code>queue_job_id</code>, <code>position</code>, <code>reused: false</code>;
+  <b>200</b> + the stored state with <code>reused: true</code> when the pair already has metrics (never the same evaluation twice — a
+  research deploy's folder counts; a failed or partial run is queued again and resumes, per-case files already written are kept);
+  <b>409</b> <code>evaluation_running</code> + <code>queue_job_id</code>, <code>state</code> (one queued or running for the pair);
+  <b>404</b> <code>no_such_model</code> (no <code>&lt;family&gt;/&lt;version&gt;/3d_final_model.pt</code>) or <code>no_such_bundle</code> +
+  <code>searched[]</code> (no <code>train_valid_dict.json</code>); <b>400</b> <code>bad_data_version</code>; 403 <code>role</code> below admin</td></tr>
+  <tr><td><code>GET models/{family}/{version}/evaluate[?data_version=]</code> (every role)</td><td><code>{family, version, data_version,
+  state: queued|running|succeeded|failed, queue_job_id, origin (release | manual | auto | metrics = a research folder without a job),
+  position, started_at, finished_at, note, error, metrics_path, cases (validation cases of the bundle), cases_done (per-case files
+  written), n (cases with metrics), rois[], roi_count, roi_stats[{roi, n, dsc_mean, hd95_mean}], dsc_mean, hd95_mean}</code> — the
+  means are the mean over ROIs of the site's own per-ROI aggregation, and only when succeeded; without <code>data_version</code> the
+  newest evaluation of the model version; 404 <code>no_such_model</code> / <code>not_evaluated</code></td></tr>
+  </tbody></table></div>
+  <ul>
+    <li><b>The metrics folder is named by the release version.</b> A release copy shares its files with the source, so its
+    fingerprint still names the source version; the job therefore passes the folders to the calculator
+    (<code>OS_MODEL_DIR</code>, <code>OS_INPUT_DIR</code>, <code>OS_OUTPUT_DIR</code>; new queue columns <code>model_dir</code> /
+    <code>input_dir</code> / <code>output_dir</code>). The leak guard still identifies the model by its weights (the hub's split by md5).</li>
+    <li><b>Rename (§97.3)</b> is followed: an old family in the URL resolves through the alias, the queue's jobs carry the new name.</li>
+    <li><b>Dev :5001</b> has its own queue worker now (own queue DB; the host's GPU flock and memory gate; no hub automation) that runs
+    only jobs writing under <code>instance/dev</code> (<code>AIPIPELINE_QUEUE_WRITE_ROOT</code>; anything else is refused into
+    <code>error</code>): metrics go to <code>instance/dev/metrics</code> (<code>EVAL_METRICS_ROOT</code>), the model comes from its scratch
+    root first, the bundle from <code>instance/dev/data</code> then <code>/mnt/deploy/data</code> (<code>EVAL_DATA_ROOTS</code>, read only).
+    <code>DEV_QUEUE_WORKER=0 scripts/run_dev.sh</code> starts it without the worker.</li>
+    <li id="a32-failed-bundles"><b>Partial bundles moved aside (D375, A32).</b> The executor may leave
+    <code>/mnt/deploy/data/&lt;family&gt;/.failed/&lt;V&gt;-&lt;stage_id&gt;/</code>. A dot folder is never a data version here: the data list,
+    추론 관리's options, recent deploys, the auto-enqueue snapshot, bundle validation and the newest-data-version lookup skip it,
+    <code>evaluate</code> (POST and GET) answers 400 <code>bad_data_version</code> for it, and a rename moves it along with
+    <code>data/&lt;family&gt;/</code>.</li>
+  </ul>
+
+  <h2 id="a30-model-versions-rename">Model versions: the release rule, ROI lists per version, renaming a model (v1.88 §97.2–97.3, U212, D372 — A30)</h2>
+  <p>Every training job now deploys (§97.1), one version line per model: a deploy adds 1 to the last number (Kidney 2.0.0 released →
+  deploys 2.0.1, 2.0.2), a release adds 1 to the middle one (2.0.2 → 2.1.0), or to the last when ROIs were added. The hub proposes
+  the number (S89); ai-pipeline checks and writes.</p>
+  <div class="tbl"><table><thead><tr><th>Endpoint (<code>/api/v1/deploy/…</code>)</th><th>What changed</th></tr></thead><tbody>
+  <tr><td><code>POST models/{family}/release</code></td><td>any <code>M.m.p</code> (M ≥ 1) <b>above the model's highest released version</b>
+  (409 <code>version_not_above_release</code> + <code>highest_released</code>); the source may be any version that is not a release copy —
+  2.0.1 → 2.1.0, no longer only <code>0.y.z</code>; a release copy as the source stays 400 <code>source_is_release</code>.
+  <b>Released</b> (§97.2) = a folder with <code>RELEASED.json</code> not withdrawn, or the version a released package ships (state
+  released or superseded, a legacy folder, a customer build; a candidate ships nothing)</td></tr>
+  <tr><td><code>GET models</code></td><td>per version: <code>development</code> now means <b>not a release copy</b> (no
+  <code>RELEASED.json</code>; before: a <code>0.y.z</code> folder), <code>release_copy</code>, <code>released</code>, <code>rois</code> (the ROI
+  names the version emits: its <code>global_fingerprint.json</code> <code>input_classes</code> without background) and
+  <code>roi_count</code> — the hub computes <code>rois_added</code> and searches by ROI from them; per model:
+  <code>latest_deployed_version</code> (the highest that is not a release copy), <code>highest_released_version</code>,
+  <code>can_rename</code> / <code>rename_refusal</code> (<code>{detail: shipped_by_package, packages[]}</code>). The dashboard's
+  <code>development_versions</code> follow the new meaning</td></tr>
+  <tr><td><code>POST models/{family}/rename {name, dry_run?}</code> (new; admin through the hub)</td><td>the model's folder (every
+  version) is renamed in place — one <code>os.rename</code>, no weights or fingerprints written — and so are its
+  <code>metrics/</code>, <code>data/</code> and <code>config/train_manifests/</code> folders; ai-pipeline's records follow:
+  <code>RELEASED.json</code> <code>family</code> of its release copies, the queue's jobs / validations / <code>deploy_snapshot</code> (so
+  auto-enqueue does not take it for a new model and evaluate it again), hidden-model entries, weight-digest cache keys; the alias
+  <code>old → new</code> goes into <code>/mnt/deploy/config/model_aliases.json</code> and an old name in any URL
+  (<code>/spec/model/&lt;old&gt;/…</code>, <code>/api/v1/deploy/models/&lt;old&gt;/…</code>, download links) resolves to the renamed
+  model; one line per rename in <code>&lt;models root&gt;/.rename.jsonl</code>. <b>409</b> with <code>reasons[]</code> (each
+  <code>{detail, message}</code>), nothing moved: <code>invalid_name</code> (not <code>[A-Za-z0-9_-]+</code>), <code>name_exists</code>
+  (a model folder — also one differing only in case —, a metrics / data / manifest folder or an earlier name), <code>in_use</code>
+  (an evaluation or bundle validation queued or running, a write in flight in its folder, a release upload that selected it, a
+  candidate package holding it), <code>shipped_by_package</code> + <code>packages[]</code> (a released package ships it: the name
+  is in customers' installs — release a new model under the new name instead); 404 <code>no_such_model</code>.
+  <code>dry_run: true</code> answers 200 with the <code>moves</code> and writes nothing. The dev instance renames only a model of
+  its scratch root and follows only its own records</td></tr>
+  </tbody></table></div>
+  <p>Deploying this code moves no folder. The hub renames its own records in the same request (S90) and shows the refusal text.</p>
+
   <h2 id="a29-catalogue-numbers">ROI catalogue rows: the deployed model's numbers and the latest package (v1.85 §96.4, U205 — A29)</h2>
   <p>The hub's ROI 카탈로그 (W74) shows HD95 next to DSC for the ROI's deployed model (§93.2) and one package version. The
   catalogue rows (<code>catalog.rows[]</code> of <code>roi</code> and <code>roi/management</code>, built by

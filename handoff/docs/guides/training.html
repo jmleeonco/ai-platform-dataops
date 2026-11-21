@@ -730,7 +730,31 @@
   answer 400 <code>deploy_version_auto</code> (a request that carried another version) it reads <i>The hub assigns the version itself; this
   deploy carried another one. Reload and try again.</i> Only an admin releases a model (배포 › 모델 › Model release); a release takes the
   next major version <code>(M+1).0.0</code>, also assigned.</p>
-  <p class="note"><code>deploy {enabled, available, model_name, next_version, versions, version, modality, memo}</code>
+  <p id="deploy-always"><b>v1.88 §97.1 / §97.2 (U212, D372, S89) — every training job deploys; one version line per model.</b>
+  The deploy switch is <b>on</b> unless you switch it off — in the wizard (every mode), <i>From items anywhere</i>, a job
+  from an existing model, the advanced job, a re-run of a job that deployed, and every loop iteration (the loop deploys in
+  the job, whatever the DSC; a loop policy with <i>auto-deploy</i> off — <code>deploy_threshold</code> null — or a loop
+  pipeline with <code>deploy.enabled</code> false does not deploy). A request without <code>deploy.enabled</code> deploys;
+  only a lead or admin deploys (below lead nothing deploys and the switch stays off, D330). <b>Name</b>: the project's name for a
+  project job (the code as shown, no <code>_3d</code> / <code>_2d</code> suffix), the chosen model's family for a job
+  started from a model, else the name you typed. A project whose earlier deploys went to <code>&lt;CODE&gt;_&lt;type&gt;</code>
+  keeps that model until it is renamed: the wizard and the job page say <i>deploys to the existing model &lt;name&gt; until it
+  is renamed (§97.3)</i> (<code>deploy.family_kept</code>, <code>deploy.family_note</code>; on prod 2026-11-20:
+  <code>Kidney_Cortex_3d</code>, <code>JASTRO_THORACIC_LN_3d</code>, <code>JASTRO_PELVIS_LN_3d</code> and, for a 2d job of
+  RIBS, <code>RIBS_2d</code>). <b>Version</b>: the model's <b>highest version of any line</b> (released or not, and the live
+  jobs' reserved ones) plus one on the last number — Kidney <code>2.0.0</code> → <code>2.0.1</code>; <code>0.0.0</code> for a
+  new model. A typed version is taken when it is above the model's highest; a lower one is refused (400
+  <code>deploy_version_auto</code>, <i>a typed version must be above 2.0.0: the next is 2.0.1</i>, with the next in
+  <code>version</code>). v1.70's development line (<code>0.y.z</code> only, 400 <code>deploy_version_dev</code>) and v1.72's
+  <i>never typed</i> are withdrawn; existing folders keep their numbers. A release proposes the middle number — see
+  <a href="../components/hub.html#s89-deploy-always">hub S89</a>.</p>
+  <p id="deploy-rename"><b>v1.88 §97.3 (U212, S90) — after a rename.</b> When an admin renames a model in 배포 › 개별 모델
+  릴리즈 (ai-pipeline renames its folders, the hub its records), a project that deployed to the old name deploys to the
+  new one: the wizard and the job page then say <i>deploys to the existing model &lt;new name&gt; until it is renamed
+  (§97.3)</i>, the version continues the model's line under the new name, and a finished job's page names the new model
+  (the name it was sent with is kept on the hub's record as <code>deploy.model_name_renamed_from</code>, never sent to the
+  executor). See <a href="../components/hub.html#s90-model-rename">hub S90</a>.</p>
+  <p class="note"><code>deploy {enabled, available, model_name, family_kept, family_note, next_version, versions, version, modality, memo}</code>
   (<code>available</code> false = the executor's template has no deploy step yet; then <code>enabled</code> is false and a
   body asking to deploy gets 422 <i>deploy: the executor's hub_loop has no deploy step yet</i>). Body <code>deploy
   {enabled?, model_name?, version?, memo?}</code>: 422 <i>version: 1.2.3 form</i>, <i>model_name: [A-Za-z0-9_], 1–64
@@ -1113,6 +1137,22 @@
       case) and says so in the Submit log. A model of a few classes is unchanged. If a training is still killed, the
       stage error says where (<i>during full validation, batch k/n</i>) and what the node's memory showed
       (<a href="../components/executor.html#e-fullval-full-eval-workers">executor</a>).</li>
+    <li id="executor-deploy-default"><b>Every training job deploys</b> (v1.88 §97.1, E-DEPLOY): the deploy switch
+      <code>deploy.enabled</code> is on by default in every template that trains (<code>hub_loop</code>,
+      <code>once</code>, the example), and a job submitted without it gets the Deploy step after Evaluate and Report.
+      Switching it off still removes the step. The job is refused at creation, as before, when the model name, version
+      or memo is still empty after the hub fills them, or when the version already exists. Jobs already running or
+      finished are not changed (<a href="../components/executor.html#job-deploy">executor</a>).</li>
+    <li id="executor-release-data"><b>A release deploys the model's dataset</b> (v1.89 §98.1, E-RELDATA): when a model is
+      released, the hub asks the executor to deploy the dataset of the job that trained it, as the bundle
+      <code>/mnt/deploy/data/&lt;family&gt;/&lt;version&gt;/</code>. The bundle holds the train/valid lists, the classes,
+      the NIfTI files and a record with the memo; DICOM is included only for patients the central PACS does not hold. The
+      deploy is a stage of its own with its own log, and it works for a job that finished long ago. An existing bundle
+      of that name and version is never rebuilt or overwritten: the call is refused. A job whose files are gone (a later
+      run of the same graph replaced them) is refused before anything is written. If a deploy fails partway, the
+      incomplete folder it created is moved aside to <code>&lt;family&gt;/.failed/&lt;version&gt;-&lt;stage&gt;/</code>
+      (nothing deleted), so Retry with the same version works
+      (<a href="../components/executor.html#release-data-deploy">executor</a>).</li>
     <li><b>Curve and metrics</b>: the loss/metric curve appears once training has written its log (<code>GET /exec/v1/jobs/{id}/curve</code>); per-ROI and per-case numbers once Evaluate has finished (<code>…/metrics</code>).</li>
     <li id="eval-prerender"><b>Prerendered evaluation samples (v1.45 §56.4, U115)</b>: every template with an
       evaluate stage (<code>hub_loop</code>, <code>hub_checkpoint</code>, <code>once</code>, the example) has the parameter
@@ -1136,6 +1176,11 @@
     <i>standard</i> evaluation (the model on its family's latest data, or new data with the latest model). It waits for
     free memory and the shared GPU lock, so it never competes with a running training stage. A lead can also queue a pair
     in ai-pipeline's 추론 관리.</li>
+    <li id="release-evaluation"><b>A model release triggers it too (v1.89 §98.1).</b> After the release and its dataset bundle,
+    the hub asks ai-pipeline for the full standard evaluation of the released version on that bundle
+    (<code>POST /api/v1/deploy/models/{family}/{version}/evaluate</code>); it runs on the same queue and writes
+    <code>/mnt/deploy/metrics/&lt;family&gt;/&lt;release version&gt;/&lt;data version&gt;/</code> — named by the release version even though a
+    release copy's fingerprint names its source (<a href="../components/ai-pipeline.html#a31-release-evaluation">ai-pipeline › A31</a>).</li>
     <li><b>Leaked cases are left out.</b> Validation cases the model trained on (same DICOM series, or identical image
     content) are skipped and listed as excluded; the training split comes from the hub's record of the job that produced
     the weights. Label states (§6.12) do not change what is scored.</li>

@@ -70,6 +70,18 @@
   <code>model_name</code> the loop deploys to <code>&lt;CODE&gt;_&lt;model_type&gt;</code> (<code>RIBS_3d</code>), at the next
   patch above the old <code>&lt;CODE&gt;</code> family's versions. A 2d loop on an executor without <code>train.mode</code>
   is refused (409) with the reason (<code>tests/test_model_type_v147.py</code>).</p>
+  <p id="iterations-deploy-always"><b>v1.88 §97.1 / §97.2 (U212, S89):</b> every iteration deploys in its own job (its
+  <i>Deploy to the server</i> stage after <i>Evaluate</i>, memo <i>loop: project &lt;code&gt; iteration &lt;n&gt; · by
+  &lt;presser&gt;</i>), whatever the DSC — unless the policy's auto-deploy is off (<code>deploy_threshold</code> null) or the
+  loop's pipeline sets <code>deploy.enabled</code> false; the §41.5 threshold deploy after the job remains only for an
+  executor whose template has no deploy step. Without its own <code>model_name</code> the loop deploys under the
+  <b>project's name</b> (no <code>_&lt;type&gt;</code>); a project whose <code>&lt;CODE&gt;_&lt;model_type&gt;</code> family
+  already holds a version keeps it until it is renamed. The version is the model's highest of any line plus one on the
+  last number (<code>2.0.0</code> → <code>2.0.1</code>), <code>0.0.0</code> for a new model; the strip's
+  <code>policy.model_name</code> and the app's <code>PUT …/round-policy</code> answer name that family.</p>
+  <p id="iterations-rename"><b>v1.88 §97.3 (S90):</b> a renamed model is followed — a loop whose project deployed to
+  the old name (or the policy's <code>model_name</code>, which the rename rewrites) deploys to the new name; the
+  iterations' recorded deploy (family, path) is renamed with it.</p>
   <p id="mode-defaults"><b>v1.48 §68 (S36, D300) — the type's defaults on Train:</b> a 2d loop trains with the
   executor's 2d defaults (today batch size 16 instead of 2) for every parameter the loop's policy or pipeline does not
   set; a value set there stands. Details: <a href="training.html#default-by-mode-hub">Training › the hub applies the

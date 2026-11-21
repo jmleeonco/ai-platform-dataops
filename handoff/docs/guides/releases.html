@@ -43,7 +43,8 @@
   <ol>
     <li><b>Check the numbers first.</b> <code>/spec/package/&lt;version&gt;</code> shows every model of a release with its
     evaluation (DSC/HD95 per ROI, leak-guard exclusions); <code>/spec/compare</code> compares two releases ROI by ROI. A model
-    with no evaluation yet can be queued from 추론 관리.</li>
+    with no evaluation yet is queued on ai-pipeline's own page (:5000 <code>/spec/manage</code>; the comparison's <i>Compute on
+    ai-pipeline</i> button, admin) — the hub's 추론 관리 tab was removed on 2026-11-20 (v1.89 §98.2).</li>
     <li><b>Check the data behind them.</b> Every deployed data version is validated automatically after deploy (bundle
     validation, D37: class lists, GT channel count, empty channels, valid/valid_gt order); a failed validation is on
     <code>/spec/validation/&lt;model&gt;/&lt;data version&gt;</code> and marks the dataset not deployable in the hub. Model flags
@@ -365,6 +366,16 @@
     contents page, in the language on screen (<code>release-notes-1.6.0-to-1.7.0-ko.pdf</code>). The hub has the ones that end
     at the newest line ready; another one is put together in about 30 s while the page waits and then saves it by itself.</li>
   </ul>
+  <h3 id="model-versions">One version line per model; renaming a model (v1.88 §97.2–97.3, A30)</h3>
+  <p>Every training deploys the model under the project's name and adds 1 to the last number (Kidney 2.0.0 → 2.0.1). Releasing
+  a model adds 1 to the middle number (2.0.2 → 2.1.0) — or to the last when the model gained ROIs — and must be above the
+  model's highest released version; any deployed version can be released, a release copy cannot. A model is
+  <i>released</i> when it has a model release (<code>RELEASED.json</code>, not withdrawn) or a released package ships it.</p>
+  <p><b>Rename</b> (배포 › 개별 모델 릴리즈) moves the model's folder with all its versions, its evaluations, data and training
+  manifests to the new name; old links keep working (the old name is kept as an alias). It is refused when the name is
+  taken or not plain letters, digits, <code>_</code> and <code>-</code>; when the model is in use (an evaluation running, a
+  release being built from it); and when a released package ships it — customers have that name installed, so release a
+  new model instead. Hidden-model entries follow the new name.</p>
   <h3 id="release-lines">Release lines and the previous one — one rule, in ai-pipeline (v1.84 §95.1, A28)</h3>
   <p>A <b>release line</b> is a three-number version with its four-number debugging builds (1.7.0 with 1.7.0.1 … 1.7.0.4).
   Its <b>current build</b> is its newest <i>released</i> member — what customers run (1.7.0.4); a line whose members are all
