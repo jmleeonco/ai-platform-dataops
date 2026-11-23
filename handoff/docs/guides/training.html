@@ -1193,6 +1193,14 @@
       must hold the ROI; with class mode <i>all</i> an added ROI is refused. The job page's
       <code>cohort_resolved.base.rois_added_labelled</code> counts, per added ROI, the model's images that hold it
       (<a href="../components/executor.html#e-baseroi-added-rois">executor</a>).</li>
+    <li id="executor-class-subset"><b>A model's data with classes the model does not have</b> (v1.92 §101,
+      E-BASESUB): some data bundles hold more classes than the model trained on them (Breast 2.3.0's <i>LN_Sum</i>,
+      Chest 2.0.0's <i>Esophagus</i> and <i>Lower_airway</i>, HNN 2.0.0's <i>Eye</i>, Neck 2.0.0's <i>PCM_Ant</i>,
+      <i>PCM_Post</i> and <i>LN_Sum</i>). Such a class is left out: it is not a class of the job, its images do not
+      train it, and an image voxel that only it covered trains as background (the executor writes that into a copy of
+      the image's mask; the bundle is never changed). At least one of the bundle's classes must stay. The job page's
+      <code>cohort_resolved.base.classes_left_out</code> names them
+      (<a href="../components/executor.html#e-basesub-class-subset">executor</a>).</li>
     <li id="executor-convert-dropped"><b>Series the conversion left out</b> (E-J94): when the DICOM → NIfTI step
       cannot convert a series the job selected, for example an MR series in a CT job, the step names each one with the
       reason in its log and on the job page (<code>series_failed</code>). If one of them is in the project's frozen
