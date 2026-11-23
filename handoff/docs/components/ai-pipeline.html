@@ -433,6 +433,27 @@
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
 
+  <h2 id="a35-public-downloads">Released models without a login: the public download set (v1.94 §103.1, U220, D380 — A35)</h2>
+  <p>A visitor without a hub login may download released models. The hub forwards the GETs below for its public principal
+  (<code>X-Hub-User: public</code>, role general, S100), and ai-pipeline decides which names are released. A signed-in caller of any role is unchanged
+  (a general user still fetches a candidate for its QA); the packaging pages, country builds, <code>releases/latest.zip</code> and every
+  other download stay behind the login.</p>
+  <div class="tbl"><table><thead><tr><th>Public GET (<code>/api/v1/deploy/…</code>)</th><th>Served to the public principal when</th></tr></thead><tbody>
+  <tr><td><code>downloads/{name}.zip</code><br><code>releases/{version}.zip</code></td><td>The package is a <b>public build</b>: a standard build whose
+  <code>RELEASE.json</code> state is released or superseded (a legacy folder counts as released) on a released line (§99.1); a debugging build
+  x.y.z.n only when it is its line's current build. On production today: 1.0.0 … 1.6.4, 1.7.0 and 1.7.0.4. Candidates, withdrawn builds,
+  older debugging builds (1.7.0.1 – 1.7.0.3) and customer builds (<code>smu_…</code>, <code>wsch_…</code>) are not.</td></tr>
+  <tr><td><code>packaging/model-download/{model}/{version}/{country}.zip</code><br><code>packaging/model-download/{model}/{version}.zip</code></td><td>The
+  model version is <b>released</b> (§97.2: a release copy with <code>RELEASED.json</code> not withdrawn, or a version a released package ships) and
+  neither the model nor the version is hidden.</td></tr>
+  </tbody></table></div>
+  <p>Anything else in these paths answers the public principal 403 <code>{"detail": "not_released", "version"}</code> (the model zips add
+  <code>model</code>); a name that does not exist answers 404 as before. <b>Length and Range.</b> A package zip is kept as a file in
+  <code>instance/release_zips/</code> (<code>AIPIPELINE_RELEASE_ZIP_CACHE</code>; dev <code>instance/dev/release_zips</code>; the 4 most recently
+  served, <code>AIPIPELINE_RELEASE_ZIP_KEEP</code>), valid while the package folder's files, sizes and mtimes match. A cached zip is answered with
+  <code>Content-Length</code>, <code>Accept-Ranges: bytes</code> and 206 for a <code>Range</code>. The first download of a package (or after it changed)
+  streams as before while the file is built behind, and the newest public build is built at start-up. The per-model zips already had both.</p>
+
   <h2 id="a33-candidate-lines">Release notes between two versions: candidate lines, any two lines compared, cumulative changes (v1.90 §99.1, U215, D376 — A33)</h2>
   <p>The PO compares an installed version with a later one, the unreleased line included (1.6.4 → 1.7.1 = what 1.7.0 and 1.7.1
   change). ai-pipeline gives the hub the three reads its stacked report (S92) and page (W82) are built on.</p>

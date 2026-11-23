@@ -32,7 +32,7 @@
   <tr><td><span class="pill warn">data</span> (viewer)</td><td>role <code>viewer</code> without <code>is_labeler</code></td><td>the same pages, read-only</td><td>full (U5)</td><td>none</td></tr>
   <tr id="role-ra"><td><span class="pill warn">data</span> (RA)</td><td>role <code>ra</code> without <code>is_labeler</code> (v1.78 §70.7, U183, D357 — regulatory affairs)</td><td>what a viewer reads, plus the <b>인허가</b> section exactly as a lead has it (인허가 프로파일 <code>/cert</code>, 인허가 시트 <code>/cert/sheet</code>, the 실제 / Ideal workbooks); nothing else of a lead — no review, project or plan edits, training starts, deploy, DataOps or 관리. With <code>is_labeler</code> it is <code>own</code> like a labeling viewer. Outside the hub web (OncoStudio's <code>/api/v1/me</code>, the users list, the hand-off token, every service token to the executor, ai-pipeline or DataOps) it is a <code>viewer</code></td><td>full (U5)</td><td>none</td></tr>
   <tr><td><span class="pill info">own</span> (labeler)</td><td>role <code>viewer</code> with <code>is_labeler</code></td><td>내 작업: own assignments (project, patient, series, status with the round badge / pre-label mark / review-note mark, due) and their drawer (ROI set vs delivered, the hub review text, comments); 계정: own password and OncoStudio login binding. <b>No other person's name or count anywhere</b> (D95): reviewer, comment author and actor names are blanked by the server, the unbound-alias list is not sent. The former 추천 · 결과물 · 세션 · 라벨러 pages send a labeler back to 내 작업 (the APIs keep their own-row filtering)</td><td>full (U5)</td><td>change own password, bind own OncoStudio login, comment on own assignment, acknowledge a review comment</td></tr>
-  <tr><td><span class="pill ok">public</span></td><td>not logged in</td><td>v1.55 §72 (U141, D321): the hub shell and nav as after a login, limited to 개요 (로드맵, ROI 카탈로그, 릴리즈 노트 — moved there from 배포 on 2026-11-02) and the 배포 pages a general user may see (since v1.73 §87.1 under two entries: 대시보드 with 사용법 as its <code>?</code> link · 릴리즈 › 패키지 릴리즈 · 모델 다운로드 · 스펙 문서), and this documentation; GET only, no usernames or display names in any reply (<code>PUBLIC_READ</code>, S47), the deploy reads forwarded as <code>X-Hub-User: public</code> / <code>X-Hub-Role: general</code>; model / release zips and every other route → 401 → the login</td><td>none shown; no usernames either</td><td>none</td></tr>
+  <tr><td><span class="pill ok">public</span></td><td>not logged in</td><td>v1.55 §72 (U141, D321): the hub shell and nav as after a login, limited to 개요 (로드맵, ROI 카탈로그, 릴리즈 노트 — moved there from 배포 on 2026-11-02) and the 배포 pages a general user may see (since v1.73 §87.1 under two entries: 대시보드 with 사용법 as its <code>?</code> link · 릴리즈 › 패키지 릴리즈 · 모델 다운로드 · 스펙 문서), and this documentation; GET only, no usernames or display names in any reply (<code>PUBLIC_READ</code>, S47), the deploy reads forwarded as <code>X-Hub-User: public</code> / <code>X-Hub-Role: general</code>; since v1.94 §103 (S100) also the <b>released</b> model / package zips and a new ROI request with the visitor's name; unreleased zips and every other route → 401 → the login</td><td>none shown; no usernames either</td><td>none</td></tr>
   </tbody></table></div>
   <div class="note"><b>Why "their projects" means all projects for the data scope</b><span>The hub has no project-membership
   table (a project's lead is a free-text name). Every lead and data-team member sees every active project; a membership
@@ -63,7 +63,8 @@
   <code>general</code> login, D321; since v1.70 §84.3 the former ROI · ROI 뷰어 are the ROI 카탈로그's Catalog and Viewer views —
   <code>/deploy/roi…</code> and <code>/deploy/roi-viewer…</code> redirect there; its Registry view and 배포 › Model release need a lead). <code>/</code> opens the roadmap; any other address
   asks for a login and returns there afterwards. The view is read-only and nameless: every write and every model / release zip needs a login
-  (the pages show a 로그인 후 다운로드 link), the server blanks usernames in anonymous replies (S85: an ROI request's <code>entered_by</code> and <code>requester_name</code> too), and <code>GET /ui/api/meta</code> answers
+  (the pages show a 로그인 후 다운로드 link) — except, since v1.94 §103 (S100, <a href="#public-103">below</a>), the zips of released
+  packages and models and a new ROI request, the server blanks usernames in anonymous replies (S85: an ROI request's <code>entered_by</code> and <code>requester_name</code> too), and <code>GET /ui/api/meta</code> answers
   <code>{me: null, now, version, contract_version, public: true}</code>. The hub forwards the public 배포 reads to ai-pipeline as
   <code>X-Hub-User: public</code> / <code>X-Hub-Role: general</code> (<code>app/ui/routes_deploy.py</code> <code>deploy_read / public_path</code>, S47);
   a labeler's session is forwarded the same way on those reads, except the job poll <code>jobs/{id}</code>, which goes as the person (S52b, v1.61). On the hub the public set is the scope <code>public-read</code>
@@ -77,12 +78,45 @@
   <code>X-Hub-Role: general</code> with their own username, not as <code>public</code>; without a session only the release list
   (<code>GET releases</code>) and one release page (<code>GET releases/{v}</code>) are read, as <code>public</code>. Personal API tokens
   (<code>/ui/api/me/tokens</code>, any scope) open <code>/api/v1/releases…</code> as their owner and nothing else.</p>
+  <p id="public-103">v1.94 §103 (U220, S100) — <b>without a login</b>. <i>Downloads</i>: the proxy forwards a visitor's (and a labeler's)
+  <code>GET</code> of <code>downloads/&lt;v&gt;.zip</code>, <code>releases/&lt;v&gt;.zip</code>, <code>releases/latest.zip</code>,
+  <code>releases/&lt;v&gt;/country/&lt;CC&gt;.zip</code> and <code>packaging/model-download/&lt;model&gt;/&lt;version&gt;/&lt;CC&gt;.zip</code> as
+  <code>public</code> when ai-pipeline's own lists say it is released — a package whose state is <code>released</code> or
+  <code>superseded</code> (<code>GET releases</code>), a model version marked <code>released</code> and not withdrawn
+  (<code>GET models</code>), read by the hub as <code>public</code> and kept 60 s; a candidate, withdrawn or unknown name answers 401
+  <code>login required</code> (a labeler 403) and is never forwarded, and ai-pipeline's own refusal reads the same. <code>Range</code> /
+  <code>If-Range</code> go up and <code>Content-Range</code> / <code>Accept-Ranges</code> / <code>ETag</code> / <code>Last-Modified</code> come
+  back; at most 2 downloads at once per client address and <code>PUBLIC_DOWNLOADS_MAX</code> (default 8) in all → 429
+  <code>too_many_downloads</code> with <code>Retry-After: 30</code>; one <code>admin_audit</code> row <code>deploy_public_download</code> per
+  download (address, path, status, bytes, range — no account) (<code>app/ui/routes_deploy.py</code> <code>PUBLIC_ZIP / released_zip /
+  public_download</code>). <i>ROI request</i>: <code>POST /ui/api/roi-requests</code> and <code>POST /ui/api/roi-requests/attachments</code> take
+  the scope <code>public-write</code> (<code>PUBLIC_WRITE</code>, the only writes without a session): a new request with
+  <code>requester_name</code> (required, 1–80; an empty body answers 422 naming it) and <code>requester_contact</code> (≤ 120), stored
+  with <code>requested_by</code> null and <code>external: true</code>, both names shown to signed-in accounts only (<code>blank_names</code>
+  blanks <code>requester_contact</code> too, the visitor's own reply included); at most 5 requests an hour and 20 a day per client address
+  (a batch is one; 429 <code>rate</code> + <code>Retry-After</code>), the hidden field <code>website</code> must stay empty (422
+  <code>refused</code>), an <code>Origin</code> naming another host → 403 <code>origin</code>, ≤ 4 images uploaded from the same address
+  (≤ 10 MB each, at most 4 waiting, 80 a day). +1, edit, decide and image delete stay signed-in.</p>
   <p>In the web (labeling-web, W37): <code>web/src/lib/publicview.js</code> (the role rank with <code>public</code> below <code>viewer</code>,
   the public paths, the router's redirects, logout → <code>/roadmap</code>) and <code>web/src/lib/nav.js</code> (the eight entries carry the role
   <code>public</code>); the top bar's 로그인 button in <code>web/src/components/Shell.svelte</code>, the zip links in
   <code>web/src/components/ZipLink.svelte</code>, the login hint on a 401 in <code>web/src/components/ErrorBox.svelte</code>; checked by
   <code>web/tests/publicview.test.mjs</code> and <code>web/e2e/public_view.mjs</code> (<a href="components/hub.html#web-public-view">hub › web-public-view</a>).</p>
   <figure class="shot"><img src="assets/img/hub-public.png" alt="Public view: the hub shell with the roadmap, 개요 and 배포 entries, 로그인 button" loading="lazy"><figcaption>The public view on the dev hub (anonymous roadmap; re-taken by labeling-web W37). Owner: labeling-web — replace when the page changes.</figcaption></figure>
+  <p id="public-103-web">In the web (labeling-web, W86 — v1.94 §103 on S100): on <b>배포 › 모델 다운로드</b> a visitor's
+  download buttons of a package that was released (state <code>released</code> or <code>superseded</code>) and of a released, not
+  withdrawn model version download directly; a candidate, withdrawn or custom package and a development version keep the
+  로그인 link. A click first sends one <code>GET</code> with <code>Range: bytes=0-0</code> and drops it after the headers: 200 / 206 →
+  the browser's own download, 202 (a country build) → asks again after <code>retry_after</code>, 429 → <i>다운로드가 많습니다 — N초 후
+  다시 시도</i> (N from <code>Retry-After</code>, the hub's sentence in the tooltip), 401 / 403 → the login after all
+  (<code>web/src/components/ZipLink.svelte</code> <code>pub</code>, <code>web/src/lib/deploy.js</code> <code>publicPackage /
+  publicModelVersion / anonStep</code>). On <b>로드맵 › 요청</b> the 요청 button opens the same form for a visitor: 요청자 정보 asks
+  <b>이름</b> (required, ≤ 80) and <b>연락처</b> (optional, ≤ 120) instead of the hub account, the hidden field <code>website</code> rides
+  along empty, at most 4 images; after sending the dialog says the request was received and that following it (status, +1,
+  edits) needs a login; the hub's 429 / 422 sentences show verbatim; +1 still goes to the login. A lead or admin sees such a request
+  marked <b>외부 요청 (로그인 없음)</b> with the given name and contact (<code>web/src/components/RoiRequestDialog.svelte</code>,
+  <code>web/src/lib/roirequest.js</code> mode <code>anon</code>, <code>web/src/pages/RoiRoadmap.svelte</code>; <code>web/tests/public_w86.test.mjs</code>,
+  <code>web/e2e/public_w86.mjs</code>; <a href="components/hub.html#web-without-login">hub › web-without-login</a>).</p>
 </section>
 
 <section id="accounts">
