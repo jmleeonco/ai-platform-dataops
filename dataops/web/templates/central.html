@@ -12,7 +12,7 @@
 {% if held %}<p class="muted">관리 DB 기준 합계: 시리즈 {{ '{:,}'.format(totals.n_series) }} · 파일 {{ '{:,}'.format(totals.n_files) }}
   (수신 {{ '{:,}'.format(totals.n_ok) }}) · {{ '%.2f'|format(totals.bytes / 1e9) }} GB</p>{% endif %}
 <div class="table-wrap"><table>
-<tr><th>데이터셋</th><th>PatientID 접두어</th><th>라이선스 / 상업적</th><th class="num">대상자</th><th class="num">스터디</th>
+<tr><th>데이터셋</th><th title="PatientID 접두어">접두어</th><th>라이선스 / 상업적</th><th class="num">대상자</th><th class="num">스터디</th>
   <th>시리즈</th><th class="num">파일</th><th class="num">용량</th><th>수신 결과</th><th>전송</th><th>승인</th><th>관리 DB</th><th>실행</th></tr>
 {% for s in sends %}{% set d = held.get((s.run_id, s.target_key)) %}
 <tr>

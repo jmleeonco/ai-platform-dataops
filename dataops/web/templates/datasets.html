@@ -29,6 +29,7 @@
 
 <form method="get" action="{{ root }}/datasets" class="cat-layout" id="catalog-filters">
 <aside class="facets">
+  {% if paths %}<input type="hidden" name="paths" value="1">{% endif %}
   <label class="facet-q">찾기 <input name="q" value="{{ q }}" placeholder="이름, 접두어, ROI, 링크, 폴더"></label>
   <p><button>적용</button> <a href="{{ root }}/datasets">모두 지우기</a></p>
   <p><a class="badge b-ok" href="{{ root }}/datasets?{{ query(params, q, commercial=['yes', 'unknown']) }}" title="상업 불가(no)인 행을 뺍니다. 확인 필요(unknown)는 남습니다.">비상업 제외</a>
@@ -51,34 +52,36 @@
     {% for k, vs in params.items() %}{% for v in vs %}<a class="badge" href="{{ root }}/datasets?{{ query(params, q, **{k: (vs|reject('equalto', v)|list) or None}) }}" title="이 조건 빼기">{{ facets[k][0] }}: {{ labels.get(k, {}).get(v, v) }} ✕</a> {% endfor %}{% endfor %}
     <span class="push"></span>
     <a href="{{ root }}/datasets.csv?{{ qs }}">CSV</a> · <a href="{{ root }}/datasets.xlsx?{{ qs }}">xlsx</a> <span class="muted small">(지금 거른 목록, 모든 열)</span></p>
+  <p class="small muted">{% if paths %}<a href="{{ root }}/datasets?{{ qs }}">폴더 경로 숨기기</a>{% else %}<a href="{{ root }}/datasets?{{ qs }}{{ '&' if qs }}paths=1">폴더 경로 보기</a> (경로는 폴더 표시에 마우스를 올려도 보입니다){% endif %}</p>
   <div class="table-wrap"><table class="cat-t">
-  <tr><th>#</th><th>데이터셋</th><th>어디까지 왔나</th><th>상업적 이용</th><th>라이선스</th><th>출처</th><th title="PatientID 접두어: 등록된 값, 없으면 이 시스템 run의 plan 값">접두어</th><th>모달리티</th><th>부위</th><th class="num" title="이 데이터셋이 등록한 환자와, 연결된 시리즈의 환자 (PatientID 기준)">환자</th><th class="num">시리즈</th><th class="num">DICOM 파일</th><th>폴더</th></tr>
+  <tr><th>데이터셋</th><th>어디까지 왔나</th><th>이용 · 라이선스</th><th title="PatientID 접두어: 등록된 값, 없으면 이 시스템 run의 plan 값">접두어</th><th>모달리티 · 부위</th><th class="num" title="등록된 데이터: 환자 (PatientID 기준), 시리즈, DICOM 파일. 등록 전: NAS 폴더의 용량과 파일 수">규모</th>{% if paths %}<th>폴더</th>{% endif %}</tr>
   {% for r in rows %}
+  {%- set conf = r.folders|selectattr('state', 'equalto', 'confirmed')|list %}
   <tr{% if r.is_marker %} class="marker"{% endif %}>
-    <td class="num muted">{{ r.list_row or '' }}</td>
-    <td>{% if r.entries %}<a href="{{ root }}/catalog/{{ r.entry_id }}">{{ r.name }}</a>{% else %}<a href="{{ root }}/datasets/{{ r.datasets[0].dataset_uuid }}" title="{{ r.datasets[0].dataset_uuid }}">{{ r.name }}</a>{% endif %}
-      {% if r.entries|length > 1 %}<div class="small muted">목록 행 {{ r.entries|length }}개: {% for e in r.entries %}<a href="{{ root }}/catalog/{{ e.entry_id }}" title="{{ e.name }}">{% if e.name|trim == r.name %}{{ e.list_row or e.entry_id }}행{% else %}{{ e.name }}{% endif %}{% if e.tags.modality %} {{ e.tags.modality|join(',') }}{% endif %}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
-      {% if r.entries and r.datasets %}<div class="small">{% for d in r.datasets %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}" title="{{ d.dataset_uuid }}">등록: {{ d.name }} →</a> {% endfor %}</div>
-      {% elif r.datasets|length > 1 %}<div class="small">{% for d in r.datasets[1:] %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a> {% endfor %}</div>{% endif %}
+    <td class="c-name">{% if r.entries %}<a href="{{ root }}/catalog/{{ r.entry_id }}">{{ r.name }}</a>{% else %}<a href="{{ root }}/datasets/{{ r.datasets[0].dataset_uuid }}" title="{{ r.datasets[0].dataset_uuid }}">{{ r.name }}</a>{% endif %}
       {% if r.is_marker %}<span class="badge" title="링크 없는 팀 메모 행 (지우지 않고 표시)">메모 행</span>{% endif %}
       {% if r.edited %}<span class="badge b-warn" title="사람이 고친 값: {{ r.edited|join(', ') }}">수정됨</span>{% endif %}
       {% if r.tags.new_rois == 'yes' %}<span class="badge" title="신규 ROI 있음">신규 ROI</span>{% endif %}
-      <div title="샘플 보기 · 파일럿 보내기 · 로컬 SCP로 보내기 (보내기는 확인 화면을 거치고, 허브에서는 관리자만)">{{ acts_compact(acts.get(r.key), r.key) }}</div>
-      {% if 'proposal' in r.link_state %}<span class="badge b-warn" title="이름이 비슷한 목록 항목/등록 데이터셋이 있습니다 — 항목 페이지에서 사람이 확인">연결 후보</span>{% endif %}</td>
-    <td>{{ stand(r.stand, r.availability_note) }}{% if r.stand_parts %}<div class="small muted">{% for p in r.stand_parts %}{{ p.label }}: {{ labels.availability.get(p.stand, p.stand) }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}</td>
-    <td>{{ comm(r.eff.commercial_use, r.commercial_reason) }}</td>
-    <td class="small">{{ r.eff.licence or '-' }}</td>
-    <td class="small">{% for s in r.sources %}{% if s == 'legacy' %}기존 DB{% for d in r.datasets if d.origin == 'legacy' %} #{{ d.legacy_id }}{% endfor %}{% else %}{{ labels.source.get(s, s) }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</td>
-    <td class="mono small">{{ r.prefixes|join(', ') or '-' }}</td>
-    <td class="small">{{ r.tags.modality|join(', ') }}</td>
-    <td class="small">{{ r.tags.body|join(', ') }}</td>
-    <td class="num">{{ "{:,}".format(r.n_subjects) if r.datasets else '' }}</td>
-    <td class="num">{{ "{:,}".format(r.n_series) if r.datasets else '' }}</td>
-    <td class="num">{{ "{:,}".format(r.n_instances) if r.datasets else '' }}</td>
-    <td class="small mono">{% for m in r.folders if m.state == 'confirmed' %}{{ m.folder.path }}{% if m.folder.size_bytes is not none %} <span class="muted">({{ (m.folder.size_bytes / 1e9)|round(1) }} GB, {{ "{:,}".format(m.folder.file_count) }} 파일)</span>{% endif %}<br>{% endfor %}
-      {% if r.n_proposed %}<span class="badge b-warn">폴더 후보 {{ r.n_proposed }} — 확인 필요</span>{% endif %}</td>
+      {% if 'proposal' in r.link_state %}<span class="badge b-warn" title="이름이 비슷한 목록 항목/등록 데이터셋이 있습니다 — 항목 페이지에서 사람이 확인">연결 후보</span>{% endif %}
+      {% if r.n_proposed %}<span class="badge b-warn" title="이름으로 찾은 폴더 후보 — 항목 페이지에서 확인">폴더 후보 {{ r.n_proposed }}</span>{% endif %}
+      <div class="sub">
+        {%- if r.list_row %}<span title="감수 목록의 행 번호">#{{ r.list_row }}</span> · {% endif -%}
+        {%- for s in r.sources %}{% if s == 'legacy' %}기존 DB{% for d in r.datasets if d.origin == 'legacy' %} #{{ d.legacy_id }}{% endfor %}{% else %}{{ labels.source.get(s, s) }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor -%}
+        {%- if r.entries|length > 1 %} · 목록 행 {{ r.entries|length }}개: {% for e in r.entries %}<a href="{{ root }}/catalog/{{ e.entry_id }}" title="{{ e.name }}">{% if e.name|trim == r.name %}{{ e.list_row or e.entry_id }}행{% else %}{{ e.name }}{% endif %}{% if e.tags.modality %} {{ e.tags.modality|join(',') }}{% endif %}</a>{% if not loop.last %} · {% endif %}{% endfor %}{% endif -%}
+        {%- if r.entries and r.datasets %} · {% for d in r.datasets %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}" title="{{ d.dataset_uuid }}">등록: {{ d.name }} →</a> {% endfor %}
+        {%- elif r.datasets|length > 1 %} · {% for d in r.datasets[1:] %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a> {% endfor %}{% endif -%}
+        {%- if conf and not paths %} · <span class="has-tip" title="{% for m in conf %}{{ m.folder.path }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">폴더 {{ conf|length }}개</span>{% endif -%}
+      </div>
+      <div class="sub" title="샘플 보기 · 파일럿 보내기 · 로컬 SCP로 보내기 (보내기는 확인 화면을 거치고, 허브에서는 관리자만)">{{ acts_compact(acts.get(r.key), r.key) }}</div></td>
+    <td>{{ stand(r.stand, r.availability_note) }}{% if r.stand_parts %}<div class="sub">{% for p in r.stand_parts %}{{ p.label }}: {{ labels.availability.get(p.stand, p.stand) }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}</td>
+    <td>{{ comm(r.eff.commercial_use, r.commercial_reason) }}<div class="sub">{{ r.eff.licence or '-' }}</div></td>
+    <td class="mono small c-prefix">{% for x in r.prefixes %}{{ x }}{% if not loop.last %}, {% endif %}{% else %}-{% endfor %}</td>
+    <td>{{ r.tags.modality|join(', ') or '-' }}{% if r.tags.body %}<div class="sub">{{ r.tags.body|join(', ') }}</div>{% endif %}</td>
+    <td class="num c-size">{% if r.datasets %}<div>환자 {{ "{:,}".format(r.n_subjects) }}</div><div class="sub">시리즈 {{ "{:,}".format(r.n_series) }}</div><div class="sub">파일 {{ "{:,}".format(r.n_instances) }}</div>
+      {%- else %}{% set sized = conf|rejectattr('folder.size_bytes', 'none')|list %}{% if sized %}<div>{{ ((sized|sum(attribute='folder.size_bytes')) / 1e9)|round(1) }} GB</div><div class="sub">파일 {{ "{:,}".format(sized|sum(attribute='folder.file_count')) }}</div>{% else %}<span class="muted">-</span>{% endif %}{% endif %}</td>
+    {% if paths %}<td class="small mono c-path">{% for m in conf %}{{ m.folder.path }}<br>{% endfor %}</td>{% endif %}
   </tr>
-  {% else %}<tr><td colspan="13" class="muted">{% if total %}맞는 데이터셋이 없습니다.{% else %}데이터셋이 없습니다: <code>python -m dataops register RUN</code> · <code>python -m dataops catalog-import 목록.xlsx</code>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">{% if total %}맞는 데이터셋이 없습니다.{% else %}데이터셋이 없습니다: <code>python -m dataops register RUN</code> · <code>python -m dataops catalog-import 목록.xlsx</code>{% endif %}</td></tr>
   {% endfor %}
   </table></div>
   <p class="small"><a href="{{ root }}/search">환자·시리즈·ROI 검색 →</a> · <a href="{{ root }}/browse">표로 보기 →</a></p>

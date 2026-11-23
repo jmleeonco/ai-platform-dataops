@@ -165,7 +165,7 @@ table.browse th { white-space: nowrap; }
 .cat-main { min-width: 0; }
 .cat-main > p { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 table.cat-t td { vertical-align: top; }
-table.cat-t td.mono { min-width: 240px; max-width: 360px; overflow-wrap: anywhere; }
+table.cat-t td.mono:not(.c-prefix) { min-width: 240px; max-width: 360px; overflow-wrap: anywhere; }
 tr.marker td { color: var(--muted); }
 a.stat { text-decoration: none; color: inherit; }
 @media (max-width: 800px) { .cat-layout { grid-template-columns: 1fr; } .facets { position: static; max-height: none; } }
@@ -181,3 +181,23 @@ table td > form.inline { display: inline-flex; gap: 4px; margin: 2px 0; }
 .samples figcaption { font-size: 11px; color: var(--muted, #888); }
 .wrap-any { overflow-wrap: anywhere; word-break: break-all; }
 select { max-width: 100%; }
+/* DO-U219: the dataset list fits the hub frame (≥ 1064 px) without horizontal scrolling */
+table.cat-t td.c-name { min-width: 180px; overflow-wrap: anywhere; }
+table.cat-t .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+table.cat-t .sub a { color: var(--accent); }
+table.cat-t td.c-prefix { max-width: 120px; overflow-wrap: anywhere; }
+table.cat-t td.c-size { white-space: nowrap; }
+table.cat-t td.c-path { max-width: 280px; overflow-wrap: anywhere; }
+.has-tip { text-decoration: underline dotted; cursor: help; }
+@media (max-width: 1300px) { .cat-layout { grid-template-columns: 200px 1fr; gap: 12px; } }
+table.runs-t td.c-name { min-width: 220px; max-width: 420px; overflow-wrap: anywhere; }
+table.runs-t .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+table.runs-t td.c-prefix { max-width: 140px; overflow-wrap: anywhere; }
+.stat { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 1300px) { table.cat-t td.c-path { max-width: 160px; } table.cat-t td.mono:not(.c-prefix) { min-width: 0; } }
+/* long identifiers (UIDs, paths, AE keys) wrap instead of widening their table */
+td.mono, td .mono, td code { overflow-wrap: anywhere; }
+table.std th { white-space: normal; }
+table.std td.mono, table.std td .mono { overflow-wrap: anywhere; }
+table.wrap-cells td { overflow-wrap: anywhere; }
+table.std.wrap-cells td { overflow-wrap: anywhere; }

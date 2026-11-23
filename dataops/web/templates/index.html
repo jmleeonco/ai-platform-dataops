@@ -21,23 +21,23 @@
 <h2>실행(run) 목록</h2>
 <p><a class="button primary" href="{{ root }}/new">새 데이터셋 분석</a></p>
 <p class="muted">폴더를 지정하면 표가 만들어집니다 → 몇 명을 Local SCP로 보내 확인 → 최종 승인하면 Central로 전송·DB 등록.</p>
-<div class="table-wrap"><table>
-<tr><th>run</th><th>데이터셋</th><th title="PatientID 접두어 (plan)">접두어</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th class="num">이 서버의 영상</th><th>전송</th><th>DB 등록</th><th>입력 폴더</th></tr>
+<div class="table-wrap"><table class="runs-t">
+<tr><th>데이터셋 · run</th><th title="PatientID 접두어 (plan)">접두어</th><th>상태</th><th class="num">rev</th><th class="num">인스턴스</th><th class="num">이 서버의 영상</th><th>전송</th><th>DB 등록</th></tr>
 {% for r in runs %}
 <tr>
-  <td><a class="mono" href="{{ root }}/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
-  <td>{{ r.dataset_name or '' }}</td>
-  <td class="mono">{{ r.patient_id_prefix or '' }}</td>
+  <td class="c-name"><a href="{{ root }}/runs/{{ r.run_id }}">{{ r.dataset_name or r.run_id }}</a>
+    <div class="sub"><a class="mono" href="{{ root }}/runs/{{ r.run_id }}">{{ r.run_id }}</a></div>
+    <div class="sub mono wrap-any" title="입력 폴더">{{ r.input_root }}</div></td>
+  <td class="mono c-prefix">{{ r.patient_id_prefix or '' }}</td>
   <td>{{ status(r.status) }}{% if r.job %} <span class="badge b-warn">{{ r.job.kind }} {{ r.job.status }}</span>{% endif %}</td>
   <td class="num">{{ r.revision }}</td>
   <td class="num">{{ r.instances if r.instances is not none else '-' }}</td>
   <td class="num">{% if r.images.files %}{{ mb(r.images.bytes) }}{% elif r.images_purged %}<span class="muted" title="{{ r.images_purged.at }}">삭제됨</span>{% else %}<span class="muted">-</span>{% endif %}</td>
-  <td>{% for t in r.transfers %}<div class="mono small">{{ '파일럿 ' if t.scope == 'pilot' }}{{ t.target }}</div>{% for k, v in t.counts.items() %}{{ status(k) }} {{ v }} {% endfor %}{% else %}<span class="muted">-</span>{% endfor %}</td>
+  <td>{% for t in r.transfers %}<div class="mono small wrap-any">{{ '파일럿 ' if t.scope == 'pilot' }}{{ t.target }}</div>{% for k, v in t.counts.items() %}{{ status(k) }} {{ v }} {% endfor %}{% else %}<span class="muted">-</span>{% endfor %}</td>
   <td>{% if r.registered %}<span class="badge b-ok">등록</span> <span class="muted">{{ r.registered.at }}</span>{% else %}<span class="muted">미등록</span>{% endif %}</td>
-  <td class="mono">{{ r.input_root }}</td>
 </tr>
 {% else %}
-<tr><td colspan="10" class="muted">아직 run이 없습니다. <a href="{{ root }}/new">새 데이터셋 분석</a></td></tr>
+<tr><td colspan="8" class="muted">아직 run이 없습니다. <a href="{{ root }}/new">새 데이터셋 분석</a></td></tr>
 {% endfor %}
 </table></div>
 </section>

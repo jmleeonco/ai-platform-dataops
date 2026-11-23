@@ -89,7 +89,8 @@ def register_catalogue_views(app, settings, page, db_conn, csv_response, lists: 
             imports = dbmod.query(conn, "SELECT kind, file_name, rows_read, run_at FROM catalog_imports"
                                         " ORDER BY import_id DESC")
             last = {k: next((i for i in imports if i["kind"] == k), None) for k in ("list", "scan", "sizes")}
-            return page(request, "datasets.html", rows=shown, acts=acts, counts=counts, params=params, q=q, facets=dl.FACETS,
+            return page(request, "datasets.html", rows=shown, acts=acts, paths=request.query_params.get("paths") == "1",
+                        counts=counts, params=params, q=q, facets=dl.FACETS,
                         labels=LABELS, total=len(rows), unmatched=extra["unmatched"], last=last,
                         qs=_query(params, q), query=_query, open_facets=OPEN_FACETS, totals=extra["totals"],
                         n_entries=len(entries), n_registered=len(extra["datasets"]),
