@@ -176,7 +176,10 @@
   the file's own alternative names cannot be removed there (<code>403 owned by the registry file</code>). 관리 › ROIs lists
   the hub's aliases with who added them (<code>GET /ui/api/registry/roi</code> <code>hub_aliases</code>; <code>GET
   /ui/api/registry/aliases?official=</code> lists both kinds). When ai-pipeline's file later lists the same name, spelled
-  exactly so, it is the file's.</p>
+  exactly so, it is the file's. Since v1.91 (§100.2, S97) the body may also say where the name was seen —
+  <code>base: "&lt;family&gt;/&lt;version&gt;"</code> (a model's own data, listed by <code>GET
+  /ui/api/training/items/roi-vocab?base=</code>) or <code>prefix</code> (a dataset) — kept in the audit row only; the
+  alias itself is the same for every project and job (<a href="training.html#train-from-model-added-rois">Training</a>).</p>
   <p id="hub-alias-variants"><b>Spelling variants (§80.1 amendment, S71, U177 — 2026-11-15).</b> The research converter
   (<code>dicom_to_nifti</code>) compares ROI names <i>exactly</i>, so a dataset that writes <code>gall bladder</code> trains
   nothing as Gallbladder while the registry only says <code>gallbladder</code>. A spelling variant of a name the ROI

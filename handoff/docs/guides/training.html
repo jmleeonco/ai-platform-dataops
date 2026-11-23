@@ -453,8 +453,8 @@
     take a model's dataset yet</i>). Neither: <i>no dataset on the server</i>. <code>GET …/models/{family}/{version}/
     dataset</code> answers the rows (patient, series, sample; never a patient name). Preview and Submit take
     <code>cohort.base {family, version, drop[]}</code> with the added items in <code>train</code> / <code>valid</code>
-    (either may be empty): the target ROIs are the model's classes (<i>the target ROIs of a model's data are the
-    model's classes</i>), an added series already in the model's data is refused (<i>already in the model's data:
+    (either may be empty): the target ROIs are the model's classes, plus any added ROIs since v1.91 (<a
+    href="#train-from-model-added-rois">below</a>), an added series already in the model's data is refused (<i>already in the model's data:
     &lt;patient&gt;</i>), and so is an added patient who is on the other side of it (<i>patient on the other side of the
     model's data: &lt;patient&gt;</i>); a left-out row is named by its series, or by its bundle sample when it has no series (v1.74
     §88.5, S67: every row's <code>ref</code> in the dataset route), and must be in the model's data (<i>not in the
@@ -470,6 +470,46 @@
     for the version line. The job record keeps <code>cohort.base</code> {family, version, source, job_id | dataset, train_n,
     valid_n, dropped_n, left_out_n, drop} and marks the model's rows <code>from_base</code>; Dashboard rows carry
     <code>base</code> {family, version}.</li>
+    <li id="train-from-model-added-rois"><b>From an existing model — added ROIs, the hub</b> (v1.91 §100.2, U216,
+    S97). Preview and Submit with <code>cohort.base</code> take <code>rois</code> = the model's classes <b>plus</b> zero or
+    more added ROIs (official names or any spelling the registry or a hub alias maps; the model's classes first, then
+    the added ones in the order sent). A missing class is refused: <i>the target ROIs of a model's data include the
+    model's classes: missing &lt;names&gt;</i>; a name the registry lacks: <i>unknown ROI: &lt;name&gt;</i>. The
+    preview answers per added ROI <code>added_roi_coverage [{roi, base_train_n, base_valid_n, added_train_n,
+    added_valid_n}]</code> — the cases whose label holds it: the model's own data (a job's rows through the labels the
+    job would use; a bundle's RTSTRUCT names as the executor lists them for the whole bundle, rows left out included;
+    <code>null</code> when the executor cannot list them) and the added items (after <i>leave out for this dataset</i>);
+    <code>counts.roi_items</code> uses the same numbers. No training case labelling an added ROI → 409 <i>no training
+    case labels &lt;ROI&gt;</i> (only a warning, <i>no training case is known to label &lt;ROI&gt; …</i>, while some
+    case's names are not read); no validation case → the warning <i>no validation case labels &lt;ROI&gt;</i>. Class
+    mode <i>all</i> with an added ROI → 422 (<i>train.class_mode 'all' would teach an added ROI as background …</i>,
+    the executor's sentence). A bundle base with an added ROI needs the executor's <code>dataset_base_added_rois</code>
+    (409 <i>the executor does not take added ROIs on a model's data yet</i>); a job base goes to the executor as plain
+    items and needs nothing new. The record's <code>cohort.base</code> keeps <code>rois_added</code> (<code>[]</code>
+    without); the job page's <code>cohort_resolved.base.rois_added_labelled</code> is the executor's count (<a
+    href="#executor-added-rois">executor</a>). <b>Alias panel</b>: <code>GET /ui/api/training/items/roi-vocab?base=&lt;family&gt;/&lt;version&gt;</code>
+    lists the ROI names of the model's own data in the §80.2 shape plus <code>n_train</code> / <code>n_valid</code> per
+    name, <code>source</code> <code>job</code> | <code>bundle</code> (bundle: <code>files_known</code> null, names [] while the
+    executor cannot list them; 404 for a model not listed, 422 for a malformed <code>base</code>); <code>POST
+    /ui/api/registry/aliases</code> takes an optional <code>base</code> (or <code>prefix</code>) naming where the name was
+    seen, kept in the audit. No patient id or name in either answer; preview writes nothing.</li>
+    <li id="train-from-model-added-rois-web"><b>From an existing model — the Target ROIs panel</b> (v1.91 §100.1, U216,
+    web W84). Once a model is picked, the <b>Data</b> step shows <b>대상 ROI / Target ROIs</b>: the model's classes as
+    chips marked <i>모델 / from the model</i> (a lock, not removable), the added ROIs as chips marked <i>추가 / added</i> with
+    × and <i>&lt;k&gt; cases label &lt;ROI&gt;</i>, and <b>ROI 추가 / Add ROI</b> — the checklist of the other modes (the
+    registry without the model's classes; a typed new name is registered as in §45.4). One line says what adding means:
+    <i>the model's own data has no label for an added ROI unless its files hold it under a known name; those cases train
+    the ROI as not labelled</i>. Below it, <b>ROI names in the model's data — &lt;family&gt; &lt;version&gt;</b>: the §80
+    panel over <code>roi-vocab?base=</code> (prod's Kidney 2.0.0: <i>Cortex_L · 40 → Kidney_Cortex_L</i>, <i>Cortex_R ·
+    40 → Kidney_Cortex_R</i>), every target ROI a drop zone — a lead drops a name of the model's data on an added ROI to
+    make it an alias (the POST carries <code>base</code>). <i>Add data</i>, its dataset panels and <i>leave out for this
+    dataset</i> (§90) use the whole list, classes and added. The count line adds <i>&lt;k&gt; cases label &lt;ROI&gt;</i>
+    per added ROI: on the Data step counted from the model data's names and the added items, on <b>Parameters &amp;
+    submit</b> from the preview's <code>added_roi_coverage</code>. The last step shows the same chips (× still removes);
+    with an added ROI the job is sent with <code>cohort.rois_added</code> and <code>train.class_mode</code>
+    <i>relevant</i> — <i>all</i> is off with its reason. A hub refusal naming an added ROI (<i>no training case labels
+    Liver</i>, <i>unknown ROI: …</i>) is shown verbatim with <b>Remove &lt;ROI&gt; from the target ROIs</b>; the version
+    the hub proposes follows §97.2 (Kidney 2.0.0 + Liver → 2.0.2).</li>
     <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
     a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
     <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread
@@ -1112,6 +1152,15 @@
       with no target ROI is dropped. Other jobs and the ROI names are not affected. The job page's
       <code>cohort_resolved.excluded_rois</code> counts the items per ROI and <code>excluded_all</code> lists the dropped
       ones (<a href="../components/executor.html#e32-item-roi-exclude">executor</a>).</li>
+    <li id="executor-added-rois"><b>Adding ROIs to a model's data</b> (v1.91 §100, E-BASEROI): in <i>From an existing
+      model</i> the target ROIs are the model's classes plus any you add. An image of the model's own data trains an
+      added ROI only when its structure set already holds it under the official name or a registry alias; the executor
+      then draws that ROI from the structure set into a copy of the image's mask (checked against one of the model's own
+      ROIs first), and the model's data is never changed. Every other image of the model's data does not label the
+      added ROI: the ROI is left out of its training, not taught as absent. So the added data (and any such images)
+      must hold the ROI; with class mode <i>all</i> an added ROI is refused. The job page's
+      <code>cohort_resolved.base.rois_added_labelled</code> counts, per added ROI, the model's images that hold it
+      (<a href="../components/executor.html#e-baseroi-added-rois">executor</a>).</li>
     <li id="executor-convert-dropped"><b>Series the conversion left out</b> (E-J94): when the DICOM → NIfTI step
       cannot convert a series the job selected, for example an MR series in a CT job, the step names each one with the
       reason in its log and on the job page (<code>series_failed</code>). If one of them is in the project's frozen
