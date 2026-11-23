@@ -542,6 +542,17 @@
     registry knows (Chest: <i>Esophagus</i>) is offered in <b>ROI 추가 / Add ROI</b> like any other ROI — adding it keeps
     it. While the executor cannot leave bundle classes out yet, the hub marks the row unusable and its sentence
     (<i>the executor cannot leave out bundle classes yet: &lt;names&gt;</i>) shows verbatim like the other reasons.</li>
+    <li id="train-release-this-model-web"><b>Release this model, from the job page</b> (v1.96 §105.2, U222, web W89 on S102 —
+    <b>admins only</b>). A succeeded job with a model shows the primary button <b>이 모델 릴리즈 / Release this model</b> in its
+    header (without a model or once its model is released it is disabled with the hub's reason; a running, failed or cancelled
+    job shows none). The dialog: the model name, the proposed version (editable — a typed version is checked as M.m.p with
+    M ≥ 1; the §97.2 sentence: the first release, the middle number, or the last number when ROIs were added), an optional memo
+    (the release note) and <i>what will happen</i>: when the model was never deployed it is deployed first under the
+    project's name (at the version a deploy takes now), then released, then the job's dataset is deployed and the full
+    evaluation runs (§98). <b>Release</b> sends <code>POST /ui/api/training/jobs/{id}/release</code> (the version only when another
+    one was typed); a failure names its step (<i>배포 실패</i>, <i>배포 등록 대기</i>, <i>릴리즈 실패</i>) with the hub's sentence.
+    Afterwards — and on every later visit — the header reads <i>Released as &lt;family&gt; &lt;version&gt;</i>, linking to
+    배포 › 개별 모델 릴리즈, with the dataset / metrics steps' state. Other roles see nothing new.</li>
     <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
     a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
     <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread
@@ -827,6 +838,44 @@
   (§97.3)</i>, the version continues the model's line under the new name, and a finished job's page names the new model
   (the name it was sent with is kept on the hub's record as <code>deploy.model_name_renamed_from</code>, never sent to the
   executor). See <a href="../components/hub.html#s90-model-rename">hub S90</a>.</p>
+  <p id="release-this-model"><b>v1.96 §105.1 (U222, D382, S102) — release this model from the job page.</b> For an admin,
+  <code>GET /ui/api/training/jobs/{id}</code> carries <code>release {can, reason, family, deployed_version,
+  proposed_version, rule, rois_added, released_as, deploy_first, next_deploy_version}</code> (other roles: no
+  <code>release</code>). <code>can</code> when the job succeeded, has a model and that model is not released yet; otherwise
+  <code>reason</code> says why (<i>the job has not succeeded</i>, <i>the job has no model</i>, <i>already released as
+  &lt;F&gt; &lt;V&gt;</i> — then <code>released_as {family, version, released_at}</code> is the link). The model is the job's
+  artifact md5; <code>deployed_version</code> is the job's own deploy when that folder holds it, else the newest
+  development folder with that md5; <code>proposed_version</code> follows §97.2 from it (or, when nothing is deployed, from
+  the version a deploy would take now, <code>next_deploy_version</code>, with <code>deploy_first: true</code>).
+  <code>POST /ui/api/training/jobs/{id}/release {version?, memo?}</code> (admin; a lead 403 <code>admin_only</code>)
+  releases this job's model in one call: deployed → exactly the release of 배포 › 개별 모델 릴리즈 from that version
+  (<code>memo</code> is the release note); not deployed → first the §97.1 deploy under the job's model name at the next
+  version (the executor, memo <i>job &lt;id&gt; · release this model · by &lt;admin&gt;</i>), waited for until the hub
+  records its folder (≤ 300 s), then the release. Reply <code>{ok, family, version, deployed_version, deployed_now,
+  released_at, followup {dataset, metrics, complete}}</code>; §98's dataset deploy and evaluation start as for any release.
+  Refusals: 409 <code>not_releasable</code> (with the GET's reason and <code>released_as</code>), 409
+  <code>in_progress</code> (a second click while one runs); each step's failure is named — <code>deploy_failed</code>
+  (the executor's refusal or a failed deploy stage, with its error), <code>deploy_pending</code> (504: asked, not registered
+  in time — release it from 배포 › 릴리즈 once it is there), <code>release_failed</code> (the release page's refusals:
+  <code>cause</code> bad_version / version_exists / …, or ai-pipeline's) — <code>{error: "&lt;step&gt;: …", reason: step,
+  step, cause?}</code>. The release's audit row carries <code>job_id</code>, <code>deployed_now</code> and
+  <code>door: job</code>. See <a href="../components/hub.html#s102-release-this-model">hub S102</a>.</p>
+  <p id="release-this-model-s103"><b>S103 (2026-11-23) — what the dev runs showed, and the limits today.</b>
+  <b>Deploy first is off</b> unless the hub's env says <code>JOB_RELEASE_DEPLOY_FIRST=1</code>: a job whose model is not
+  deployed answers <code>can: false</code> with <i>this job's model is not deployed yet — deploy it first (배포 on this
+  page), then release it here</i>, and the POST refuses with it (409 <code>not_releasable</code>, the executor is not
+  asked). Why: on the dev pair the executor deploys to its scratch (D67, <code>AITW_DEPLOY_SCRATCH</code>), the hub looks
+  under <code>DEPLOY_ROOT</code> and dev ai-pipeline releases from its own instance folder — three places, so a deploy-first
+  release cannot finish there (dev job 51: the deploy ran and was registered in 9 s, the hub never saw its folder and
+  waited 300 s). With the switch on, such a deploy now fails at once: when the deploy stage succeeded (or the executor
+  registered it) and no folder appears within 15 s, 502 <code>deploy_failed</code> with <code>cause:
+  deploy_unregistered</code> and the sentence <i>the executor deployed &lt;F&gt; &lt;V&gt; … but the hub finds no folder
+  …; nothing was released</i>; an executor refusal comes back at once as before. <b>A deployed folder whose weights are not
+  on the mounted deploy share</b> (the share ai-pipeline releases from on prod) is not offered: <code>can: false</code>,
+  <i>the deployed folder &lt;F&gt; &lt;V&gt; is not on the deploy share (&lt;root&gt;/models): ai-pipeline cannot release
+  it</i>. On dev this cannot catch a folder that is on <code>/mnt/deploy</code> but not in dev ai-pipeline's own folder
+  (dev job 17, bladder_test 0.0.2: <code>release_failed … no_such_model</code>) — dev data; prod's folders of jobs 100 and
+  102 are in prod ai-pipeline's model list.</p>
   <p class="note"><code>deploy {enabled, available, model_name, family_kept, family_note, next_version, versions, version, modality, memo}</code>
   (<code>available</code> false = the executor's template has no deploy step yet; then <code>enabled</code> is false and a
   body asking to deploy gets 422 <i>deploy: the executor's hub_loop has no deploy step yet</i>). Body <code>deploy
