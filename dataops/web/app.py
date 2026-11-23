@@ -45,7 +45,8 @@ from ..util import RUN_ID_RE, valid_uid
 from .actions import CSRF_COOKIE, SPLIT_NAMES, register_actions
 from .browse import register_browse_views
 from .catalog import register_catalog_views
-from .catalogue_view import register_catalogue_views
+from .catalogue_view import LABELS as CATALOGUE_LABELS, register_catalogue_views
+from .dataset_actions import register_dataset_actions
 from . import hubauth, prefix
 from .dbview import register_db_views
 
@@ -543,7 +544,8 @@ def create_app(settings: Settings, warm_views: bool = False) -> FastAPI:
     register_actions(app, settings, page, get_run)
     register_db_views(app, settings, page, db_conn, _csv, map_conn)
     lists = dataset_list.ListCache(settings.runs_dir)                # the one dataset list (§78.8), shared by both views
-    register_catalog_views(app, page, db_conn, settings.runs_dir, lists)
+    register_dataset_actions(app, settings, page, db_conn, lists, CATALOGUE_LABELS)
+    register_catalog_views(app, page, db_conn, settings.runs_dir, lists, settings=settings)
     register_browse_views(app, page, db_conn, _csv)
     register_catalogue_views(app, settings, page, db_conn, _csv, lists)
 

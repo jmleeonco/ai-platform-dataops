@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status %}
+{% from "_catalog.html" import acts_full with context %}
 {% block title %}{{ ds.name }}{% endblock %}
 {% block body %}
 {% set qs = 'q=' ~ (q|urlencode) ~ '&modality=' ~ (modality|urlencode) ~ '&split=' ~ (split|urlencode) %}
@@ -21,6 +22,7 @@
 </dl>
 <p>{% if modality or split or q %}<a href="?">필터 해제</a> · {% endif %}<a href="{{ root }}/browse?f_dataset=%3D{{ ds.name|urlencode }}">이 데이터셋을 표로 보기 →</a></p>
 </section>
+{% if acts %}<section><h2>작업</h2>{{ acts_full(acts, listed.key) }}</section>{% endif %}
 <section>
 <form class="inline" method="get">
   <input name="q" value="{{ q }}" placeholder="PatientID / 설명 / Series UID / ROI 이름">

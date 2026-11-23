@@ -493,6 +493,26 @@
     executor cannot list them; 404 for a model not listed, 422 for a malformed <code>base</code>); <code>POST
     /ui/api/registry/aliases</code> takes an optional <code>base</code> (or <code>prefix</code>) naming where the name was
     seen, kept in the audit. No patient id or name in either answer; preview writes nothing.</li>
+    <li id="train-from-model-class-subset"><b>From an existing model — a bundle with classes the model lacks, the
+    hub</b> (v1.92 §101.2, U217, S98). A data bundle may hold classes the released model does not have (prod: Breast
+    2.3.0 <code>LN_Sum</code>; Chest 2.0.1 on bundle 2.0.0 <code>Esophagus</code>, <code>Lower_airway</code>; HNN 2.1.0 on
+    2.0.0 <code>Eye</code>; Neck 2.1.0 on 2.0.0 <code>PCM_Ant</code>, <code>PCM_Post</code>, <code>LN_Sum</code>). Before
+    v1.92 the list showed a bundle row with the <b>bundle's</b> <code>classes.json</code> and refused it when the registry
+    lacked one of those names. Now a bundle row's <code>classes</code> are <b>the model's own</b> (the artifact's
+    <code>input_classes</code>, official names) when the hub knows them — the model's classes the bundle holds; a model
+    class the bundle does not hold stays out as well (CrossRegional 2.1.2 <code>Bone_Marrow</code> on bundle 2.0.0, as
+    before) — and <code>classes_left_out</code> names the bundle classes the model lacks (<code>[]</code> for a job row
+    and when nothing is left out; without the model's classes the bundle's as before). <code>classes_unknown</code> and
+    <i>usable</i> look at <code>classes</code> only. Leaving classes out needs the executor's
+    <code>dataset_base_class_subset</code> (E-BASESUB); until then such a row is unusable with <i>the executor cannot
+    leave out bundle classes yet: &lt;names&gt;</i> (on prod also MR_Pelvic 1.1.0, MR_Prostate 2.2.0, MR_WholeBody
+    2.0.5, TotalSoftTissue 2.0.1, which trained the bundle's extra classes before). Preview and Submit send
+    <code>rois</code> = the model's classes (+ added ROIs, §100.2 — the <i>missing</i> sentence now counts the model's
+    classes); a left-out class the registry knows may be named as an added ROI and is then simply kept (it is a class of
+    the bundle, so neither <code>dataset_base_added_rois</code> nor class mode <i>relevant</i> is needed for it); the
+    preview's <code>problem</code> is the sentence above (409) for what would still be left out without the capability.
+    The record's and the preview's <code>base</code> keep <code>classes_left_out</code>; the dataset route answers it
+    too. The bundle is never written.</li>
     <li id="train-from-model-added-rois-web"><b>From an existing model — the Target ROIs panel</b> (v1.91 §100.1, U216,
     web W84). Once a model is picked, the <b>Data</b> step shows <b>대상 ROI / Target ROIs</b>: the model's classes as
     chips marked <i>모델 / from the model</i> (a lock, not removable), the added ROIs as chips marked <i>추가 / added</i> with
@@ -510,6 +530,18 @@
     <i>relevant</i> — <i>all</i> is off with its reason. A hub refusal naming an added ROI (<i>no training case labels
     Liver</i>, <i>unknown ROI: …</i>) is shown verbatim with <b>Remove &lt;ROI&gt; from the target ROIs</b>; the version
     the hub proposes follows §97.2 (Kidney 2.0.0 + Liver → 2.0.2).</li>
+    <li id="train-from-model-left-out-web"><b>From an existing model — bundle classes the model lacks</b> (v1.92 §101.3,
+    U217, D378, web W85; hub S98). Some bundles hold names the released model does not have (Breast 2.3.0 <i>LN_Sum</i>;
+    Chest 2.0.1's bundle Chest 2.0.0 <i>Esophagus</i>, <i>Lower_airway</i>; HNN 2.0.0 <i>Eye</i>; Neck 2.0.0 <i>PCM_Ant</i>,
+    <i>PCM_Post</i>, <i>LN_Sum</i>). The hub lists such a model with <b>its own</b> classes and the extra names in
+    <code>classes_left_out</code>; the model is selectable and those names are left out of the job. The model row (under the
+    model's name, so a phone shows it too) and the <b>Target ROIs</b> panel (Data step and Parameters &amp; submit) say so
+    in one line: <i>The dataset Chest 2.0.0 also holds Esophagus, Lower_airway; the model does not have them, so they are
+    left out</i> / <i>데이터셋 Chest 2.0.0에는 Esophagus, Lower_airway도 들어 있지만 모델에는 없으므로 제외됩니다</i>
+    (on the last step the preview's own <code>classes_left_out</code> wins when it answers one). A left-out name the
+    registry knows (Chest: <i>Esophagus</i>) is offered in <b>ROI 추가 / Add ROI</b> like any other ROI — adding it keeps
+    it. While the executor cannot leave bundle classes out yet, the hub marks the row unusable and its sentence
+    (<i>the executor cannot leave out bundle classes yet: &lt;names&gt;</i>) shows verbatim like the other reasons.</li>
     <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
     a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
     <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread

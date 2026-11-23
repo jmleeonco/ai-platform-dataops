@@ -140,6 +140,8 @@ def main(argv=None) -> int:
     pg.add_argument("--yes", action="store_true", help="do not ask")
     pg.add_argument("--by", default="cli")
     pg.add_argument("--reason", default="manual (cli)")
+    pv_ = sub.add_parser("previews", help="샘플 보기 cache (§102): size; --purge deletes every preview")
+    pv_.add_argument("--purge", action="store_true")
     sv = sub.add_parser("serve")
     sv.add_argument("--host")
     sv.add_argument("--port", type=int)
@@ -205,6 +207,14 @@ def main(argv=None) -> int:
                     ("images purged" if m.get("images_purged") else "no images")
                 print(f"{m['run_id']}  {m['status'] or '-':14} rev {m['revision']}  {img:32} {m.get('dataset_name') or ''}")
             print(f"local image footprint: {mb(total)}")
+        elif args.cmd == "previews":
+            from . import preview
+            from .retention import mb
+            u = preview.usage(settings.preview_dir)
+            print(f"{settings.preview_dir}: {u['datasets']} datasets, {mb(u['bytes'])} "
+                  f"(cap {mb(settings.preview_cap_bytes)})")
+            if args.purge:
+                print(f"purged {preview.purge(settings.preview_dir)} datasets")
         elif args.cmd == "purge":
             from .retention import footprint, mb, purge_images
             run = Run(settings.runs_dir, args.run)

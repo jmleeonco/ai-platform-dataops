@@ -35,7 +35,7 @@ def roi_list(v) -> list[str]:
     return [str(x) for x in got] if isinstance(got, list) else [str(got)]
 
 
-def register_catalog_views(app, page, db_conn, runs_dir=None, lists=None) -> None:
+def register_catalog_views(app, page, db_conn, runs_dir=None, lists=None, settings=None) -> None:
     def with_conn(request, fn, template_on_error="datasets.html"):
         conn, err = db_conn()
         if conn is None:
@@ -111,7 +111,13 @@ def register_catalog_views(app, page, db_conn, runs_dir=None, lists=None) -> Non
                                   None)
                 except dbmod.pymysql.MySQLError:
                     listed = None
-            return page(request, "dataset.html", ds=ds[0], listed=listed, stands=STAND_KO, rows=rows, total=total, p=p,
+            acts = None                                    # §102 buttons of that row
+            if listed is not None and settings is not None:
+                from .. import row_actions
+                acts = row_actions.actions(listed, row_actions.Context(settings, getattr(request.state, "hub", None)),
+                                           resolve_root=False)
+            return page(request, "dataset.html", ds=ds[0], listed=listed, acts=acts, stands=STAND_KO, rows=rows,
+                        total=total, p=p,
                         pages=max(1, -(-total // PAGE)), modality=modality or "", q=q or "", split=split or "",
                         modalities=modalities, splits=splits, kinds=kinds, n_subjects=n_subjects,
                         delivery=delivery, origins=ORIGINS, source_kinds=SOURCE_KINDS)

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% from "_catalog.html" import acts_full with context %}
+{% block title %}샘플 · {{ row.name }}{% endblock %}
+{% block head %}{% if meta and meta.state == 'rendering' %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block body %}
+<p><a href="{{ root }}{{ home }}">← {{ row.name }}</a> · <a href="{{ root }}/datasets">데이터셋</a></p>
+<h1>샘플: {{ row.name }}</h1>
+{% if not a.ok %}
+<p class="err">샘플을 볼 수 없습니다: {{ a.why }}</p>
+{% else %}
+<p class="muted small">원본 폴더에서 처음 찾은 대상자 최대 {{ max_subjects }}명, 영상마다 축상 단면 몇 장 (환자 오른쪽이 화면 왼쪽, 앞쪽이 위). 라벨이 있으면 윤곽을 겹쳐 그립니다. 그림 속에 새겨진 글자는 지우지 않습니다.
+  {% if internal %}내부 데이터: 대상자는 S1–S3으로만 표시하고 경로는 보이지 않습니다.{% else %}폴더: <span class="mono wrap-any">{{ a.root }}</span>{% endif %}</p>
+{% if meta.state == 'rendering' %}<p class="ok-box">만드는 중입니다 — 큰 영상은 1–3분 걸립니다. 이 화면은 저절로 새로 고쳐집니다.</p>
+{% elif meta.state == 'failed' %}<p class="err">만들지 못했습니다: {{ meta.error }}</p>
+{% else %}
+{% if not meta.subjects %}<p class="err">이 폴더에서 읽을 수 있는 영상(NIfTI, NRRD, MHA, DICOM)을 찾지 못했습니다{% if meta.partial %} (폴더의 앞부분만 살펴봄){% endif %}.</p>{% endif %}
+{% for s in meta.subjects %}
+<section>
+<h2>{{ s.id }}</h2>
+{% for im in s.images %}
+<p class="small"><b>{{ im.modality }}</b> · {{ im.label or '라벨 없음' }}{% if im.source %} · <span class="mono muted wrap-any">{{ im.source }}</span>{% endif %}</p>
+{% if im.error %}<p class="err small">이 영상은 그리지 못했습니다: {{ im.error }}</p>{% endif %}
+<div class="samples">{% for sl in im.slices %}
+  <figure><img src="{{ root }}/datasets/row/{{ key }}/samples/{{ sl.png }}" alt="{{ s.id }} {{ im.modality }} 단면 {{ sl.slice + 1 }}/{{ sl.of }}" loading="lazy">
+    <figcaption>단면 {{ sl.slice + 1 }}/{{ sl.of }}{% if sl.labelled %} · 윤곽{% endif %}</figcaption></figure>
+{% endfor %}</div>
+{% endfor %}
+</section>
+{% endfor %}
+<p class="muted small">찾은 대상자 {{ meta.found }}명{% if meta.partial %} (폴더의 앞부분만 살펴봄){% endif %} · 만든 시각 {{ meta.finished_at }} ({{ meta.seconds }}초) · 미리보기는 이 서버의 작은 캐시에 둡니다 (백업 제외, 오래된 것부터 지움).</p>
+<form method="post" action="{{ root }}/datasets/row/{{ key }}/samples/refresh" class="inline">{{ csrf_field(csrf) }}<button>다시 만들기</button></form>
+{% endif %}
+{% endif %}
+<h2>이 데이터셋의 버튼</h2>
+{{ acts_full(acts, key) }}
+{% endblock %}

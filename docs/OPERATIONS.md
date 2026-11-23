@@ -109,6 +109,15 @@ view `web/catalogue_view.py`). `/catalog`, `/catalog.csv`, `/catalog.xlsx` redir
   (and registered datasets) against unregistered. CSV / xlsx export the filtered rows with every list column.
   Built rows are cached 60 s per web process; any write through the web clears the cache.
 - Nothing on this page downloads, moves, deletes or sends (U156); the intake flow is unchanged.
+- One row per dataset (§102, 2026-11-23): list rows with the same name (trimmed, case folded) are one row unless their
+  confirmed folders or dataset links differ; the entry page lists the grouped rows with their modality.
+- Row buttons (§102): 샘플 opens `/datasets/row/<key>/samples`; 파일럿 and 로컬 SCP open a confirmation page that names
+  the destination and the subject count; the send is the run's existing pilot job, or job `local` (from a PLANNED run:
+  full freeze + `send_local`; the run then takes no Central approval). A greyed button's page says why and links the
+  next step (new analysis, the run, the run holding the image slot). Admin-only through the hub; never Central.
+- Sample previews: rendered in the web process in the background (one at a time), cached in
+  `~/.cache/ai-platform-dataops/previews` (`DATAOPS_PREVIEW_DIR`, cap `DATAOPS_PREVIEW_CAP_MB`=200, oldest evicted, not
+  in the backup). `python -m dataops previews` shows the size, `--purge` empties it; 다시 만들기 re-renders one dataset.
 
 ## Dataset catalogue (2026-11-17, CONTRACT §78.7)
 

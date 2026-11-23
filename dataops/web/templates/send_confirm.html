@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% from "_catalog.html" import acts_full with context %}
+{% block title %}{{ title }} · {{ row.name }}{% endblock %}
+{% block body %}
+<p><a href="{{ root }}{{ home }}">← {{ row.name }}</a> · <a href="{{ root }}/datasets">데이터셋</a></p>
+<h1>{{ title }}: {{ row.name }}</h1>
+{% if a.ok %}
+<section>
+<dl class="kv">
+  <dt>받는 곳</dt><dd class="mono">{{ a.dest }}</dd>
+  <dt>대상자 수</dt><dd><b>{{ a.subjects }}명</b>{% if what == 'pilot' and a.subject_keys and not internal %} <span class="muted small">({{ a.subject_keys|join(', ') }})</span>{% endif %}</dd>
+  <dt>run</dt><dd><a href="{{ root }}/runs/{{ a.run_id }}">{{ a.run_id }}</a></dd>
+  <dt>무엇을 하나</dt><dd>{% if what == 'pilot' %}이 run의 파일럿 대상자를 (필요하면 먼저 변환해) 로컬 SCP로 보냅니다. 기존 파일럿과 같은 작업입니다.
+    {% elif a.from_plan %}검토된 plan대로 <b>데이터셋 전체를 이 서버에서 변환한 뒤</b> 로컬 SCP로 보냅니다 (CLI의 로컬 전용 흐름). 이 run은 로컬 전용이 되어 Central 승인 경로로 가지 않습니다 — Central에 올리려면 새 분석에서 파일럿 → 승인. 변환본은 이 서버의 영상 자리(한 번에 한 데이터셋)를 씁니다.
+    {% else %}이미 만들어진 전체 변환본을 로컬 SCP로 보냅니다 (받지 못한 파일만).{% endif %}</dd>
+  <dt>Central</dt><dd>보내지 않습니다. 로컬 SCP 주소·AE 검사(§78.2)는 보내는 순간에도 다시 합니다.</dd>
+</dl>
+<form method="post" action="{{ root }}/datasets/row/{{ key }}/send/{{ what }}">{{ csrf_field(csrf) }}
+  <input type="hidden" name="confirm" value="yes"><input type="hidden" name="run_id" value="{{ a.run_id }}">
+  <input type="hidden" name="subjects" value="{{ a.subjects }}">
+  <label>보내는 사람 <input name="by" required maxlength="64" size="10"></label>
+  <button class="primary">보내기: {{ a.subjects }}명 → {{ a.dest }}</button>
+  <a href="{{ root }}{{ home }}">취소</a>
+</form>
+</section>
+{% else %}
+<p class="err">지금은 할 수 없습니다: {{ a.why }}</p>
+{% if a.next %}<p>다음 단계: {% if a.next[1] %}<a href="{{ root }}{{ a.next[1] }}">{{ a.next[0] }} →</a>{% else %}{{ a.next[0] }}{% endif %}</p>{% endif %}
+{% endif %}
+<h2>이 데이터셋의 버튼</h2>
+{{ acts_full(acts, key) }}
+{% endblock %}

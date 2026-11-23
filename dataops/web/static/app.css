@@ -170,3 +170,14 @@ tr.marker td { color: var(--muted); }
 a.stat { text-decoration: none; color: inherit; }
 @media (max-width: 800px) { .cat-layout { grid-template-columns: 1fr; } .facets { position: static; max-height: none; } }
 table td > form.inline { display: inline-flex; gap: 4px; margin: 2px 0; }
+/* §102 dataset buttons */
+.acts { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.btn-s { display: inline-block; padding: 1px 8px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.btn-s.off { border-color: var(--line); color: var(--muted, #888); opacity: .7; }
+.acts-t td { vertical-align: top; }
+.samples { display: flex; flex-wrap: wrap; gap: 6px; }
+.samples figure { margin: 0; }
+.samples img { display: block; max-width: 100%; height: auto; background: #000; border-radius: 4px; }
+.samples figcaption { font-size: 11px; color: var(--muted, #888); }
+.wrap-any { overflow-wrap: anywhere; word-break: break-all; }
+select { max-width: 100%; }

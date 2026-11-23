@@ -41,7 +41,7 @@ publication adapter consuming reviewed immutable artifacts.
 | Path | What lives there | Touch rules |
 |---|---|---|
 | `dataops/` | the system: scan / agent / plan / prepare / send / publish / records / db / imports; code map in `docs/HANDOVER.md` §4 | ours |
-| `dataops/web/` | web app (`app.py`, `actions.py`, `dbview.py`, `catalog.py`, `catalogue_view.py`, `browse.py`), templates, static | ours; CSP blocks inline scripts/styles |
+| `dataops/web/` | web app (`app.py`, `actions.py`, `dbview.py`, `catalog.py`, `catalogue_view.py`, `dataset_actions.py`, `browse.py`), templates, static | ours; CSP blocks inline scripts/styles |
 | `sql/migrations/`, `sql/deid_map_migrations/` | additive migrations of the two schemas (latest `0010`) | ours; never edit an applied migration |
 | `deploy/`, `ops/` | `web.sh`, `db.sh`; nightly backup + restore check, `catalogue_nightly.sh` (02:30 catalogue refresh) | ours |
 | `tests/` | pytest; DB tests use `dataops_test_*` schemas | ours |
@@ -62,7 +62,7 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 ```
 
 - **Tests**: check `MemAvailable` ≥ 12 GB first (D51), then
-  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **171 passed** (2026-11-20,
+  `PYTHONPATH=. ~/.venvs/ai-platform-dataops/bin/python -m pytest -q -p no:warnings` → **177 passed** (2026-11-23,
   ~130 s; needs the DB container; DB tests create and drop `dataops_test_*` schemas) and
   `bash /drive/project/onco-mlops/scripts/docs-gate.sh HEAD~1..HEAD` (silent = OK; also the pre-commit hook).
 - **Deploy**: the workspace is the production tree. Once a change is proven, `deploy/web.sh restart-web` (a running
@@ -102,7 +102,8 @@ deploy/web.sh start|stop|restart|restart-web|status|logs          # web + one jo
 
 | Section | Module | Test that proves it | Mock the other side can use |
 |---|---|---|---|
-| §78 data management DB + intake flow (boundary, Central, identifiers) | `dataops/*`, `dataops/web/*`, `sql/**` | `tests/` (171); `tests/test_retention.py` for §78.6 | — (no consumer yet) |
+| §78 data management DB + intake flow (boundary, Central, identifiers) | `dataops/*`, `dataops/web/*`, `sql/**` | `tests/` (177); `tests/test_retention.py` for §78.6 | — (no consumer yet) |
+| §102 one row per dataset (same-name list rows grouped) + row buttons 파일럿 / 로컬 SCP / 샘플 (confirmation, admin-only writes, never Central; previews ≤ 3 subjects in a bounded cache `~/.cache/ai-platform-dataops/previews`, `python -m dataops previews --purge`) | `dataset_list.same_name_groups`, `row_actions.py`, `preview.py`, `web/dataset_actions.py`, job kind `local` in `jobs.py` | `tests/test_dataset_actions.py` (stub SCP) | — |
 | §78.8 one dataset list: `/datasets` = registered datasets + catalogue entries, one row per dataset (links by intake run / prefix / person only), stand, filters, export; `/catalog` redirects | `dataset_list.py`, `web/catalogue_view.py`, `sql/migrations/0009` | `tests/test_catalogue.py::test_one_dataset_list_merges_only_on_links` | — |
 | §78.7 dataset catalogue: audited list import, availability from a read-only NAS scan, origin / licence / commercial use, filters + CSV/xlsx (on `/datasets` since §78.8), hand edits | `catalogue.py`, `web/catalogue_view.py`, `sql/migrations/0008`, `ops/catalogue_nightly.sh` (02:30) | `tests/test_catalogue.py` | — |
 | §78.2 local sender guard / Central only through `publish.py` | `local_send.py`, `publish.py` | `test_pipeline.py::test_non_local_target_refused`, `::test_central_ae_refused_even_on_loopback`, `test_agent_flow.py::test_central_publication_needs_config_and_approval` | — |

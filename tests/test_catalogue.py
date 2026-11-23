@@ -280,7 +280,7 @@ def test_catalogue_pages_filters_exports_and_edits(settings, test_db, tmp_path, 
     r = client.get("/datasets?commercial=yes")
     assert "02 Pancreas-CT TCIA" in r.text and ">CHAOS-MR<" not in r.text
     r = client.get("/datasets?commercial=yes&origin=public&q=pancreas")
-    assert re.search(r"<b>1</b> / 8 행", r.text)
+    assert re.search(r"<b>1</b> / 7 행", r.text)                  # CMB-MML CT + PT: one row (§102)
     csv_text = client.get("/catalog.csv?commercial=no").text            # follows the redirect
     assert "CHAOS-MR" in csv_text and "Pancreas" not in csv_text and "라이선스 정보" in csv_text
     x = client.get("/datasets.xlsx?availability=downloaded")
@@ -377,7 +377,10 @@ def test_one_dataset_list_merges_only_on_links(settings, test_db, tmp_path, nas)
         entries, _ = cat.load(conn)
         rows = dl.build(entries, dl.registered(conn), dl.person_links(conn))
     by = {r["name"]: r for r in rows}
-    assert len(rows) == len(entries) + 3           # Pancreas merged; CHAOS, the bundle, the prostate pair apart
+    # Pancreas merged; CHAOS, the bundle, the prostate pair apart; the list's CMB-MML CT + PT rows one row (§102)
+    assert len(rows) == len(entries) + 3 - 1
+    cmb = by["CMB-MML"]
+    assert len(cmb["entries"]) == 2 and cmb["tags"]["modality"] == ["CT", "PT"] and cmb["stand"] == "not_downloaded"
     pan = by["02 Pancreas-CT TCIA"]
     assert [d["dataset_uuid"] for d in pan["datasets"]] == [U_PAN] and pan["stand"] == "central"
     assert pan["registered"] == "yes" and pan["prefixes"] == ["PANC_ABD_CT_PUB"] and pan["n_central"] == 2
@@ -393,7 +396,7 @@ def test_one_dataset_list_merges_only_on_links(settings, test_db, tmp_path, nas)
     sel, counts = dl.apply_filters(rows, {"commercial": ["yes"]})
     names = {r["name"] for r in sel}
     assert "02 Pancreas-CT TCIA" in names and "CHAOS-MR" not in names and "CHAOS" not in names
-    assert counts["registered"] == {"yes": 1, "no": 3}                     # counts under the other filters
+    assert counts["registered"] == {"yes": 1, "no": 2}                     # counts under the other filters
     counts = dl.apply_filters(rows, {})[1]
     assert counts["registered"]["yes"] == 4 and counts["stand"]["central"] == 1
 

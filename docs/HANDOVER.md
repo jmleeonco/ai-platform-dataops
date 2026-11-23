@@ -133,6 +133,14 @@ the evidence in the decision's note (`catalog_matches.note` is migration 0010): 
 (TCGA-READ ×2 ↔ TCGA_READ_2026, test_HNN), 5 rejected (internal Prostate folder ↔ bundles / old-DB set of other sizes);
 entry ↔ folder 42 confirmed, 11 rejected, 4 open (RIDER-LungCT-Seg, EAY131 ×3: counts disagree). `/datasets` 496 rows
 (128 registered, 368 not). Undo on the entry page.
+**One row per dataset + dataset buttons (2026-11-23, CONTRACT §102, U218).** Same-name list rows (one per modality,
+or repeated in the list's second section) are one row (`dataset_list.same_name_groups`; different confirmed folders
+or links keep them apart): `/datasets` 373 rows (128 registered, 245 not). Each row, the entry page and the dataset
+page carry 샘플 / 파일럿 / 로컬 SCP (`row_actions.py`, `web/dataset_actions.py`): sends go through a confirmation page
+(destination + subject count) and an existing job (`pilot`, new `local` = the CLI's local-only flow from a PLANNED
+run), admin-only through the hub, never Central; a button that cannot run says why and links the next step. Samples:
+≤ 3 subjects, 3 axial PNGs each with label contours (`preview.py`), cached in `~/.cache/ai-platform-dataops/previews`
+(200 MiB cap, outside the backup, `python -m dataops previews --purge`).
 
 ## 6. Runs on disk (`runtime/runs`)
 

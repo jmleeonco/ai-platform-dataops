@@ -121,6 +121,17 @@
   2.1.0 — and a model hidden in <code>/mnt/deploy/config/hidden_models.json</code> (the whole family, or one version) is
   marked hidden rather than left out; the hub ranks the families once (<code>families[]</code> of
   <code>GET /api/v1/models</code>) so the auto-contour picker and the Models tab agree.
+  <span id="offered-models">Since S99 (user 2026-11-23) the app is offered only models it can download:
+  <code>GET /api/v1/models</code> (and its web twin, <i>Labeling › Models</i>) lists the weights with a deployed folder
+  on record under <code>/mnt/deploy</code> whose files are there (while the share is not mounted at all, the record is
+  enough — the download then answers 503 and the app may retry) and ranks <code>families[]</code> over them, so the Auto-contour picker's
+  project model is that project's newest <b>deployed</b> model. Before, a model trained without a deploy (Sacrum_New's
+  job 98) was offered and its download refused — <i>failed · model Sacrum could not be downloaded: no deployed folder
+  for model …</i>. The web's 모델 registry (<code>GET /ui/api/registry/models</code>) still lists every set of weights,
+  each marked <code>downloadable</code> with <code>download_reason</code> when not. A model deploy the executor registers
+  with its md5 records the deployed folder at once, so a new model is downloadable as soon as it is deployed (before,
+  only after the next half-hourly <code>sync_deploy</code>). A failed auto-contour is not final: running Auto-contour on
+  the item again in OncoStudio replaces it.</span>
   <span id="hidden-set">Since v1.36 (§50) an admin also hides models, ROIs and one model's ROIs on the hub (관리 ›
   Hidden). The hidden set is the hub's entries plus that file. A hidden family or version is marked <code>hidden</code>
   in the model list, so pickers leave it out. Each model lists the ROIs hidden for it (<code>rois_hidden</code>). A

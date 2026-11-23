@@ -90,6 +90,9 @@ class Settings:
     # proxy that cannot send X-Forwarded-Prefix.
     hub_secret_file: Path | None = None
     root_path: str = ""
+    # 샘플 보기 (§102): small PNG previews, a bounded cache outside the runtime folder and the backup.
+    preview_dir: Path = Path.home() / ".cache" / "ai-platform-dataops" / "previews"
+    preview_cap_bytes: int = 200 * 1024 * 1024
 
     @property
     def jobs_dir(self) -> Path:
@@ -154,4 +157,6 @@ def load_settings(env: dict | None = None) -> Settings:
         agent_workdir=Path(get("DATAOPS_AGENT_WORKDIR") or Path.home() / ".cache" / "ai-platform-dataops" / "agent"),
         hub_secret_file=Path(get("DATAOPS_HUB_SECRET_FILE")).expanduser() if get("DATAOPS_HUB_SECRET_FILE") else None,
         root_path=get("DATAOPS_ROOT_PATH") or "",
+        preview_dir=Path(get("DATAOPS_PREVIEW_DIR") or Path.home() / ".cache" / "ai-platform-dataops" / "previews"),
+        preview_cap_bytes=int(float(get("DATAOPS_PREVIEW_CAP_MB") or 200) * 1024 * 1024),
     )

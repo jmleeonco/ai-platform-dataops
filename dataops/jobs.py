@@ -22,7 +22,7 @@ from .retention import mb, purge_failed, purge_if_final, purge_superseded
 from .runs import Run, RunError, list_runs
 from .util import now_iso, read_json, write_json
 
-KINDS = ("analyze", "sample", "pilot", "publish")
+KINDS = ("analyze", "sample", "pilot", "local", "publish")
 ACTIVE = ("queued", "running")
 
 
@@ -179,7 +179,8 @@ def run_job(settings: Settings, job: dict) -> dict:
     write_json(path, job)
     try:
         run = Run(settings.runs_dir, job["run_id"])
-        job["result"] = {"analyze": _analyze, "sample": _sample, "pilot": _pilot, "publish": _publish}[job["kind"]](settings, run, job, log)
+        job["result"] = {"analyze": _analyze, "sample": _sample, "pilot": _pilot, "local": _local,
+                         "publish": _publish}[job["kind"]](settings, run, job, log)
         job.update(status="done")
         log("done")
     except Exception as e:  # noqa: BLE001 - every failure is recorded on the job and the run
@@ -269,6 +270,21 @@ def _pilot(settings: Settings, run: Run, job: dict, log) -> dict:
     subject = job["params"].get("subject")
     r = send_local(run, settings.local_scp, scope="pilot", subjects=[subject] if subject else None)
     log(f"pilot send: {r['counts']} -> {r['status']}")
+    return r
+
+
+def _local(settings: Settings, run: Run, job: dict, log) -> dict:
+    """The whole dataset to the LOCAL SCP (§102 로컬 SCP로 보내기): the CLI's local-only flow — a full freeze when the
+    run is still PLANNED, then `send_local` with its host / AE guard (§78.2). Never Central."""
+    from .local_send import send_local
+    from .prepare import prepare
+    if run.meta["status"] == "PLANNED":
+        m = prepare(run, "full", log)
+        log(f"full freeze (local only): {len(m['instances'])} instances")
+    save_deid_map(settings, run, log)              # before anything pseudonymised leaves
+    log(f"sending to {settings.local_scp.key}")
+    r = send_local(run, settings.local_scp, scope="full")
+    log(f"local send: {r['counts']} -> {r['status']}")
     return r
 
 

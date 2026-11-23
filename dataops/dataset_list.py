@@ -8,6 +8,8 @@ A catalogue entry and a registered dataset become one row only on a link that is
   entry page, or rejects the link itself, splits the row again.
 - `person`: a person linked the entry to the dataset on the entry page (catalog_dataset_links).
 - registered datasets that carry the same PatientID prefix are one dataset (several runs / revisions of it).
+- catalogue entries with the same name after trimming (and no conflicting folder or link) are one dataset (§102): the
+  audited list has a row per modality; the row unites their modalities and regions and sums the counts.
 A name match between an entry and a registered dataset is only a proposal a person confirms or rejects; unlinked
 ones stay two rows and are countable by the `link` filter.
 
@@ -219,6 +221,11 @@ def make_row(ents: list[dict], dss: list[dict], links: dict, planned: dict) -> d
     comm = _most_restrictive([e["eff"]["commercial_use"] for e in ents]
                              + [DB_COMMERCIAL.get(d["commercial_use"], "unknown") for d in dss])
     stand = "central" if any(d["n_central"] for d in dss) else "registered" if dss else avail
+    stand_parts = []                       # §102: the parts named where a grouped row's parts stand differently
+    if len(ents) > 1 and not dss and len({e["eff"]["availability"] for e in ents}) > 1:
+        for e in ents:
+            label = ", ".join(e["tags"].get("modality") or []) or f"목록 {e['list_row'] or e['entry_id']}행"
+            stand_parts.append({"label": label, "stand": e["eff"]["availability"], "entry_id": e["entry_id"]})
     folders, seen = [], set()
     for e in ents:
         for m in e["folders"]:
@@ -233,7 +240,8 @@ def make_row(ents: list[dict], dss: list[dict], links: dict, planned: dict) -> d
         link_vals.append("proposal")
     row = {
         "key": f"e{first['entry_id']}" if first else f"d{dss[0]['dataset_uuid']}",
-        "name": dss[0]["name"] if dss and len(ents) != 1 else first["name"], "entries": ents, "datasets": dss,
+        "name": (dss[0]["name"] if dss and len(ents) != 1 and len({name_key(e["name"]) for e in ents}) != 1
+                 else re.sub(r"\s+", " ", first["name"]).strip()), "entries": ents, "datasets": dss,
         "entry_id": first["entry_id"] if first else None, "list_row": first["list_row"] if first else None,
         "is_marker": bool(ents) and all(e["is_marker"] for e in ents),
         "kind": (first["kind"] if first else "registered"), "link": first["link"] if first else None,
@@ -243,7 +251,7 @@ def make_row(ents: list[dict], dss: list[dict], links: dict, planned: dict) -> d
         "diff": any((e["availability_note"] or "").startswith("차이:") for e in ents),
         "edited": sorted({f for e in ents for f in e["edited"]}), "commercial_reason": "; ".join(
             sorted({e["commercial_reason"] for e in ents if e.get("commercial_reason")})),
-        "licences": licences, "prefixes": prefixes, "stand": stand,
+        "licences": licences, "prefixes": prefixes, "stand": stand, "stand_parts": stand_parts,
         "registered": "yes" if dss else "no", "sources": sorted(set(kinds), key=list(SOURCES).index),
         "link_state": link_vals, "links": row_links,
         "eff": {"commercial_use": comm, "licence": " / ".join(licences), "origin": origin, "availability": avail},
@@ -257,6 +265,40 @@ def make_row(ents: list[dict], dss: list[dict], links: dict, planned: dict) -> d
     row["_text"] = " ".join([cat.search_text(e) for e in ents] + [
         f"{d['name']} {d['prefix'] or ''} {d['dataset_uuid']}" for d in dss]).lower()
     return row
+
+
+def name_key(name: str | None) -> str:
+    """The grouping key of a catalogue name (§102): whitespace collapsed, trimmed, case folded."""
+    return re.sub(r"\s+", " ", name or "").strip().casefold()
+
+
+def _link_key(e: dict) -> str:
+    v = str((e.get("fields") or {}).get("데이터셋 링크") or "").strip()
+    return v.split()[0].rstrip("/").casefold() if v else ""
+
+
+def same_name_groups(entries: list[dict]) -> list[list[dict]]:
+    """Catalogue entries that are one dataset under §102: the same name after trimming, the same confirmed source
+    folders where both have some, the same dataset link where both have one. The audited list has one row per
+    modality (CPTAC-CCRCC MR + CT) and repeats some rows in its second section (BTCV, AbdomenCT-1K, a team note
+    row …); those become one group. Returns only groups of two or more."""
+    by_key: dict[str, list[dict]] = {}
+    for e in entries:
+        if not name_key(e["name"]):
+            continue
+        folders = frozenset(m["folder"]["path"] for m in e["folders"] if m["state"] == "confirmed")
+        link = _link_key(e)
+        clusters = by_key.setdefault(name_key(e["name"]), [])
+        for c in clusters:
+            if (not c["folders"] or not folders or c["folders"] == folders) and \
+                    (not c["link"] or not link or c["link"] == link):
+                c["entries"].append(e)
+                c["folders"] = c["folders"] or folders
+                c["link"] = c["link"] or link
+                break
+        else:
+            clusters.append({"folders": folders, "link": link, "entries": [e]})
+    return [c["entries"] for cs in by_key.values() for c in cs if len(c["entries"]) > 1]
 
 
 def build(entries: list[dict], datasets: list[dict], decided: list[dict], planned: dict | None = None) -> list[dict]:
@@ -289,6 +331,9 @@ def build(entries: list[dict], datasets: list[dict], decided: list[dict], planne
     for (eid, uuid), v in links.items():
         if v["state"] == "confirmed":
             union(("e", eid), ("d", uuid))
+    for group in same_name_groups(entries):                     # §102: one row per dataset, not per modality
+        for e in group[1:]:
+            union(("e", e["entry_id"]), ("e", group[0]["entry_id"]))
     groups: dict = {}
     for e in entries:
         groups.setdefault(find(("e", e["entry_id"])), ([], []))[0].append(e)

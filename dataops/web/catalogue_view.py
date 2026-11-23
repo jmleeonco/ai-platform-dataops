@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from .. import catalogue as cat
 from .. import dataset_list as dl
 from .. import db as dbmod
+from .. import row_actions as ra
 from .actions import checked_form
 from .prefix import url
 
@@ -62,7 +63,7 @@ def _in_input_root(path: str, roots) -> bool:
 
 def register_catalogue_views(app, settings, page, db_conn, csv_response, lists: dl.ListCache) -> None:
     def empty(request, err):
-        return page(request, "datasets.html", db_error=err, rows=[], counts={}, params={}, q="", facets=dl.FACETS,
+        return page(request, "datasets.html", db_error=err, rows=[], acts={}, counts={}, params={}, q="", facets=dl.FACETS,
                     labels=LABELS, unmatched=[], total=0, qs="", query=_query, open_facets=(), totals=None)
 
     def with_conn(request, fn):
@@ -83,10 +84,12 @@ def register_catalogue_views(app, settings, page, db_conn, csv_response, lists: 
         def run(conn):
             rows, entries, extra, _ = lists.get(conn)
             shown, counts = dl.apply_filters(rows, params, q)
+            ctx = ra.Context(settings, getattr(request.state, "hub", None))
+            acts = {r["key"]: ra.actions(r, ctx, resolve_root=False) for r in shown}
             imports = dbmod.query(conn, "SELECT kind, file_name, rows_read, run_at FROM catalog_imports"
                                         " ORDER BY import_id DESC")
             last = {k: next((i for i in imports if i["kind"] == k), None) for k in ("list", "scan", "sizes")}
-            return page(request, "datasets.html", rows=shown, counts=counts, params=params, q=q, facets=dl.FACETS,
+            return page(request, "datasets.html", rows=shown, acts=acts, counts=counts, params=params, q=q, facets=dl.FACETS,
                         labels=LABELS, total=len(rows), unmatched=extra["unmatched"], last=last,
                         qs=_query(params, q), query=_query, open_facets=OPEN_FACETS, totals=extra["totals"],
                         n_entries=len(entries), n_registered=len(extra["datasets"]),
@@ -164,7 +167,9 @@ def register_catalogue_views(app, settings, page, db_conn, csv_response, lists: 
             links = [dict(x, dataset=by_uuid[x["dataset_uuid"]]) for x in e.get("dataset_links", [])
                      if x["dataset_uuid"] in by_uuid]
             linked = {x["dataset_uuid"] for x in links}
-            return page(request, "catalog_entry.html", e=e, row=row, headers=headers, edits=edits, labels=LABELS,
+            acts = ra.actions(row, ra.Context(settings, getattr(request.state, "hub", None)), resolve_root=False)
+            return page(request, "catalog_entry.html", e=e, row=row, acts=acts, headers=headers, edits=edits,
+                        labels=LABELS,
                         intake=intake, sources=sources, unmatched=extra["unmatched"], editable=cat.EDITABLE,
                         input_roots=settings.input_roots, quote=quote, links=links,
                         linkable=[d for d in datasets if d["dataset_uuid"] not in linked])

@@ -10,3 +10,26 @@
 {%- set cls = {'central': 'b-ok', 'registered': 'b-ok', 'downloading': 'b-warn', 'blocked': 'b-bad', 'failed': 'b-bad', 'unknown': 'b-warn'} -%}
 <span class="badge {{ cls.get(k, '') }}"{% if title %} title="{{ title }}"{% endif %}>{{ labels.stand.get(k, k) }}</span>
 {%- endmacro %}
+{# §102 buttons: 샘플 보기 · 파일럿 보내기 · 로컬 SCP로 보내기. A disabled one still opens its page, which says why. #}
+{% macro acts_compact(acts, key) -%}
+{%- if acts -%}
+<span class="acts">
+  {%- set s = acts.samples -%}
+  {%- if s.ok %}<a class="btn-s" href="{{ root }}/datasets/row/{{ key }}/samples">샘플</a>{% else %}<span class="btn-s off" title="{{ s.why }}">샘플</span>{% endif %}
+  {%- for w, lab in [('pilot', '파일럿'), ('local', '로컬 SCP')] %}{% set x = acts[w] %}
+  <a class="btn-s{% if not x.ok %} off{% endif %}" href="{{ root }}/datasets/row/{{ key }}/send/{{ w }}" title="{{ (x.subjects ~ '명 → ' ~ x.dest) if x.ok else x.why }}">{{ lab }}</a>
+  {%- endfor %}
+</span>
+{%- endif -%}
+{%- endmacro %}
+{% macro acts_full(acts, key) -%}
+{%- if acts -%}
+<div class="table-wrap"><table class="acts-t">
+{% for w, lab in [('samples', '샘플 보기'), ('pilot', '파일럿 보내기'), ('local', '로컬 SCP로 보내기')] %}{% set x = acts[w] %}
+<tr><td>{% if x.ok %}<a class="btn-s" href="{{ root }}/datasets/row/{{ key }}/{{ 'samples' if w == 'samples' else 'send/' ~ w }}">{{ lab }}</a>{% else %}<span class="btn-s off">{{ lab }}</span>{% endif %}</td>
+  <td class="small">{% if x.ok %}{% if w == 'samples' %}최대 3명, 몇 장의 축상 단면 (라벨이 있으면 윤곽){% else %}{{ x.subjects }}명 → <span class="mono">{{ x.dest }}</span> (확인 화면을 거침, Central 아님){% endif %}
+    {% else %}{{ x.why }}{% if x.next %} — {% if x.next[1] %}<a href="{{ root }}{{ x.next[1] }}">{{ x.next[0] }} →</a>{% else %}{{ x.next[0] }}{% endif %}{% endif %}{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{%- endif -%}
+{%- endmacro %}

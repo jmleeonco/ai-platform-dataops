@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_catalog.html" import avail, comm, stand with context %}
+{% from "_catalog.html" import avail, comm, stand, acts_full with context %}
 {% from "_macros.html" import csrf_field %}
 {% block title %}{{ e.name }} · 데이터셋{% endblock %}
 {% block body %}
@@ -11,6 +11,26 @@
   {% if e.is_marker %}<span class="badge">팀 메모 행 (링크 없음)</span>{% endif %}
   {% if e.gone_at %}<span class="badge b-warn">새 목록에 없음 ({{ e.gone_at }})</span>{% endif %}
   {% if e.edited %}<span class="badge b-warn">사람이 고친 값: {{ e.edited|join(', ') }}</span>{% endif %}</p>
+
+<section>
+<h2>작업</h2>
+{{ acts_full(acts, row.key) }}
+</section>
+{% if row.entries|length > 1 %}
+<section>
+<h2>한 행으로 묶인 목록 행 (모달리티별)</h2>
+<p class="muted small">감수 목록은 모달리티마다 한 행씩 적습니다. 이름(앞뒤 공백 무시)과 폴더·링크가 같은 행은 데이터셋 하나로 한 행에 보이고, 아래가 그 내역입니다. 목록의 행은 그대로 있습니다.</p>
+<div class="table-wrap"><table>
+<tr><th>목록 행</th><th>이름</th><th>모달리티</th><th>부위</th><th>보유 상태</th><th>상업적 이용</th><th>라이선스</th><th>데이터 수</th></tr>
+{% for x in row.entries %}
+<tr{% if x.entry_id == e.entry_id %} class="on"{% endif %}><td class="num">{{ x.list_row or '' }}</td><td><a href="{{ root }}/catalog/{{ x.entry_id }}">{{ x.name }}</a></td>
+  <td>{{ x.tags.modality|join(', ') }}<div class="small muted">{{ (x.fields.get('Modality') or '')[:80] }}</div></td>
+  <td class="small">{{ x.tags.body|join(', ') }}</td><td>{{ avail(x.eff.availability) }}</td><td>{{ comm(x.eff.commercial_use) }}</td>
+  <td class="small">{{ x.eff.licence or '-' }}</td><td class="small">{{ (x.fields.get('데이터 수') or '')[:160] }}</td></tr>
+{% endfor %}
+</table></div>
+</section>
+{% endif %}
 
 <section>
 <h2>보유 상태와 위치</h2>

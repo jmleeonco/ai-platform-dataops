@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_catalog.html" import avail, comm, stand with context %}
+{% from "_catalog.html" import avail, comm, stand, acts_compact with context %}
 {% block title %}데이터셋{% endblock %}
 {% block body %}
 {% set params = params or {} %}
@@ -57,14 +57,15 @@
   <tr{% if r.is_marker %} class="marker"{% endif %}>
     <td class="num muted">{{ r.list_row or '' }}</td>
     <td>{% if r.entries %}<a href="{{ root }}/catalog/{{ r.entry_id }}">{{ r.name }}</a>{% else %}<a href="{{ root }}/datasets/{{ r.datasets[0].dataset_uuid }}" title="{{ r.datasets[0].dataset_uuid }}">{{ r.name }}</a>{% endif %}
-      {% if r.entries|length > 1 %}<div class="small muted">목록 행 {{ r.entries|length }}개: {% for e in r.entries %}<a href="{{ root }}/catalog/{{ e.entry_id }}">{{ e.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+      {% if r.entries|length > 1 %}<div class="small muted">목록 행 {{ r.entries|length }}개: {% for e in r.entries %}<a href="{{ root }}/catalog/{{ e.entry_id }}" title="{{ e.name }}">{% if e.name|trim == r.name %}{{ e.list_row or e.entry_id }}행{% else %}{{ e.name }}{% endif %}{% if e.tags.modality %} {{ e.tags.modality|join(',') }}{% endif %}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
       {% if r.entries and r.datasets %}<div class="small">{% for d in r.datasets %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}" title="{{ d.dataset_uuid }}">등록: {{ d.name }} →</a> {% endfor %}</div>
       {% elif r.datasets|length > 1 %}<div class="small">{% for d in r.datasets[1:] %}<a href="{{ root }}/datasets/{{ d.dataset_uuid }}">{{ d.name }}</a> {% endfor %}</div>{% endif %}
       {% if r.is_marker %}<span class="badge" title="링크 없는 팀 메모 행 (지우지 않고 표시)">메모 행</span>{% endif %}
       {% if r.edited %}<span class="badge b-warn" title="사람이 고친 값: {{ r.edited|join(', ') }}">수정됨</span>{% endif %}
       {% if r.tags.new_rois == 'yes' %}<span class="badge" title="신규 ROI 있음">신규 ROI</span>{% endif %}
+      <div title="샘플 보기 · 파일럿 보내기 · 로컬 SCP로 보내기 (보내기는 확인 화면을 거치고, 허브에서는 관리자만)">{{ acts_compact(acts.get(r.key), r.key) }}</div>
       {% if 'proposal' in r.link_state %}<span class="badge b-warn" title="이름이 비슷한 목록 항목/등록 데이터셋이 있습니다 — 항목 페이지에서 사람이 확인">연결 후보</span>{% endif %}</td>
-    <td>{{ stand(r.stand, r.availability_note) }}</td>
+    <td>{{ stand(r.stand, r.availability_note) }}{% if r.stand_parts %}<div class="small muted">{% for p in r.stand_parts %}{{ p.label }}: {{ labels.availability.get(p.stand, p.stand) }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}</td>
     <td>{{ comm(r.eff.commercial_use, r.commercial_reason) }}</td>
     <td class="small">{{ r.eff.licence or '-' }}</td>
     <td class="small">{% for s in r.sources %}{% if s == 'legacy' %}기존 DB{% for d in r.datasets if d.origin == 'legacy' %} #{{ d.legacy_id }}{% endfor %}{% else %}{{ labels.source.get(s, s) }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</td>
