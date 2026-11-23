@@ -382,6 +382,20 @@
   a signed-in reader — anyone else is asked to sign in. Without <code>base</code> / <code>to</code> the page is as before: the
   newest released version (a version not released yet never becomes it). Details:
   <a href="../components/hub.html#web-release-compare">hub W82</a>.</p>
+  <p id="upcoming-release-web"><b>다음 릴리즈 (예정) / Upcoming release</b> (v1.95 §104.4, U221, web W88 on S101 — <b>admins
+  only</b>; nobody else sees anything new). Before a package is made, the release notes show what it will add: above the
+  released versions an admin sees the entry <i>다음 릴리즈 (예정)</i> with <i>미패키징 / Not packaged</i> and the number of models
+  released since the last package; it opens <code>/deploy/release-notes?line=upcoming</code>: the packaged version it builds on,
+  a warning that it may change until the package is made (and <i>partly packaged as &lt;build&gt;</i> when a candidate package of a
+  newer line exists), a <b>summary table</b> — model, packaged version → new version, updated / added, ROIs + / −, DSC and HD95
+  of the model release with the change against the packaged version (HD95: lower is better), released when and by whom — and
+  <b>one section per model</b> with every model release since the packaged version, oldest first (version, date, memo, ROIs
+  added / removed, the training job, the dataset version), and links to <i>개별 모델 릴리즈</i> and the training job. No model
+  released since the package → <i>No model has been released since &lt;version&gt;.</i> In <b>버전 비교</b> the admin's target list
+  starts with <i>다음 릴리즈 (예정) · 미패키징</i> (the newest released version becomes a valid <i>installed version</i> too):
+  <code>?base=1.6.4&amp;to=upcoming</code> stacks 1.7.0 and then the upcoming part, drawn the same way, and <b>PDF 다운로드 KR / EN</b>
+  saves that pair (cover marked not packaged yet). The set follows the model releases by itself (a new release, a withdrawal or a
+  new package changes the next read). Details: <a href="../components/hub.html#web-upcoming-release">hub W88</a>.</p>
   <h3 id="model-versions">One version line per model; renaming a model (v1.88 §97.2–97.3, A30)</h3>
   <p>Every training deploys the model under the project's name and adds 1 to the last number (Kidney 2.0.0 → 2.0.1). Releasing
   a model adds 1 to the middle number (2.0.2 → 2.1.0) — or to the last when the model gained ROIs — and must be above the

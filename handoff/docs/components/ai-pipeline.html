@@ -433,6 +433,36 @@
     <b><code>Server-Timing: app;dur=…</code></b> on every deploy reply says how long this process took.</li>
   </ul>
 
+  <h2 id="a36-upcoming-release">The upcoming release: model releases waiting for a package (v1.95 §104.1, U221, D381 — A36)</h2>
+  <p>Before anyone packages, an admin can see what the next package will carry: the models released since the newest released
+  package line, with each model's releases stacked. ai-pipeline reads it from the model folders and the stored metrics. Nothing is
+  measured, built or queued. Admin only (§104.3): every other role and the public principal get 403. Widening it is the constant
+  <code>UPCOMING_ROLES</code> in <code>app/api/deploy_releases.py</code>.</p>
+  <div class="tbl"><table><thead><tr><th>Endpoint (<code>/api/v1/deploy/…</code>)</th><th>What it answers</th></tr></thead><tbody>
+  <tr><td><code>GET releases/upcoming</code> (new)</td><td><code>{base_line, base_build, candidate, computed_at, models[], rois_added[],
+  rois_removed[], empty}</code>. <code>base_build</code> = the current build of the newest released line; <code>candidate</code> = the newest
+  candidate build above it (the page says "partly packaged as …"). <code>models[]</code> holds, per family, its newest model release (a
+  release copy with <code>RELEASED.json</code>, not withdrawn, not hidden) above the version that build ships and differing from it in
+  the first or middle number (<code>kind: updated</code>), plus released families the build does not ship (<code>kind: added</code>,
+  <code>from_version</code> null). A plain deploy (last number only) and a never-released <code>0.y.z</code> are not in it. Each model:
+  <code>{family, from_version, to_version, kind, packaged_as, released_at, released_by, steps[], rois[], rois_added[], rois_removed[],
+  metrics}</code>, where <code>steps</code> = every model release after <code>from_version</code> up to <code>to_version</code>, oldest first:
+  <code>{version, released_at, released_by, from_version, memo, rois_added[], rois_removed[], job_id, data_version}</code>. ROIs are by
+  official registry name, each step against the step before (the first against the packaged version). <code>job_id</code> is always
+  null: our model-release records do not name the training job (the hub knows it). <code>data_version</code> = the data version of the
+  release's evaluation (§98.1), else the dataset bundle named by the release version, else null. <code>metrics</code> =
+  <code>{state (not_evaluated | queued | running | succeeded | failed), data_version, dsc_mean, hd95_mean, n, compare}</code>, where
+  <code>compare</code> = <code>{base_version, base_dsc_mean, base_hd95_mean, base_n}</code> of the packaged version on the same data version
+  when those metrics exist, else null.</td></tr>
+  <tr><td><code>GET releases</code></td><td>For an admin, when the set is not empty, <code>lines[]</code> starts with the virtual row
+  <code>{line: "upcoming", state: "upcoming", current_build: null, builds: [], previous_line, previous_build, released_at: null,
+  candidate, model_count}</code>.</td></tr>
+  <tr><td><code>GET releases/changes?base=&amp;target=upcoming</code></td><td>As §99.1: the released lines after <code>base</code> up to
+  the newest one, then the upcoming set applied on top of that line as the last <code>lines[]</code> entry <code>{line: "upcoming",
+  state: "upcoming", build: null, …}</code>. <code>target_state</code> is upcoming, <code>target_build</code> null, plus <code>candidate</code>.
+  Admin only (403 <code>admin_only</code>); 404 <code>no_upcoming</code> when nothing waits.</td></tr>
+  </tbody></table></div>
+
   <h2 id="a35-public-downloads">Released models without a login: the public download set (v1.94 §103.1, U220, D380 — A35)</h2>
   <p>A visitor without a hub login may download released models. The hub forwards the GETs below for its public principal
   (<code>X-Hub-User: public</code>, role general, S100), and ai-pipeline decides which names are released. A signed-in caller of any role is unchanged
