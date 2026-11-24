@@ -989,6 +989,25 @@
       (filter, Enter, Shift-click, Paste names…, chips) with every ROI that matches a target ROI ticked; untick the ones you
       do not want or tick more (at least one). The hub keeps the whole file and records your choice: the item's ROIs, its
       label checks and training use only the ticked ROIs. A local file brings the ROIs that match the target ROIs.</span></li>
+    <li id="add-from-projects"><b>Add items from other projects, with their labels</b> (v1.99 §108.2, U227, D385 — W92, on
+      S106): <i>Add items</i> has two ways at the top, <b>검색해서 추가 / Search and add</b> (the dialog as above) and
+      <b>다른 프로젝트에서 가져오기 / From other projects</b>. On the left, every other project with its modality, item count
+      and the target ROIs it holds (<i>This project's ROIs 3/5: Bag_Bowel, Rectum, …</i> — matched by name or by this
+      project's alternative names), the ones that share most ROIs first; a search box (code, name, ROI) and
+      <b>Labeled series only</b>. Tick the sources and press <b>Preview (n projects)</b> — it writes nothing. On the right:
+      the totals (series, <i>in several projects</i>, <i>without a label</i>, <i>already in this project</i>), one line per
+      source (series, labeled, already here), the <b>ROI coverage</b> bar per target ROI (how many of the series' chosen
+      labels hold it, from <code>missing_by_roi</code>), filters <i>All · In several projects · No label · Missing ROIs ·
+      Already here</i>, and one row per series: Patient ID, series, the projects it is in, <b>Label to take</b> and the
+      target ROIs that label lacks. A series in several projects is one row; the hub picks the label that holds most of
+      this project's ROIs (the newest on a tie, marked ★); the picker lists every source's label and <i>Add without a
+      label</i>, and a changed row is sent as a choice. The line under the rows says what will happen — <i>n new items (l
+      with a label)</i>; an item already here gets the chosen label only when it has none in this project
+      (<code>target_labeled</code>), the others already here are counted as skipped (W92a) — and <b>Add n items</b> starts the hub's
+      job: a progress bar, then <i>Added · labels imported · skipped</i> with the list of skipped series and why. Each
+      imported label is the source project's file as it is (one file per item, nothing merged), a human revision with
+      source <i>external</i>; the source projects are not changed. Changing the sources or the switch after a preview asks
+      for a new preview before Add.</li>
   </ul>
   <h3 id="web-workflow">The same workflow on the web (v1.20 §27, labeling-web)</h3>
   <p class="muted">Since v1.23 the board, drawer and bulk bar described below are replaced by the app's project page and
