@@ -318,6 +318,41 @@
   the pulse before the name and a small orange marker at today on the bar (tooltip: the job and its stage). A bar that
   starts before the 26-week window keeps an open left end and names its real start in the tooltip. The counts and
   <i>Show › in progress</i> follow the hub stage.</p>
+  <h3 id="roadmap-released">A model release is a release, whatever the labeling goal (v1.98 §107, U225, D384)</h3>
+  <p><b>Hub (S105).</b> A next version is under way only through <b>human work after the newest release</b>
+  (<code>released.at</code>: the family's newest model release not withdrawn, else the package). Items left toward
+  the goal and labels saved before that release do not make a next version — the released model is what that work
+  produced. So a row a release holds reads <i>Released</i> from the moment of the release until a human label holding
+  the ROI is saved after it (within the 30-day window), then <i>next version</i> as above; its estimate is
+  <code>null</code> while it reads released (no <code>next_version</code>). <code>dates.released_at</code> is the
+  newest release's time, <code>dates.next_version_started</code> the first human save after it. A withdrawal puts the
+  row back by the same rule against the release that is then the newest. A lead's plan status still wins
+  (<code>stage_source plan</code>); no plan or goal is changed.</p>
+  <p><b>Projects.</b> Each <code>projects[]</code> and <code>projects_active[]</code> entry has <code>released:
+  {family, version, at, kind: "model" | "package", job_id | null}</code> — the newest release holding at least one of
+  the project's ROIs and made after the project's first own work — or <code>null</code>. A project with such a release
+  and no human label after it (and no live job) reads <code>scope: "released"</code>: it leaves <code>projects_active</code>
+  (<i>in progress</i>) and is ordered with the finished ones by <code>finished_at</code> (= the release time; null for
+  any other scope), keeping its <code>labeled_n</code> / goal so the page can say the goal was not reached. A human label
+  after the release makes it <code>ongoing</code> again with <code>released</code> kept. Example (prod, 2026-11-24):
+  Kidney 2.1.0, released 2026-11-23 from job 100's model, holds Kidney_Cortex_L / _R — those rows read
+  <i>Released</i> and project Kidney_Cortex (566) is listed as released with 2.1.0 although its goal was not
+  reached.</p>
+  <p id="roadmap-released-web"><b>On the page (W91).</b> Under <i>진행 중인 프로젝트 / Projects in progress</i> the
+  roadmap shows <b>최근 완료된 프로젝트 / Recently finished projects</b>: one card per <code>scope released</code>
+  project, the newest finish first — its code, name and modality, <i>라벨 81 / 85</i> (its labels against the goal —
+  with no goal set, its item count, as the estimate uses — in the plain text colour; the tooltip says the model was
+  released before the goal; S105 keeps these counts in the rows' <code>projects[]</code> entries, the card takes them
+  from there with one ROI chip per target) and a
+  <b>릴리즈됨 / Released</b> badge <code>&lt;family&gt; &lt;version&gt; · &lt;date&gt;</code> (KST day). For a signed-in
+  reader the name in the badge opens <i>배포 › 릴리즈 › Release individual models</i> searched for the family
+  (<code>/deploy/model-release?q=&lt;family&gt;</code>); a visitor without a login sees it as text. A project still in
+  progress whose <code>released</code> is set shows the same badge small under its card, and a project group head
+  (<i>Group by › project</i>) shows it next to the project's name (a released project keeps its group). Rows are the
+  hub's stage and scope as before (a row with a recent label stays in <i>진행 중</i> with the stage <i>출시됨</i>; a
+  row of <code>scope released</code>, should the hub send one, gets a <b>Released</b> section); a released row
+  below its goal shows the count as it is (<code>90 / 100</code>, not <code>100 %</code>), the diamond at
+  <code>dates.released_at</code> and the version from <code>released.version</code>.</p>
 </section>
 
 <section id="release-notes-customers">
