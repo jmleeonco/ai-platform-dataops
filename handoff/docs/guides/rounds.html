@@ -63,6 +63,17 @@
   sends the loop's pipeline's stored value of <code>report.eval_prerender_n</code> (the evaluation viewer's prerendered
   samples; e.g. 10), and nothing when the pipeline keeps the executor's default 5. A value outside the executor's
   <code>min</code> / <code>max</code> is refused when the pipeline is saved (<a href="training.html#eval-prerender-hub">Training</a>).</p>
+  <p id="iterations-data-params"><b>v1.97 §106.2 (S104):</b> the executor's data parameters
+  (<code>data.target_spacing</code>, <code>data.patch_size</code>, <code>data.patch_sample_num</code>) are set on a
+  loop's pipeline like any parameter: a typed list is sent as stored, a stored <code>null</code> is sent as
+  <code>null</code> (automatic) and an absent one is not sent. The pipeline store checks element type, bounds and the
+  length for the pipeline's own <code>train.mode</code> (either length when it sets none); an iteration whose loop
+  <code>model_type</code> does not match a stored patch length gets the executor's 422 verbatim
+  (<a href="training.html#data-params-hub">Training</a>); that refusal, as every one the executor names a field in
+  (<code>reason: "data_param_invalid"</code>), keeps its <code>field</code> and <code>rule</code> in the hub's reply.
+  The project wizard's read shows each entry's <code>auto_value</code> from the line's newest model
+  (<a href="training.html#data-params-hub">Training</a>); a loop iteration sends nothing for it — automatic stays
+  automatic.</p>
   <p id="iterations-model-type"><b>v1.47 §63:</b> the loop policy has <code>model_type</code> (<code>3d</code> default,
   <code>2d</code>; <code>PUT …/round-policy</code> refuses anything else with <i>model_type: 3d or 2d</i>). Every iteration
   sends it as the executor's <code>train.mode</code> and records it in the round (<code>metrics.loop.model_type</code>,

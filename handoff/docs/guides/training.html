@@ -553,6 +553,22 @@
     one was typed); a failure names its step (<i>배포 실패</i>, <i>배포 등록 대기</i>, <i>릴리즈 실패</i>) with the hub's sentence.
     Afterwards — and on every later visit — the header reads <i>Released as &lt;family&gt; &lt;version&gt;</i>, linking to
     배포 › 개별 모델 릴리즈, with the dataset / metrics steps' state. Other roles see nothing new.</li>
+    <li id="train-data-params-web"><b>Data parameters: target spacing, patch size, patches per volume</b> (v1.97 §106.3, U223,
+    web W90 on S104 / E-DATAPARAMS). <b>Parameters &amp; submit</b> shows a group <b>데이터 / Data</b> right under the
+    training fields (open): <i>목표 간격 (target spacing)</i> in mm with three boxes X · Y · Z, <i>패치 크기</i> in voxels X · Y · Z
+    (two boxes, X · Y, when the model type is 2D — a typed Z comes back when 3D is chosen again) and <i>볼륨당 패치 수</i>.
+    Each field shows <b>자동 / Automatic</b> until you type; the boxes' placeholder is the value automatic will most likely
+    be when the hub's read gives one (<code>auto_value</code>, e.g. the base model's patch for a training from an existing
+    model), and the executor's one sentence on where the automatic value comes from sits under the field. A typed field is
+    marked <i>직접 입력 / set by you</i> with <b>자동으로 되돌리기 / Reset to automatic</b>. Half-typed boxes, a non-whole
+    patch or a value outside the field's range are said under the field and keep Submit off; a patch typed larger than
+    the automatic one warns <i>more GPU memory per step</i>. The executor's refusal (e.g. a patch the network cannot take)
+    appears next to its field until you edit it. Only typed fields are sent (as numbers, X, Y, Z); an untouched one stays
+    automatic. The summary lists the three (<i>자동 (≈ 96 × 96 × 64)</i> or the typed value), and the job page adds a
+    <b>데이터 / Data</b> line from the hub's <code>data_params</code>: <i>자동 → 0.8 × 0.8 × 3</i> for an automatic one
+    (the value the training used) or the typed value marked <i>직접 입력</i>; before the training's config is made the
+    typed ones show and the rest read <i>자동 · 학습 설정이 만들어지면 표시됩니다</i>. The same group appears wherever the
+    parameter form is (고급 학습, 관리 › Pipelines, project automation).</li>
     <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
     a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
     <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread
@@ -726,6 +742,38 @@
   page as the top-level <code>pipeline</code> (the job row's own <code>pipeline</code> stays the executor's
   <code>{commit, image}</code> pin). A template with a <code>report.title</code> parameter gets the name as the report's
   title unless you set one. POST answers 201 <code>{job_id, executor_job_id, name, pipeline, deploy?}</code>.</p>
+  <p id="data-params-hub"><b>v1.97 §106.2 — data parameters: target spacing, patch size, patches per volume (S104,
+  U223).</b> When the executor's training templates list <code>data.target_spacing</code> (<code>number_list</code>,
+  3 values, mm, X, Y, Z), <code>data.patch_size</code> (<code>int_list</code>, 3 voxels X, Y, Z for 3d, 2 for 2d —
+  <code>length_by_mode</code>) and <code>data.patch_sample_num</code> (<code>int</code>, patches per volume), the hub
+  serves them in <code>params</code> like any parameter, with the executor's <code>auto</code>,
+  <code>auto_note</code>, <code>unit</code>, <code>length</code> / <code>length_by_mode</code>, <code>min</code> /
+  <code>max</code> and <code>auto_value</code> as given; their default is <code>null</code> = <b>automatic</b> (the
+  dataset's fingerprint, or Research's rule for the model type). The project wizard (<code>…/train-default</code>,
+  <code>…/preview</code>), the items wizard (<code>POST /ui/api/training/jobs/preview</code> and
+  <code>/jobs</code>) and 관리 › Pipelines check a list before anything is submitted: 422 <i>&lt;id&gt;: expected a list
+  of numbers or null (automatic)</i> (ints for <code>int_list</code>), <i>&lt;id&gt;: expected 3 values for 3d</i>
+  (the job's model type; a pipeline that leaves the type to the wizard takes either length: <i>expected 2 or 3
+  values</i>), <i>&lt;id&gt;: each value in [min, max]</i>. <code>null</code> is accepted for an automatic parameter
+  and kept as <code>null</code> — the hub never puts a number in its place: a wizard's <code>null</code> over a
+  pipeline's typed value sends automatic, a pipeline stores <code>null</code> as <code>null</code>, and an untouched
+  parameter is not sent. A null is not a change (<code>params_changed</code> lists the typed lists only). The
+  executor's own refusal (a patch the network cannot take) comes back verbatim at submit, with its
+  <code>reason: "data_param_invalid"</code>, <code>field</code> (the parameter id) and <code>rule</code>, so the page
+  shows the sentence next to that field. <code>GET /ui/api/training/templates?base_name=&lt;family&gt;&amp;base_version=&lt;v&gt;</code>
+  (a job on a model's dataset) is the executor's read on that base, live: its <code>data.*</code> entries add
+  <code>auto_value</code> (what that model was trained with, X, Y, Z), <code>auto_value_from</code> and, on the patch,
+  <code>auto_value_mode</code> — the placeholder for <i>Automatic</i>; the default stays <code>null</code>. The
+  project wizard's read (<code>GET …/train-default</code> and its preview) does the same on the project line's newest
+  model (the highest version of the deploy family, over <code>&lt;CODE&gt;</code> for <code>&lt;CODE&gt;_&lt;type&gt;</code>;
+  60 s cache): what automatic will most likely be for a retrain; a patch from another mode (<code>auto_value_mode</code>
+  ≠ the job's model type, or the wrong length) is left without one; no model in the line or no answer → no
+  <code>auto_value</code>. <code>GET
+  /ui/api/training/jobs/{id}</code> adds <code>data_params {target_spacing, patch_size, patch_sample_num}</code>, each
+  <code>{value, source: "user" | "auto"}</code> in X, Y, Z — the values the training really used, from the executor's
+  job, kept from the last poll so <code>?live=0</code> shows them too; <code>null</code> before the executor generated
+  the config and for an executor before E-DATAPARAMS. The web shows them as <i>Automatic → &lt;value&gt;</i> or the
+  typed value (W90).</p>
   <p id="rtss-fixed"><b>RTSTRUCTs: the project's label revisions</b> (v1.39 amendment §53.1, U77, D242 — executor
   side). A job started from a project (<code>hub_loop</code>, <code>hub_checkpoint</code>) trains on exactly the
   RTSTRUCTs the hub's label-set names: the select stage keeps those and nothing else — no fall-back to the newest file
@@ -1250,6 +1298,16 @@
       the image's mask; the bundle is never changed). At least one of the bundle's classes must stay. The job page's
       <code>cohort_resolved.base.classes_left_out</code> names them
       (<a href="../components/executor.html#e-basesub-class-subset">executor</a>).</li>
+    <li id="executor-data-params"><b>Target spacing, patch size, patches per volume</b> (v1.97 §106, E-DATAPARAMS):
+      three optional parameters under <i>Data</i> in Parameters &amp; Submit. Left empty they are automatic, as
+      before: the training set's own spacing and patch from its fingerprint, and 2 patches per volume in 3d or 32 in 2d.
+      You type them in X · Y · Z order (X · Y for a 2d patch); the executor converts them to the order Research wants.
+      A typed value reaches training, the validations, the exported model's <code>global_fingerprint.json</code> (what
+      OncoStudio's inference resamples and tiles by) and the evaluation. A later job from that model's dataset keeps a
+      typed value unless you type another. A patch the network cannot take is refused when you submit, with the reason:
+      each axis must be a multiple of the network's downsampling factor for that patch, for example 32 for a 128-voxel
+      3d patch. The job page shows the values used, each marked automatic or set by you
+      (<a href="../components/executor.html#e-dataparams">executor</a>).</li>
     <li id="executor-convert-dropped"><b>Series the conversion left out</b> (E-J94): when the DICOM → NIfTI step
       cannot convert a series the job selected, for example an MR series in a CT job, the step names each one with the
       reason in its log and on the job page (<code>series_failed</code>). If one of them is in the project's frozen
