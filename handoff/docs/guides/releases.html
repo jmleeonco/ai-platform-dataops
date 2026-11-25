@@ -440,6 +440,37 @@
   table with DSC / HD95 and their change; while no report is ready it shows the data-written part under <i>Report being
   generated</i>. The 릴리즈 노트 entry <i>다음 릴리즈 (예정)</i> links to the row (<code>/deploy/releases#upcoming</code>).
   Details: <a href="../components/hub.html#web-upcoming-row">hub W99</a>.</p>
+<p id="confluence-release-pages"><b>Release notes as Confluence pages</b> (v2.12 §121, U244, web W102, hub S123): for
+  colleagues who read Confluence rather than this site, an admin writes the release notes there from <b>관리 ›
+  Confluence</b> (<code>/admin/confluence</code>). The page links the Confluence folder (space ONCOSTUDIO) and lists one
+  row per packaged release with a report and one for the upcoming release: its report (state and revision), the
+  Confluence page (<i>Open</i>, its version), the last sync (when, by whom) and a state — <i>Not synced</i>, <i>Up to
+  date</i>, <i>Out of date</i> (the report changed since the last sync), <i>No report</i> (nothing to write) or
+  <i>Failed</i> with the reason (for example a page of that title that the platform did not create). <b>Sync</b> on a row
+  writes that release's page; <b>Sync all</b> writes every row that has a report. While it runs the page says
+  <i>Syncing 2 of 4 — 1.7.0</i>; at the end <i>Synced 3 page(s), 1 failed: 1.6.2 — …</i>, and the list is read again.
+  Only an admin's click writes; the platform only ever overwrites the pages it created. When Confluence is not set up on
+  the hub, or the hub is read-only for Confluence (the dev instance), the buttons are off and the page says why. When
+  the hub's account cannot reach the Confluence folder (W103), a red note at the top gives Confluence's answer and when
+  it was checked, and every Sync stays off until the account works. Admins
+  only; on a phone the state sits under the release name.
+  Details: <a href="../components/hub.html#web-confluence">hub W102</a>.</p>
+<p id="confluence-release-pages-hub"><b>What the hub writes, and never writes</b> (v2.12 §121, D403, hub S123): every page
+  is a direct child of the folder <a href="https://oncosoft.atlassian.net/wiki/spaces/ONCOSTUDIO/folder/457605157">ONCOSTUDIO
+  › 457605157</a> — <i>OncoStudio AI 1.7.0 릴리즈 노트</i>, <i>OncoStudio AI 다음 릴리즈 (예정) — 1.7.0.4 대비</i> — written in Korean
+  from the same report as this site's page: a note that it was generated (do not edit it there: the next sync overwrites
+  it) with a link back, the summary, the models table (packaged → new version, DSC / HD95 and the change), the report's
+  sections with its figures (attached to the page and shown inline), then the report PDFs (ko, en) attached. The upcoming
+  release has <b>one</b> page that follows its set, marked <i>not packaged yet — may change</i>; while its report is being
+  written the page carries the part written from the data. Its title names the package it is compared with and follows
+  it: after a new package ships, the next sync renames the same page (<i>— 1.7.1.1 대비</i>), unless a page the hub did not
+  create already has that title (S124). The first sync creates a page; every later one updates that
+  same page (a new version, attachments replaced by name), and a page the hub made that someone deleted is made again.
+  The hub never overwrites a page it did not create (same title → the row fails with that sentence), never moves or
+  deletes a page and writes nothing to Jira. Each click first checks that the hub's Confluence account can read the
+  folder; when it cannot, the sync stops there and says why with the HTTP status — on 2026-11-25 the account of the
+  platform's Jira reads had no Confluence access (<i>403 — caller cannot access Confluence</i>), so the pages wait until it
+  is given access.</p>
 <p id="upcoming-release-page"><b>The upcoming release page is the comparison with the latest version only</b> (v2.11 §120,
   U242, web W100): <code>/deploy/release-notes?line=upcoming</code> shows what the upcoming set changes against the newest
   released build, and nothing about the released versions themselves. From top to bottom: the heading <i>Upcoming release —
