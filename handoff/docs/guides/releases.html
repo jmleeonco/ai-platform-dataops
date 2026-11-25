@@ -455,22 +455,25 @@
   it was checked, and every Sync stays off until the account works. Admins
   only; on a phone the state sits under the release name.
   Details: <a href="../components/hub.html#web-confluence">hub W102</a>.</p>
-<p id="confluence-release-pages-hub"><b>What the hub writes, and never writes</b> (v2.12 §121, D403, hub S123): every page
-  is a direct child of the folder <a href="https://oncosoft.atlassian.net/wiki/spaces/ONCOSTUDIO/folder/457605157">ONCOSTUDIO
-  › 457605157</a> — <i>OncoStudio AI 1.7.0 릴리즈 노트</i>, <i>OncoStudio AI 다음 릴리즈 (예정) — 1.7.0.4 대비</i> — written in Korean
-  from the same report as this site's page: a note that it was generated (do not edit it there: the next sync overwrites
-  it) with a link back, the summary, the models table (packaged → new version, DSC / HD95 and the change), the report's
-  sections with its figures (attached to the page and shown inline), then the report PDFs (ko, en) attached. The upcoming
-  release has <b>one</b> page that follows its set, marked <i>not packaged yet — may change</i>; while its report is being
-  written the page carries the part written from the data. Its title names the package it is compared with and follows
-  it: after a new package ships, the next sync renames the same page (<i>— 1.7.1.1 대비</i>), unless a page the hub did not
-  create already has that title (S124). The first sync creates a page; every later one updates that
-  same page (a new version, attachments replaced by name), and a page the hub made that someone deleted is made again.
-  The hub never overwrites a page it did not create (same title → the row fails with that sentence), never moves or
-  deletes a page and writes nothing to Jira. Each click first checks that the hub's Confluence account can read the
-  folder; when it cannot, the sync stops there and says why with the HTTP status — on 2026-11-25 the account of the
-  platform's Jira reads had no Confluence access (<i>403 — caller cannot access Confluence</i>), so the pages wait until it
-  is given access.</p>
+<p id="confluence-release-pages-hub"><b>What the hub writes, and never writes</b> (v2.12 §121, hub S123; written by an
+  agent since v2.13 §121.1, D404, hub S125): every page is a direct child of the folder
+  <a href="https://oncosoft.atlassian.net/wiki/spaces/ONCOSTUDIO/folder/457605157">ONCOSTUDIO › 457605157</a> —
+  <i>OncoStudio AI 1.7.0 릴리즈 노트</i>, <i>OncoStudio AI 다음 릴리즈 (예정) — 1.7.0.4 대비</i> — written in Korean from the same
+  report as this site's page: a note that it was generated (do not edit it there: the next sync overwrites it) with a link
+  back, the summary, the models table (packaged → new version, DSC / HD95 and the change) and the report's sections. There
+  is no Confluence API token, so the platform does not call Confluence itself: a Sync queues the release, and the
+  platform's Claude runner on the hub's server writes the page through the Claude login's <b>Atlassian connector</b>
+  (<i>claude.ai Atlassian</i>), allowed only to read, create and update Confluence pages, then reads the page back; the
+  platform checks that read-back (the same page, the title it asked for, under the folder, a new version) before it records
+  the page. The connector cannot upload attachments, so a package's figures are shown as images loaded from this site (they
+  are public), while the upcoming release's figures (signed-in only) and the report PDFs (ko, en) are links to this site;
+  the page says so. The upcoming release has <b>one</b> page that follows its set, marked <i>not packaged yet — may
+  change</i>; its title follows the package it is compared with. The first sync creates a page; every later one updates that
+  same page, and a page the platform made that someone deleted is made again. The platform never overwrites a page it did
+  not create (same title → the row fails with that sentence), never moves or deletes a page and writes nothing to Jira. The
+  access banner shows the connector's state as the runner last saw it — connected and the folder readable, or <i>needs
+  authentication</i> (sign the connector in on the server), or the connector's own error — and while it is not usable no
+  sync runs.</p>
 <p id="upcoming-release-page"><b>The upcoming release page is the comparison with the latest version only</b> (v2.11 §120,
   U242, web W100): <code>/deploy/release-notes?line=upcoming</code> shows what the upcoming set changes against the newest
   released build, and nothing about the released versions themselves. From top to bottom: the heading <i>Upcoming release —
