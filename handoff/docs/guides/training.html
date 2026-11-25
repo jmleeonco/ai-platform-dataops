@@ -571,6 +571,11 @@
     (the value the training used) or the typed value marked <i>직접 입력</i>; before the training's config is made the
     typed ones show and the rest read <i>자동 · 학습 설정이 만들어지면 표시됩니다</i>. The same group appears wherever the
     parameter form is (고급 학습, 관리 › Pipelines, project automation).</li>
+    <li id="dataset-prefix-rule"><b>Which dataset a patient id belongs to</b> (v2.09 §118, U240, D399): an id with
+    <code>_</code> belongs to the text before its first <code>_</code> (<code>AMOS_0001</code> → AMOS); an id without one
+    belongs to the id minus its trailing number (<code>P000001</code>, <code>P000003</code> → <b>P</b>;
+    <code>CCTH-B10</code> → CCTH-B); machine ids (the PACS's hex ids, pure numbers) belong to no dataset. The Dataset field,
+    the search, the dataset's ROI names and the executor's per-dataset rules all use this one rule.</li>
     <li id="dataset-roi-names"><b>A dataset's ROI names as alternative names</b> (v1.65 §80, U159, D339 — hub S54, web W43):
     a dataset is a PatientID prefix (<code>AMOS_</code>, <code>YUMC_</code>, the §78 DataOps convention). The Items step gets a
     <b>Dataset</b> select (<code>GET /ui/api/training/items/datasets</code>: prefix, series, labels with known ROI names, unread
