@@ -1193,7 +1193,16 @@
   the corrected label is sent after its review). The case's History lists the entry <i>Sent · acknowledged by OncoStudio ·
   verified on the central PACS</i> (or <i>found on the central PACS</i> for a backfilled row).</p>
 
-  <h3 id="save-on-approved">Editing an approved item that was not sent yet (v2.02 §111, U231, D389)</h3>
+  <h3 id="view-and-give-back">Look without taking; give back what you only opened (v2.04 §113, U235, D394)</h3>
+<p id="view-and-give-back-rule">
+  <b>View / 보기</b> opens an item read-only: nothing is assigned, nothing you save goes into the project, and the
+  Labeler cell does not change — use it to look at an image. <b>Open</b> still takes the item for you. If you opened an
+  item and saved nothing, <b>Give back / 반납</b> removes your name: an item you took unassigned becomes unassigned
+  again; an item you took over returns to the labeler who had it. Once you saved a label on it, only a lead can
+  reassign it.
+</p>
+
+<h3 id="save-on-approved">Editing an approved item that was not sent yet (v2.02 §111, U231, D389)</h3>
 <p id="save-on-approved-rule">
   Finished projects hold rows that were approved long ago — many by the Excel import, with no label file on the hub.
   When the holder (or a lead) saves such an item from OncoStudio, the save becomes the item's label and the item reads
