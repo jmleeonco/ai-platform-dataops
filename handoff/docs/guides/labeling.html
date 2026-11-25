@@ -1229,9 +1229,9 @@
   structure set to the central SCP from OncoStudio without the Labeling tab — the Save dialog on a case opened from the
   DICOM browser, or <i>Send to</i> on a series in the browser. When OncoStudio is signed in to the hub and that store of an
   RTSTRUCT <b>succeeds</b>, the app compares the structure set's name (its label, else its full name, else the series
-  description) with the names and codes of the projects you see — spaces around it and upper / lower case do not matter;
+  description) with the names, codes and structure set names (<code>rtss_name</code>, the name a project gives its labelers — O54a) of the projects you see — spaces around it and upper / lower case do not matter;
   the project list is the one the app has, read again when it is older than 10 minutes. A match tells the hub once
-  (<code>POST /api/v1/central-ack</code>: the name, the image series, the study, the patient ID, the stored SOP and series,
+  (<code>POST /api/v1/central-ack</code>: the name as it is in the file — the hub settles which project, the image series, the study, the patient ID, the stored SOP and series,
   the node stored to and the time the store finished — no patient name, no birth date); the hub verifies the file on the
   central PACS, takes it as the item's label when it does not have it, records the send and writes both into the case's
   History. One line on the main window says what the hub answered: <i>Recorded on the hub as sent: CT-P · CT-P-009.</i>, or
@@ -1242,16 +1242,24 @@
   (§27.9) and is not told twice.</p>
   <p id="central-ack-outside-tab"><b>A send outside the Labeling tab (v2.10 §119, U241, D400 — hub S121, app O54).</b>
   Some structure sets reach the central SCP from OncoStudio's regular <i>Save</i> / <i>Send to PACS</i>, not from the
-  Labeling tab. When such a structure set is named like a project (its name or code, any case), the app tells the hub
+  Labeling tab. When such a structure set is named like a project (its name, code or structure-set name — the <i>RTSS name</i> the
+  project gives its labelers — any case), the app tells the hub
   once (<code>POST /api/v1/central-ack</code>, no item id: the set's name, the image series, the stored SOP and series,
-  the destination and the time). The hub finds the project and its item for that image series, checks the destination
+  the destination and the time). The hub finds the project (a name or code match first; among projects sharing that RTSS name, the one that has
+  the image as an item — when several do, it answers <i>several projects of this name</i> and records nothing) and its
+  item for that image series, checks the destination
   is the central one and asks the central PACS for the SOP (one C-FIND). If the hub does not have that file yet it reads
   it from the central PACS (its own copy, else C-GET — nothing is ever sent) and makes it the item's label, drawn by
   the sender: an item nobody held gets the sender as its labeler, a held item keeps its holder; the item reads
   <i>Labeled</i>. Then the send is recorded exactly as an acknowledged send from the tab: <b>Sent</b> when the item is
   approved or the sender is a reviewer who did not draw it, otherwise <b>Sent · review pending</b>. The hub's case history
   records two entries — the label and the send — each marked <i>outside the Labeling tab</i> with the destination; the
-  History card shows the label and the acknowledged send.
+  History card shows the label and the acknowledged send (web W101): the send as <i>Sent from OncoStudio outside the
+  Labeling tab by &lt;who&gt; · verified on the central PACS · to ONCOPACS @ 10.101.1.4:4002</i> at its time, and the
+  label's line as <i>Label taken from the central PACS — sent from OncoStudio outside the Labeling tab by &lt;who&gt;</i>;
+  the Sent pill's tooltip reads <i>Sent from OncoStudio outside the Labeling tab by &lt;who&gt; at &lt;time&gt;</i> (with
+  <i>; not reviewed yet</i> while review is pending). A send from the Labeling tab keeps <i>acknowledged by OncoStudio ·
+  verified on the central PACS</i>.
   A set named like no project, an image that is not an item of the project or another destination is answered
   <i>no project of this name</i> / <i>not a case of this project</i> / <i>not the central destination</i> and nothing is
   written; a SOP the central PACS does not have is answered <i>not found on the central PACS</i>. Sending the same file
