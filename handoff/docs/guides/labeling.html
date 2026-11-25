@@ -1225,7 +1225,16 @@
   the corrected label is sent after its review). The case's History lists the entry <i>Sent · acknowledged by OncoStudio ·
   verified on the central PACS</i> (or <i>found on the central PACS</i> for a backfilled row).</p>
 
-  <h3 id="row-opens-on-own-set">Which structure set an item opens on (v2.05 §114, U234, D395)</h3>
+  <h3 id="add-target-rois">Adding target ROIs to a project, also a finished one (v2.07 §116, U238, D397)</h3>
+<p id="add-target-rois-rule">
+  Every labeler can use <b>Add target ROIs… / 타깃 ROI 추가…</b> on the project page: pick the new ROIs (the current
+  targets are shown ticked and cannot be removed here). A project that was marked finished reads <b>Ongoing</b> again.
+  Nothing happens to the items: approved and sent items stay as they are and show the new ROI as not done. To add the
+  ROI to an item, open it (take it over when someone else holds it), draw, save — the item is then reviewed and sent
+  again. Removing or reordering targets stays a lead's <i>Edit target ROIs…</i>.
+</p>
+
+<h3 id="row-opens-on-own-set">Which structure set an item opens on (v2.05 §114, U234, D395)</h3>
 <p id="row-opens-on-own-set-rule">
   An item of a project opens on <b>its own</b> structure set: the label saved for it on the hub, else a set named after
   the project, else a <b>new empty set</b> with the project's name. Sets from other projects that hold one of this
