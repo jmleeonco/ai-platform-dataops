@@ -1199,6 +1199,17 @@
   OncoStudio and save it, then Approve &amp; send again</i> — the screen no longer says <i>Approved 1, sent 0 … no label
   file</i>. Nothing is sent automatically.
 </p>
+<p id="save-on-approved-hub"><b>Hub (S109).</b> The holder's or a reviewer's / lead's human save (the §27.5 upload or the
+  save event naming the item) on an <code>approved</code> row with no <code>central_sent_at</code> sets
+  <code>latest_revision_uid</code> to it, status <code>delivered</code>, supersedes the row's older human revisions and
+  logs <code>approved_revised</code> (<code>{approved, revised, by}</code>); review rows stay. A verdict on a row whose
+  <code>latest_revision_uid</code> is NULL names the newest linked human revision and makes it the row's revision — the
+  six prod rows left that way on 2026-11-24 (CT-P(BagBowel), files stored and linked, revision never set) approve and
+  send on the next <i>Approve &amp; send</i> with no hand edit. The one-row approval (<code>POST
+  /api/v1/assignments/{id}/review</code> and its <code>/ui/api</code> twin) answers 409 with the sentence above when the
+  revision it would name is not a human file on the hub's disk, before writing anything; <i>Request changes</i> on such a
+  row is still accepted (D150). Bulk approve (§42.3 / §60.3) is unchanged. Health <code>contract_version "2.02"</code>
+  (<a href="../components/hub.html#s109-approved-unsent">hub</a>).</p>
 
 <h3 id="revise-after-send">Editing a structure set after it was sent (v1.75 §27.10, U172, D352)</h3>
   <p>A sent item is not locked for its labeler or a lead. When the item's labeler, its reviewer or a lead saves a
@@ -1217,8 +1228,10 @@
   moment it is stored, so <i>Approve</i> approves it and the lead's <i>Send to central</i> (or <i>Approve &amp; send</i>)
   sends it as the item's second send; an approval given before S69 that still names the earlier file is refused with
   <i>revised after its send — review the newer revision</i>. Saving on an <b>approved</b> item that has no live send
-  (never sent, or its send already set aside) does not reopen it: the file is stored, the item stays Approved on its
-  approved file (§5, §34, §27.10 applies only to a live send).</p>
+  (never sent, or its send already set aside) reopens it too since v2.02 (§111, <a href="#save-on-approved">above</a>):
+  the file becomes the item's label and the item reads <i>Labeled</i> until it is approved again. Until S109 the file was
+  stored and linked but the item stayed Approved on its earlier file — or on none, which is how <i>Approve &amp; send</i>
+  came to answer <i>sent 0 … no label file</i>.</p>
 </section>
 
 <footer>

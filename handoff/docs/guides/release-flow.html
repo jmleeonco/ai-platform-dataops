@@ -34,6 +34,12 @@
 
 <section id="model-release">
   <h2>Model versions and the model release (v1.70 §84, U164, D344)</h2>
+  <p id="release-number-rule"><b>Which number a model release raises (v2.03 §112, U232, D390 — replaces the §97.2 rule).</b>
+  When the model being released has <b>ROIs the model's previous release lacks</b>, the proposal raises the
+  <b>middle</b> number: Abdomen 2.0.1 with Kidney_Cortex_L / _R added → <b>2.1.0</b>. When it has the <b>same ROIs</b>
+  (a retrain), the proposal is the next free <b>last</b> number (2.1.1 → 2.1.2). A model never released starts at 1.0.0;
+  the first number changes only when a person types it; the proposal stays editable. The dialog says which rule applied
+  and names the added ROIs. A training deploy still raises the last number.</p>
   <p><b>Two lines.</b> A <b>model</b> (a trained network deployed to <code>/mnt/deploy/models/&lt;family&gt;/&lt;version&gt;</code>)
   is first a <b>development version</b> <code>0.y.z</code>: the hub gives every deploy — the training wizard, a job's deploy
   stage, the loop's auto-deploy — <code>0.0.0</code> for a new family, else the family's highest <code>0.y.z</code> plus one

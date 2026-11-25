@@ -78,7 +78,9 @@
   and picks <i>중앙 PACS 전송…</i>. The confirmation lists the items and the destination (<code>AE@host:port</code>), names
   the selected rows that will not go (not approved, no label file on the hub, already sent), says that sending is final, and
   sends only after <i>위 항목과 보낼 곳을 확인했습니다</i> is ticked. The answer lists what was sent and what the hub refused
-  with its reason. When the hub has no destination configured the button is disabled with that reason (and a 409 from the hub
+  with its reason — for a row whose approval names no file on the hub: <i>the approval names no label saved on the hub — open
+  the item in OncoStudio and save it, then Approve &amp; send again</i> (v2.02 §111; the same sentence refuses such an
+  approval before it is recorded). When the hub has no destination configured the button is disabled with that reason (and a 409 from the hub
   is shown in the dialog); nothing is sent. A sent row reads <b>중앙 전송</b> (Sent) in every stage chip, filter and pill; its
   drawer offers no verdict, only <i>다시 열기</i> with a required comment.</p>
 </section>
