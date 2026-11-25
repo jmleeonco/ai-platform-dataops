@@ -420,22 +420,20 @@
   <p id="upcoming-release-who"><b>Who sees the upcoming release</b> (v2.06 §115, U237, hub S117): since 2026-11-25 every
   signed-in user (labelers too), not only admins; without a login it stays hidden. The Releases tab shows it as a block
   above the released packages (W97).</p>
-  <p id="upcoming-release-block"><b>The Releases tab's block</b> (v2.06 §115, U237, web W97): <b>배포 › 릴리즈</b>
-  (<code>/deploy/releases</code>) opens, for every signed-in user, with <b>다음 릴리즈 (예정) / Upcoming release</b> above the
-  packages, marked <i>Not packaged yet — may change</i> and <i>since 1.7.0.4</i> (the newest released package it is compared
-  with). One row per model of the upcoming set: the model (to <i>개별 모델 릴리즈</i>, with its training job), <b>packaged
-  version → new version</b> (<i>2.0.0 → 2.2.0</i>; <i>— → 1.0.0</i> for a model the package lacks), <i>Updated</i> / <i>Added</i>, the
-  model releases in between, oldest first, each with its date and memo, the ROIs added / removed, DSC and HD95 with the
-  change against the packaged version where they were measured, and when and by whom it was released; under the table the
-  totals (<i>2 models · 3 ROIs added</i>). Nothing released since the package → one sentence, <i>Nothing released since
-  1.7.0.4</i>. The block is read again when the page reloads and every 60 s while it is open, so a new model release shows up
-  within a minute. Without a login, or on a hub older than 2.06 for a non-admin, there is no block and no error. In
-  <b>릴리즈 노트</b> the <i>다음 릴리즈 (예정)</i> entry is shown to the same users and leads to this block
-  (<code>/deploy/releases#upcoming</code>); <code>?line=upcoming</code> still opens the full part with its per-model sections.
-  Since W97a the same users also get that full page (no <i>admins only</i> message any more: without a login it says
-  <i>Sign in to see the upcoming release</i>, and a hub older than 2.06 that still refuses a non-admin says it needs hub
-  2.06) and, in <b>버전 비교</b>, the target <i>다음 릴리즈 (예정) · 미패키징</i> with the newest released version as a valid
-  installed version. Details: <a href="../components/hub.html#web-upcoming-block">hub W97</a>.</p>
+  <p id="upcoming-release-block"><b>The upcoming release is a row of the Releases tab</b> (v2.08 §117, U239, web W99;
+  before that, §115 / W97, a block above the list): <b>배포 › 릴리즈</b> (<code>/deploy/releases</code>) lists, for every
+  signed-in user, <b>다음 릴리즈 (예정) / Upcoming</b> as the <b>first row</b> of the packages' table, in the same columns:
+  the name (it opens the upcoming release page), the state <i>Upcoming · not packaged yet</i> (<i>예정 · 아직 패키징 전</i>), the
+  base — the newest released package it is compared with (<i>1.7.0.4</i>), the date of the newest model release in it,
+  the contents <i>2 models · Kidney 2.0.0 → 2.1.0, Stomach — → 1.0.0</i> (each model with its packaged → new version, all of
+  them on hover), and in the download column the report: <i>Report being generated</i>, <b>PDF KR · EN</b> once the report is
+  ready, <i>Report failed: …</i> with the hub's reason, or — when there is none yet. No model released since the package →
+  no row. The row is read again with the page and every 60 s; without a login (or a hub that refuses) there is no row and
+  no error. The upcoming release page (<code>/deploy/release-notes?line=upcoming</code>, where the row and the 릴리즈 노트
+  entry lead) shows the generated report's PDF first (Korean by default, an EN switch, a download) and then the models
+  table with DSC / HD95 and their change; while no report is ready it shows the data-written part under <i>Report being
+  generated</i>. The 릴리즈 노트 entry <i>다음 릴리즈 (예정)</i> links to the row (<code>/deploy/releases#upcoming</code>).
+  Details: <a href="../components/hub.html#web-upcoming-row">hub W99</a>.</p>
 <p id="upcoming-release-web"><b>다음 릴리즈 (예정) / Upcoming release</b> (v1.95 §104.4, U221, web W88 on S101 — <b>admins
   only</b>; nobody else sees anything new). Before a package is made, the release notes show what it will add: above the
   released versions an admin sees the entry <i>다음 릴리즈 (예정)</i> with <i>미패키징 / Not packaged</i> and the number of models
