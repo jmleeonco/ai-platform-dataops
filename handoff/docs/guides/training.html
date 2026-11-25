@@ -576,6 +576,12 @@
     belongs to the id minus its trailing number (<code>P000001</code>, <code>P000003</code> → <b>P</b>;
     <code>CCTH-B10</code> → CCTH-B); machine ids (the PACS's hex ids, pure numbers) belong to no dataset. The Dataset field,
     the search, the dataset's ROI names and the executor's per-dataset rules all use this one rule.
+    <span id="dataset-prefix-rule-hub"><b>Hub (S120).</b> The hub groups and matches every dataset with this rule (its
+    SQL function <code>dataset_prefix</code>): the Dataset list counts each group's series and labels
+    (<code>P000001</code>, <code>P000003</code> … are one entry <code>P</code>; machine ids and digit-only ids are not
+    listed), choosing a dataset searches its whole group (the name <code>P</code> finds every <code>P…</code> id; an exact id
+    still finds only itself), and its ROI names and per-dataset exclusions take the same items. A setting saved under an
+    old single-id name such as <code>P000001</code> keeps applying to that one id.</span>
     <span id="dataset-prefix-rule-executor"><b>Executor (E-PREFIX).</b> The executor does not group items by dataset
     itself: the hub turns a job's <code>roi_exclude</code> into each item's <code>exclude_rois</code> before it submits, and
     a bundle's own rows take no exclusion. The rule lives in one place, <code>app/datasetprefix.py</code>
