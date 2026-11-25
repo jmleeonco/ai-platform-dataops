@@ -433,7 +433,12 @@
   new package changes the next read). Details: <a href="../components/hub.html#web-upcoming-release">hub W88</a>.</p>
   <h3 id="model-versions">One version line per model; renaming a model (v1.88 §97.2–97.3, A30)</h3>
   <p>Every training deploys the model under the project's name and adds 1 to the last number (Kidney 2.0.0 → 2.0.1). Releasing
-  a model adds 1 to the middle number (2.0.2 → 2.1.0) — or to the last when the model gained ROIs — and must be above the
+  a model (v2.03 §112, U232, D390 — the two cases swapped against §97.2) adds 1 to the middle number when it has ROIs the
+  model's last release lacks (Abdomen 2.0.1 with Kidney_Cortex_L / _R → 2.1.0; the dialog says <i>2.0.1 has ROIs the last
+  release lacks (Kidney_Cortex_L, Kidney_Cortex_R): the middle number goes up → 2.1.0.</i>), and to the last number when the
+  ROIs are the same (2.1.1 → 2.1.2: <i>Same ROIs as the last release: the last number goes up → 2.1.2.</i>; only removed ROIs
+  count as the same); a model never released gets 1.0.0. The hub proposes the version and names the rule; the dialogs show
+  it, and the proposal stays editable. It must be above the
   model's highest released version; any deployed version can be released, a release copy cannot. A model is
   <i>released</i> when it has a model release (<code>RELEASED.json</code>, not withdrawn) or a released package ships it.</p>
   <p><b>Rename</b> (배포 › 개별 모델 릴리즈) moves the model's folder with all its versions, its evaluations, data and training

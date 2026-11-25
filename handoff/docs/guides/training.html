@@ -546,7 +546,9 @@
     <b>admins only</b>). A succeeded job with a model shows the primary button <b>이 모델 릴리즈 / Release this model</b> in its
     header (without a model or once its model is released it is disabled with the hub's reason; a running, failed or cancelled
     job shows none). The dialog: the model name, the proposed version (editable — a typed version is checked as M.m.p with
-    M ≥ 1; the §97.2 sentence: the first release, the middle number, or the last number when ROIs were added), an optional memo
+    M ≥ 1; the sentence of the hub's rule — since v2.03 §112 (W95) <i>&lt;v&gt; has ROIs the last release lacks (&lt;names&gt;): the
+    middle number goes up → &lt;proposal&gt;.</i>, <i>Same ROIs as the last release: the last number goes up → &lt;proposal&gt;.</i>
+    or the first release; an older hub's §97.2 sentence otherwise), an optional memo
     (the release note) and <i>what will happen</i>: when the model was never deployed it is deployed first under the
     project's name (at the version a deploy takes now), then released, then the job's dataset is deployed and the full
     evaluation runs (§98). <b>Release</b> sends <code>POST /ui/api/training/jobs/{id}/release</code> (the version only when another
@@ -877,7 +879,8 @@
   new model. A typed version is taken when it is above the model's highest; a lower one is refused (400
   <code>deploy_version_auto</code>, <i>a typed version must be above 2.0.0: the next is 2.0.1</i>, with the next in
   <code>version</code>). v1.70's development line (<code>0.y.z</code> only, 400 <code>deploy_version_dev</code>) and v1.72's
-  <i>never typed</i> are withdrawn; existing folders keep their numbers. A release proposes the middle number — see
+  <i>never typed</i> are withdrawn; existing folders keep their numbers. A release proposes the middle number when the model has ROIs its last release lacks, else the last number (v2.03 §112,
+  <a href="releases.html#model-versions">releases</a>) — see
   <a href="../components/hub.html#s89-deploy-always">hub S89</a>.</p>
   <p id="deploy-always-web"><b>W78 (labeling-web).</b> The wizard shows the switch <b>on</b> in every mode (project, <i>From items anywhere</i>, from a model), the model name the hub proposes and the version it assigns; a kept family shows <i>Deploys to the existing model &lt;F&gt; until it is renamed</i> with a link to 배포 › 개별 모델 릴리즈, where an admin renames it (a dry run first) — see <a href="../components/hub.html#web-model-release-w78">hub W78</a>.</p>
   <p id="deploy-rename"><b>v1.88 §97.3 (U212, S90) — after a rename.</b> When an admin renames a model in 배포 › 개별 모델
