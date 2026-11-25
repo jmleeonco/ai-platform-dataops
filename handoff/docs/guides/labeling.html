@@ -1189,7 +1189,18 @@
   the corrected label is sent after its review). The case's History lists the entry <i>Sent · acknowledged by OncoStudio ·
   verified on the central PACS</i> (or <i>found on the central PACS</i> for a backfilled row).</p>
 
-  <h3 id="revise-after-send">Editing a structure set after it was sent (v1.75 §27.10, U172, D352)</h3>
+  <h3 id="save-on-approved">Editing an approved item that was not sent yet (v2.02 §111, U231, D389)</h3>
+<p id="save-on-approved-rule">
+  Finished projects hold rows that were approved long ago — many by the Excel import, with no label file on the hub.
+  When the holder (or a lead) saves such an item from OncoStudio, the save becomes the item's label and the item reads
+  <i>Labeled</i> again: the old approval was of an earlier file or of none, so it is reviewed once more (a lead's
+  <b>Approve &amp; send</b> does both in one click). An item whose approval would name no label saved on the hub is
+  refused <b>before</b> it is approved, with <i>the approval names no label saved on the hub — open the item in
+  OncoStudio and save it, then Approve &amp; send again</i> — the screen no longer says <i>Approved 1, sent 0 … no label
+  file</i>. Nothing is sent automatically.
+</p>
+
+<h3 id="revise-after-send">Editing a structure set after it was sent (v1.75 §27.10, U172, D352)</h3>
   <p>A sent item is not locked for its labeler or a lead. When the item's labeler, its reviewer or a lead saves a
   <b>new</b> structure set on an item that is <b>Sent</b> or <b>Sent · review pending</b>, the hub sets the earlier send
   aside in the same moment: the item leaves Sent and reads <b>Labeled</b> (an approved item goes back to labeled — the
