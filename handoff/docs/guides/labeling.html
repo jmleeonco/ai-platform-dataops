@@ -1242,6 +1242,13 @@
   again; an item you took over returns to the labeler who had it. Once you saved a label on it, only a lead can
   reassign it.
 </p>
+<p id="view-and-give-back-hub"><b>What the hub checks (S116).</b> Give back works while the item is <i>assigned</i> or
+  <i>in progress</i> and you stored no label on it since it became yours. "Since it became yours" is the last time the
+  item's history moved it to you (a give back itself does not count, so a chain unwinds one step at a time). It then
+  goes back to whoever had it at that moment — nobody (<i>unassigned</i>), or the labeler you took it over from, with
+  its status unchanged — and your open claim on it ends. The history line reads <i>given back</i>. Every row the hub
+  sends you (project rows, My works) says whether you may give it back (<code>can_release</code>) and to whom
+  (<code>release_to</code>), so the button only shows where it will work.</p>
 <p id="view-and-give-back-web"><b>On the web (W96).</b> <b>View</b> is in the project page's header next to
   <b>Open</b> for every login that may see the project; both open the case window, which only reads — neither assigns
   anything. <b>Give back</b> (Korean <i>반납</i>) appears in the project's action row when a selected row is one the
