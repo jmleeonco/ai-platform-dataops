@@ -638,6 +638,7 @@
   project&#8217;s own names counted and the target read <i>not made: &#8230; (no model makes it)</i>. And every model of an <i>Auto-contour&#8230;</i>
   run now sees the whole image: before, an installed model ran only inside the boxes the organ detector placed for it, so a
   vessel pre-label could stop above the pelvis (no iliacs, no inferior vena cava) or not appear at all.</p>
+  <p id="session-recovery-off"><b>No Session Recovery panel at start</b> (O57, labeler feedback 2026-11-26): the labeling build no longer opens the <i>Session Recovery</i> panel by itself after an unexpected end. Auto-save still writes, nothing is deleted, and the toolbar button (shown when auto-saved sessions exist) still opens the panel. To bring the old behaviour back on a PC set <code>HKCU\Software\Oncosoft\OncoStudioLabeling\sessionRecovery\opensAtStart</code> to <code>true</code>. The regular product is unchanged.</p>
   <p id="feedback-1114"><b>From 2026-11-14 (labeler feedback): fewer steps per item, re-send after a change, a cleaner viewer</b>.
   <i>Project page</i>: a <i>Labeler</i> filter (<i>All labelers</i> or one person, with their item count) shows only the
   items that person labeled or holds; <i>Approve</i> works on several selected rows at once (one confirmation, one summary
