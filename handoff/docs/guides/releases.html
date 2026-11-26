@@ -441,8 +441,11 @@
   generated</i>. The 릴리즈 노트 entry <i>다음 릴리즈 (예정)</i> links to the row (<code>/deploy/releases#upcoming</code>).
   Details: <a href="../components/hub.html#web-upcoming-row">hub W99</a>.</p>
 <p id="confluence-release-pages"><b>Release notes as Confluence pages</b> (v2.12 §121, U244, web W102, hub S123): for
-  colleagues who read Confluence rather than this site, an admin writes the release notes there from <b>관리 ›
-  Confluence</b> (<code>/admin/confluence</code>). The page links the Confluence folder (space ONCOSTUDIO) and lists one
+  colleagues who read Confluence rather than this site, an admin writes the release notes there from <b>관리 › 릴리즈 /
+  Release</b> (<code>/admin/release</code>, v2.13 §121.1, W104): the last entry of the 관리 (Admin) group at the bottom of the
+  left sidebar, under 파이프라인 — the group is always open, so an admin scrolls the sidebar down to it and clicks
+  <b>릴리즈</b>; on a phone, the menu button first. The page is headed <i>릴리즈 / Release</i>; its section <b>Confluence 동기화 /
+  Sync to Confluence</b> holds what follows. The old address <code>/admin/confluence</code> leads there. The section links the Confluence folder (space ONCOSTUDIO) and lists one
   row per packaged release with a report and one for the upcoming release: its report (state and revision), the
   Confluence page (<i>Open</i>, its version), the last sync (when, by whom) and a state — <i>Not synced</i>, <i>Up to
   date</i>, <i>Out of date</i> (the report changed since the last sync), <i>No report</i> (nothing to write) or
@@ -464,8 +467,8 @@
   is no Confluence API token, so the platform does not call Confluence itself: a Sync queues the release, and the
   platform's Claude runner on the hub's server writes the page through the Claude login's <b>Atlassian connector</b>
   (<i>claude.ai Atlassian</i>), allowed only to read, create and update Confluence pages, then reads the page back; the
-  platform checks that read-back (the same page, the title it asked for, under the folder, a new version) before it records
-  the page. The connector cannot upload attachments, so a package's figures are shown as images loaded from this site (they
+  platform checks that read-back (the same page, the title it asked for, under the folder, and its first line carrying this
+  sync's number <i>동기화 번호 …</i>) before it records the page. The connector cannot upload attachments, so a package's figures are shown as images loaded from this site (they
   are public), while the upcoming release's figures (signed-in only) and the report PDFs (ko, en) are links to this site;
   the page says so. The upcoming release has <b>one</b> page that follows its set, marked <i>not packaged yet — may
   change</i>; its title follows the package it is compared with. The first sync creates a page; every later one updates that

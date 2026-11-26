@@ -145,7 +145,12 @@
       dialog shows Sex, Age, Modality, Vendor, Institution, Slice (mm), Contrast and Study date — a study or patient shows <i>mixed</i> when its
       series differ and <i>–</i> when nothing is known. Click a column header to sort by it (click again for the other order; unknown values stay
       last). Type in <b>Filter results…</b> to keep only the rows where every word appears somewhere (<i>female siemens</i>); the Results bars follow
-      the filter and what you already ticked stays ticked. <b>Columns ▾</b> hides columns you do not need; the choice is remembered.</li>
+      the filter and what you already ticked stays ticked. <b>Columns ▾</b> hides columns you do not need; the choice is remembered.
+      <span id="add-items-patient-columns">Since O56 (U248, labeler feedback) the patient's ID and name have their own columns,
+      <b>Patient ID › study › series</b> and <b>Patient name</b>, wide enough by default for a 24-character ID and a name like
+      <i>CT-P-0312</i> (drag a header edge to change a width; hover a patient for both in full). Click <b>Patient ID</b> or
+      <b>Patient name</b> to sort the patients by it (again for the other order, the arrow shows which); studies and series stay
+      under their patient, and what you picked and the filter keep working.</span></li>
     <li id="roi-aliases"><b>Alternative names of a target ROI</b> (v1.26 §39): in the Target ROIs panel double-click a target (or right-click →
       <i>Edit alternative names…</i>). The names from the ROI registry show as grey chips; a lead types this project's own names into <i>Add a name… (Enter or comma)</i> — Enter or a comma makes a chip, × removes one, a pasted list adds several — and presses <b>Save</b> (v1.27 §40: a duplicate, thetarget's own name or another target's name is refused in red under the field before saving). A drawn ROI or a model's output with such a name then counts as that target in this project — its name in the
       file is not changed. The panel shows how many names a target has (<i>liver_segment_3 · 1 name</i>).
