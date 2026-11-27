@@ -119,11 +119,13 @@ curl -s -X POST -H "Authorization: Bearer $OLT" -H "Content-Type: application/js
 ```bash
 curl -s -X POST -H "Authorization: Bearer $OLT" -F "file=@liver_borders.png" \
   "$HUB/api/v1/roi-guidelines/Liver/files"
-# 201 {"path": "Liver/liver_borders.png", "src": "…"}
+# 201 {"path": "Liver/3f9a1c0b7e2d4a65.png", "src": "/ui/api/roi-guidelines/files/Liver/3f9a1c0b7e2d4a65.png"}
 ```
 
 `png`, `jpeg` or `webp`, at most 5 MB. Put the returned `src` into `<img src="…" alt="…">` exactly as given.
-Pictures from other sites cannot be linked: upload them.
+Pictures from other sites cannot be linked: upload them. The server names the file by its content, so your file
+name is not kept. `src` always starts with `/ui/api/…` (the page shows it with the reader's login); to download a
+picture with your token, use `files_base` + `path`: `$HUB/api/v1/roi-guidelines/files/Liver/3f9a1c0b7e2d4a65.png`.
 
 ### Start a page for a ROI that has none
 
@@ -152,6 +154,9 @@ The server rejects a text that breaks a rule (it does not clean it up for you).
   summary blockquote figure figcaption code`.
 - Attributes: `class`, `colspan`, `rowspan`, `open`, `title`, `alt`, `href`, `src`.
 - `href`: `http:`, `https:` or `#…`. `src`: only a picture of this store.
+- Links come back from the server with `target="_blank" rel="noopener"`; leave them as they are (they are accepted
+  on save). A text you read and send back unchanged always passes.
+- `reasons` of a `422` look like `{"rule": "element|attribute|href|src|markup", "at": "line:col", "detail": "…"}`.
 - Not allowed: `script`, `style`, `iframe`, any `on…` attribute, the `style` attribute, `data:` and `javascript:` URLs.
 - At most 512 KB.
 - No `h1` and no header badges: the page adds the title and the header itself.
