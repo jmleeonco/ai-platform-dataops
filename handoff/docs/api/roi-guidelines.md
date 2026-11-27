@@ -32,8 +32,8 @@ mistake is cheap — but each save is recorded with your username.
 
 ## Get a token
 
-Sign in at `https://platform.oncosoft.io`, open your account menu → **API tokens** (`/ui/api/me/tokens` behind it),
-create one and copy it. It starts with `olt_`, is shown once, and acts as you. Up to 10 live tokens per person; revoke
+Sign in at `https://platform.oncosoft.io`, open **계정 / Account** (labelers: in the sidebar; others: the user menu),
+go to the **API 토큰 / API tokens** card (`https://platform.oncosoft.io/account#tokens`), create one and copy it. It starts with `olt_`, is shown once, and acts as you. Up to 10 live tokens per person; revoke
 one you no longer use. Never commit a token or paste it into a guideline, a chat or a report.
 
 ```bash
