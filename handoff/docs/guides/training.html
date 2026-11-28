@@ -375,9 +375,13 @@
     project.</li>
     <li id="train-from-model-web"><b>From an existing model — on the web</b> (v1.74 §88.1, U171, D350, W54). <i>Start
     from</i> has a third card, <b>From an existing model</b> (기존 모델에서): <i>Take a model's own train / valid data, add
-    more, train again.</i> Its steps are <b>Model → Data → Parameters &amp; submit</b>. <b>Model</b>: type the model's name
-    (or a class, a package, <code>#job</code>) and press Enter — a text equal to a family name picks that family (so
-    <i>kidney</i> picks Kidney, not Abdomen whose classes name Kidney_L), else the first usable match; Data opens. The list
+    more, train again.</i> Its steps are <b>Model → Data → Parameters &amp; submit</b>. <b>Model</b>: the step lists every model at
+    once, newest trained first, with nothing to type (W107, U253) — also when the wizard was opened by <i>Train again with
+    more data</i> or a link: going back to Model shows the whole list with the picked model marked. While the hub reads the
+    list the step says <i>Reading the models on the server…</i>; an empty or failed read says so with <i>Read again</i>. One
+    click on a row picks it and opens Data. The box only narrows the list (a name, a class, a package, <code>#job</code>;
+    families named so come first) and Enter picks — a text equal to a family name picks that family (so
+    <i>kidney</i> picks Kidney, not Abdomen whose classes name Kidney_L), else the first usable match. The list
     shows one row per family (its newest version; older ones behind <i>Other versions</i>) with <i>released</i> /
     <i>development</i>, the packages that ship it, its classes, <i>n train · v valid</i>, where the data is (<i>data
     bundle</i> or <i>hub job #id</i>) and when it was trained; models without a dataset are last and greyed with the reason
@@ -395,7 +399,7 @@
     items; the Dashboard row has the chip <i>from &lt;name&gt; &lt;version&gt;</i>. <b>Train again with more data</b> — on each
     family in 배포 › 릴리즈 › 개별 모델 릴리즈 and on the page of a finished job that deployed a model — opens the wizard
     at <code>?mode=model&amp;family=…&amp;version=…</code> with the model picked (on its Data step). Someone who knows only the
-    model's name: Training › <i>From an existing model</i> → type the name, Enter → Next → Submit.</li>
+    model's name: Training › <i>From an existing model</i> → click its row (or type the name, Enter) → Next → Submit.</li>
     <li id="wizard-multi-move"><b>Several items at once, Train ⇄ Valid</b> (v1.81 §93.4, U195, D361, W66 — web only, the
     job request is unchanged). In the Items step of <a href="#items-anywhere-web">From items anywhere</a> and in
     <a href="#train-from-model-web">From an existing model</a>'s <b>Add data</b>, the two lists below the search
@@ -1503,6 +1507,13 @@
   again. Cases the report prerendered (<a href="#eval-prerender">Prerendered evaluation samples</a>) carry a
   <i>ready</i> chip, are listed first and the first of them opens when the address names no case. The parameter's title
   and its lower bound show in the Parameters step and in 관리 › Pipelines (group <i>Evaluation report</i>).</p>
+  <p id="eval-viewer-noref"><b>Classes a case has no reference for</b> (v2.15 §123, U251). A validation case can come
+  from a series labelled for other structures only — job 105's hub kidney-cortex series carry no Liver, Spleen, …
+  reference. The viewer says so: the legend chip of such a class reads <i>참조 없음 / no reference</i> (tooltip
+  <i>not labelled in this case</i>), its prediction is drawn as a dimmed outline only, so a predicted liver without a
+  reference no longer looks like a miss, and the case list and the header above the image say <i>참조 n / m</i> — the
+  classes this case has a reference for, of the model's. Classes with a reference look as before, and so does a job
+  whose executor predates the reference list.</p>
   <p>The case, slice and plane go into the address (<code>?case=&amp;slice=&amp;plane=</code>), so a copied link
   opens the same picture. Nothing is kept in the browser's storage. The case is the executor's case number, the slice
   number in the address starts at 0, and axial is left out of the address. The list and the slices are loaded once per
